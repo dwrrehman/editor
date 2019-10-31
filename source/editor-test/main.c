@@ -1,21 +1,57 @@
-// this is an editor, named "e" which im writing in C, designed as a better "ed".
-// it is focused on minimlaism, terseness, and intuitiveness.
+/// this is an editor, named "e" which im writing in C,
+/// designed as a better "ed", and textedit.
+/// it is focused on minimalism, ergonomics, and intuitiveness.
 
 #include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <termios.h>
-#include <unistd.h>
 #include <stdbool.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/time.h>
 #include <sys/ioctl.h>
+#include <termios.h>
 
 #define and &&
 #define or ||
 #define not !
 
-typedef size_t nat;
+#define set_color "\033[38;5;%lum"
+#define reset_color "\033[0m"
 
 const char* editor_name = "e";
+
+const long rename_color = 214L;
+
+const char* left_command_sequence = "wef";
+const char* right_command_sequence = "oij";
+const char* quit_save_command_sequence = "ewq";
+enum key_bindings {
+    up_key = 'o',
+    down_key = 'i',
+    left_key = 'j',
+    right_key = ';',
+    jump_key = 'k',
+    find_key = 'l',
+    
+    edit_key = 'e',
+    cut_key = 'd',
+    copy_key = 'f',
+    paste_key = 'a',
+    select_key = 's',
+    
+    resave_key = 'W',
+    save_key = 'w',
+    
+    redo_key = 'r',
+    undo_key = 'u',
+    
+    force_quit_key = 'Q',
+    quit_key = 'q',
+};
+
+typedef size_t nat;
 
 char get_character() {
     struct termios t = {0}; if (tcgetattr(0, &t) < 0) perror("tcsetattr()");
@@ -24,6 +60,13 @@ char get_character() {
     char c = 0; if (read(0, &c, 1) < 0) perror("read()"); t.c_lflag |= ICANON; t.c_lflag |= ECHO;
     if (tcsetattr(0, TCSADRAIN, &t) < 0) perror("tcsetattr ~ICANON");
     return c;
+}
+
+static inline void get_datetime(char buffer[16]) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    struct tm* tm_info = localtime(&tv.tv_sec);
+    strftime(buffer, 15, "%y%m%d%u.%H%M%S", tm_info);
 }
 
 void save_cursor() { printf("\033[s"); fflush(stdout); }
@@ -73,16 +116,13 @@ static void init_source(int argc, const char** argv, nat* length, char** source)
 }
 
 
-#define set_color "\033[38;5;%lum"
-#define reset_color "\033[0m"
-
-char* prompt_filename() { // produces a string.
+char* prompt_filename() {
     struct winsize window;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
     save_cursor();
     set_cursor(0, window.ws_row);
     clear_line();
-    printf(set_color "filename: " reset_color, 214L);
+    printf(set_color "filename: " reset_color, rename_color);
     fflush(stdout);
     char* filename = calloc(255, sizeof(char));
     fgets(filename, 254, stdin);
@@ -92,6 +132,10 @@ char* prompt_filename() { // produces a string.
 }
 
 static void save(char* source, nat source_length, int argc, const char** argv) {
+    
+    ///TODO: make this store the given prompted filename, somewhere,
+    /// so that next save doesnt require giving the filename.
+    
     const char* filename = argc > 1 ? argv[1] : prompt_filename();
     FILE* file = fopen(filename, "w+");
     if (file) {
@@ -102,9 +146,17 @@ static void save(char* source, nat source_length, int argc, const char** argv) {
     if (argc <= 1) free((char*) filename);
 }
 
+static inline void resave() {
+    /// unimplemented.
+}
+
 static void display(char* source) {
+    struct winsize window;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
     clear_screen();
-    printf("%s", source); // temp: we need to do scrolling.
+    
+    ///TODO: do scrolling based display of local view of text.
+    
     fflush(stdout);
 }
 
@@ -114,7 +166,11 @@ void print_sidebar(enum editor_mode mode, nat point, struct location current, bo
     save_cursor();
     set_cursor(0, window.ws_row);
     clear_line();
-    printf(set_color "%c : %lu = (%lu,%lu) : %s " reset_color, 245L, mode == edit_mode ? 'E' : 'C', point, current.line, current.column, saved ? "saved" : "edited");
+    const char* filename = "replace me";
+    
+    char datetime[16] = {0};
+    get_datetime(datetime);
+    printf(set_color "%s (%lu,%lu) %s" reset_color, 245L, filename, current.line, current.column, datetime);
     restore_cursor();
     fflush(stdout);
 }
@@ -140,89 +196,100 @@ void delete_at(nat at, char** source, nat* source_length) {
     (*source)[*source_length] = '\0';
 }
 
-struct location get_location(nat point, char* source, nat source_length) {
-    struct location result = {.line = 0, .column = 0};
-    for (nat i = 0; i < source_length; i++) {
-        if (i == point) return result;
-        if (source[i] == '\n') {
-            result.line++;
-            result.column = 0;
-        } else result.column++;
-    }
-    return result;
-}
-
-static nat get_insertion_point(struct location desired, char* source, nat source_length) {
-    nat current_line = 0;
-    for (nat i = 0; i < source_length; i++) {
-        if (desired.line == current_line) return i + desired.column;
-        else if (source[i] == '\n') current_line++;
-    }
-    return 0;
-}
+//struct location get_location(nat point, char* source, nat source_length) {
+//    struct location result = {.line = 0, .column = 0};
+//    for (nat i = 0; i < source_length; i++) {
+//        if (i == point) return result;
+//        if (source[i] == '\n') {
+//            result.line++;
+//            result.column = 0;
+//        } else result.column++;
+//    }
+//    return result;
+//}
+//
+//static nat get_insertion_point(struct location desired, char* source, nat source_length) {
+//    nat current_line = 0;
+//    for (nat i = 0; i < source_length; i++) {
+//        if (desired.line == current_line) return i + desired.column;
+//        else if (source[i] == '\n') current_line++;
+//    }
+//    return 0;
+//}
 
 int main(int argc, const char** argv) {
     
-    char * source = NULL;       //* clipboard = NULL, * selection = NULL;
-    nat source_length = 0;      //  clipboard_length = 0, selection_length = 0;
+    char * source = NULL, * clipboard = NULL, * selection = NULL;
+    nat source_length = 0, clipboard_length = 0, selection_length = 0;
     
+    char filename[255] = {0};
     bool saved = true;
     enum editor_mode mode = command_mode;
     char prev1 = 0, prev2 = 0;
     nat point = 0;
+    struct location desired = {.line = 0, .column = 0};
+    //struct location target = {.line = 0, .column = 0};
     
     init_source(argc, argv, &source_length, &source);
     save_screen();
     
+    ///if (target.column) target.column--;
+    
     while (mode != quit) {
         
         struct location cursor = get_location(point, source, source_length);
+        
         display(source);
-        print_sidebar(mode, point, cursor, saved);
+        
+        if (mode != edit_mode)
+            print_sidebar(mode, point, cursor, saved);
+        
         set_cursor(cursor.column+1, cursor.line+1);
         char input = get_character();
         
         if (mode == command_mode) {
             
-            if (input == 'e') {
-                saved = false;
+            if (input == edit_key) {
                 mode = edit_mode;
                 
-            } else if (input == 'o' and cursor.line > 0) {
+            } else if (input == up_key and cursor.line > 0) {
                 move_up();
                 
-                
-            } else if (input == 'i') {
+            } else if (input == down_key) {
                 move_down();
                 
-                cursor.line++;
-                point = get_insertion_point(cursor, source, source_length);
-                
-
-            } else if (input == 'j' and point > 0) {
+            } else if (input == left_key and point > 0) {
                 move_left();
                 point--;
                 
-            } else if (input == ';' and point < source_length) {
+            } else if (input == right_key and point < source_length) {
                 move_right();
                 point++;
                 
-            } else if (input == 'w') { save(source, source_length, argc, argv); saved = true; }
-            else if (input == 'W') { save(source, source_length, argc, argv); saved = true; } /// rename the file?
-            else if (input == 'q' and saved) mode = quit;
-            else if (input == 'Q') mode = quit;
+            } else if (input == jump_key) {
+                
+            } else if (input == cut_key) {
+            } else if (input == copy_key) {
+            } else if (input == paste_key) {
+            } else if (input == find_key) {
+            } else if (input == save_key) { save(source, source_length, argc, argv); saved = true; }
+            else if (input == resave_key) { resave(/*source, source_length, argc, argv*/); saved = true; }
+            else if (input == quit_key and saved) mode = quit;
+            else if (input == force_quit_key) mode = quit;
             
         } else if (mode == edit_mode) {
-            if (trigraph("wef", input, prev1, prev2) or trigraph("oij", input, prev1, prev2)) {
+            if (trigraph(left_command_sequence, input, prev1, prev2) or
+                trigraph(right_command_sequence, input, prev1, prev2)) {
                 if (point > 0) delete_at(point--, &source, &source_length);
                 if (point > 0) delete_at(point--, &source, &source_length);
                 mode = command_mode;
-            } else if (trigraph("ewq", input, prev1, prev2)) {
+            } else if (trigraph(quit_save_command_sequence, input, prev1, prev2)) {
                 if (point > 0) delete_at(point--, &source, &source_length);
                 if (point > 0) delete_at(point--, &source, &source_length);
                 save(source, source_length, argc, argv);
                 mode = quit;
             } else {
+                saved = false;
                 if (input == 127) { if (point > 0) delete_at(point--, &source, &source_length); }
                 else insert(input, point++, &source, &source_length);
             }
