@@ -31,25 +31,41 @@ const long rename_color = 214L;
 const long status_color = 245L;
 const long edited_flag_color = 9L;
 
-//const nat max_filename_length = 255;
 const nat max_path_length = 4096;
 const nat max_message_length = 1024;
 const char delete_key = 127;
 
-const char* left_command_sequence = "wef";
-const char* right_command_sequence = "oij";
-const char* quit_save_command_sequence = "ewq";
+const char* left_exit = "wef";
+const char* right_exit = "oij";
+const char* edit_exit = "wq";
 
 enum key_bindings {
-    edit_key = 'e',
+    
+    // modes:
+    edit_key = 'e',        select_key = 's',
+    
+    // navigation:
     up_key = 'o',           down_key = 'i',
     left_key = 'j',         right_key = ';',
     jump_key = 'k',         find_key = 'l',
-    cut_key = 'd',          copy_key = 'f',
-    paste_key = 'a',        select_key = 's',
-    rename_key = 'W',       save_key = 'w',
+    
+    // text commands:
+    cut_key = 'd',          paste_key = 'a',
+    
+    // undo and redo:
     redo_key = 'r',         undo_key = 'u',
+    
+    // save and quitting:
+    rename_key = 'W',       save_key = 'w',
     force_quit_key = 'Q',   quit_key = 'q',
+    
+    
+    // others:
+    option_key = 'p',       function_key = 'f',
+    
+    // display:
+    status_bar_key = '.',   clear_key = '\t',
+    cursor_key = '\'',
 };
 
 enum editor_mode {
@@ -64,10 +80,20 @@ struct location {
     nat column;
 };
 
-static inline void error(const char* message) {
-    perror(message);
-    exit(1);
-}
+
+
+static inline void save_cursor() { printf("\033[s"); fflush(stdout); }
+static inline void restore_cursor() { printf("\033[u"); fflush(stdout); }
+static inline void set_cursor(nat x, nat y) { printf("\033[%lu;%luH", y, x); fflush(stdout); }
+static inline void hide_cursor() { printf("\033[?25l"); fflush(stdout); }
+static inline void show_cursor() { printf("\033[?25h"); fflush(stdout); }
+static inline void save_screen() { printf("\033[?1049h"); fflush(stdout); }
+static inline void restore_screen() { printf("\033[?1049l"); fflush(stdout); }
+static inline void clear_screen() { printf("\033[1;1H\033[2J"); fflush(stdout); }
+static inline void clear_line() { printf("\033[2K"); }
+static inline void error(const char* message) { perror(message); exit(1); }
+static inline bool bigraph(const char* seq, char c0, char c1) { return c0 == seq[1] and c1 == seq[0]; }
+static inline bool trigraph(const char* seq, char c0, char c1, char c2) { return c0 == seq[2] and c1 == seq[1] and c2 == seq[0]; }
 
 static inline char get_character() {
     struct termios t = {0}; if (tcgetattr(0, &t) < 0) error("tcsetattr()");
@@ -85,61 +111,39 @@ static inline void get_datetime(char buffer[16]) {
     strftime(buffer, 15, "%y%m%d%u.%H%M%S", tm_info);
 }
 
-static inline void save_cursor() { printf("\033[s"); fflush(stdout); }
-static inline void restore_cursor() { printf("\033[u"); fflush(stdout); }
-static inline void set_cursor(nat x, nat y) { printf("\033[%lu;%luH", y, x); fflush(stdout); }
-static inline void save_screen() { printf("\033[?1049h"); fflush(stdout); }
-static inline void restore_screen() { printf("\033[?1049l"); fflush(stdout); }
-static inline void clear_screen() { printf("\033[1;1H\033[2J"); fflush(stdout); }
-static inline void clear_line() { printf("\033[2K"); }
-static inline void move_up() { printf("\033[A"); fflush(stdout); }
-static inline void move_down() { printf("\033[B"); fflush(stdout); }
-static inline void move_right() { printf("\033[C"); fflush(stdout); }
-static inline void move_left() { printf("\033[D"); fflush(stdout); }
-
-static inline bool trigraph(const char* sequence, char input, char previous1, char previous2) {
-    return (input == sequence[2] and previous1 == sequence[1] and previous2 == sequence[0]);
-}
-
-static inline void open_file(int argc, const char** argv, nat* length, char** source, char* filename) {
-    if (argc > 1) {
-        strncpy(filename, argv[1], max_path_length);
-        FILE* file = fopen(filename, "a+");
-        if (not file) error("fopen");
-        fseek(file, 0L, SEEK_END);
-        *length = ftell(file);
-        *source = calloc(*length + 1, sizeof(char));
-        fseek(file, 0L, SEEK_SET);
-        fread(*source, sizeof(char), *length, file);
-        if (ferror(file)) error("read");
-        fclose(file);
-    } else *source = calloc(*length + 1, sizeof(char));
+static inline void open_file(int argc, const char** argv, char** source, nat* length, char* filename) {
+    if (argc == 1) { *source = calloc(1, sizeof(char)); return; }
+    strncpy(filename, argv[1], max_path_length);
+    FILE* file = fopen(filename, "a+");
+    if (not file) error("fopen");
+    fseek(file, 0L, SEEK_END);
+    *length = ftell(file);
+    *source = calloc(*length + 1, sizeof(char));
+    fseek(file, 0L, SEEK_SET);
+    fread(*source, sizeof(char), *length, file);
+    if (ferror(file)) error("read");
+    fclose(file);
 }
 
 void prompt_filename(char* filename) {
     struct winsize window;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-    save_cursor();
-    set_cursor(0, window.ws_row);
-    clear_line();
+    save_cursor(); set_cursor(0, window.ws_row); clear_line();
     printf(set_color "filename: " reset_color, rename_color);
-    fflush(stdout);
-    
-    memset(filename, 0, sizeof(char) * (max_path_length + 1));
-    
+    memset(filename, 0, sizeof(char) * (max_path_length));
     fgets(filename, max_path_length, stdin);
     filename[strlen(filename) - 1] = '\0';
-    
     restore_cursor();
 }
 
-static void save(char* source, nat source_length, char* name) {
-    if (not name and not strlen(name)) prompt_filename(name);
+static void save(char* source, nat source_length, char* name, bool* saved) {
+    if (not name or not strlen(name)) prompt_filename(name);
     FILE* file = fopen(name, "w+");
     if (not file) error("fopen");
     fwrite(source, sizeof(char), source_length, file);
     if (ferror(file)) error("write");
     fclose(file);
+    *saved = true;
 }
 
 static inline void rename_file(char* old, char* message) {
@@ -152,92 +156,30 @@ static inline void rename_file(char* old, char* message) {
     } else strncpy(old, new, max_path_length);
 }
 
-static inline char** convert_into_lines(char* source, nat source_length, nat* line_count) {
-    char** lines = NULL;
-    nat count = 0;
-    for (nat i = 0; i < source_length; i++) {
-        if () {
-            
-            
-        }
-    }
-    
-    return lines;
-}
-
-static void display(char* source, nat source_length, struct location origin) {
-    struct winsize window;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-    
-    nat line_count = 0;
-    char** lines = convert_into_lines(source, source_length, &line_count);
-    
-    char buffer[window.ws_col * window.ws_row];
-    memset(buffer, 0, sizeof buffer);
-    
-    
-    
-    
-    
-    
-    
-    // fill the buffer according to the origin, and source.
-
-    // just draw the buffer:
-    
-    clear_screen();
-    printf("%s", buffer); // this should be "buffer".
-    fflush(stdout);
-}
-
-void print_sidebar(enum editor_mode mode, char* filename,
-                   struct location current, struct location selected,
-                   bool saved, char* message) {
-    
-    ///    1910194.092344 : my_textfile.txt (edited) : 0,0       my cool fun message here.
-    
-    struct winsize window;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-    save_cursor();
-    set_cursor(0, window.ws_row);
-    clear_line();
-    if (mode == command_mode or mode == select_mode) {
-        char datetime[16] = {0};
-        get_datetime(datetime);
-        printf(set_color "%s : %s%s : %lu,%lu", status_color, datetime, filename,
-               saved ? "" : " (edited)", current.line, current.column);
-        if (mode == select_mode) printf(" -> %lu,%lu ", selected.line, selected.column);
-        printf("       %s", message);
-        printf(reset_color);
-    }
-    restore_cursor();
-    fflush(stdout);
-}
-
-void insert(char toinsert, nat at, char** source, nat* source_length) {
-    if (at > *source_length) abort();
-    *source = realloc(*source, sizeof(char) * (*source_length + 1));
-    if (at == *source_length) (*source)[(*source_length)++] = toinsert;
+void insert(char toinsert, nat at, char** source, nat* length) {
+    if (at > *length) abort();
+    *source = realloc(*source, sizeof(char) * (*length + 1));
+    if (at == *length) (*source)[(*length)++] = toinsert;
     else {
-        (*source_length)++;
-        memmove((*source) + at + 1, (*source) + at, (*source_length) - at);
+        (*length)++;
+        memmove((*source) + at + 1, (*source) + at, (*length) - at);
         (*source)[at] = toinsert;
     }
-    (*source)[*source_length] = '\0';
+    (*source)[*length] = '\0'; // do we need this?
 }
 
-void delete_at(nat at, char** source, nat* source_length) {
-    if (at > *source_length) abort();
-    else if (*source_length <= 0) return;
-    if (at != *source_length) memmove((*source) + at, (*source) + at + 1, (*source_length) - at);
-    *source = realloc(*source, sizeof(char) * (*source_length - 1));
-    (*source_length)--;
-    (*source)[*source_length] = '\0';
+void delete_at(nat at, char** source, nat* length) {
+    if (at > *length) abort();
+    else if (!*length) return;
+    if (at != *length) memmove((*source) + at, (*source) + at + 1, (*length) - at);
+    *source = realloc(*source, sizeof(char) * (*length - 1));
+    (*length)--;
+    (*source)[*length] = '\0'; // do we need this?
 }
 
-struct location get_location(nat point, char* source, nat source_length) {
+struct location get_location(nat point, char* source, nat length) {
     struct location result = {.line = 0, .column = 0};
-    for (nat i = 0; i < source_length; i++) {
+    for (nat i = 0; i < length; i++) {
         if (i == point) return result;
         if (source[i] == '\n') {
             result.line++;
@@ -247,70 +189,222 @@ struct location get_location(nat point, char* source, nat source_length) {
     return result;
 }
 
+nat get_point_from_cursor(struct location cursor, char* source, nat length) {
+    nat line = 0, column = 0;
+    for (nat i = 0; i < length; i++) {
+        if (source[i] == '\n') {
+            line++;
+            column = 0;
+        } else column++;
+        if (line == cursor.line and column == cursor.column) return i;
+    }
+    return 0;
+}
+
+
+struct line {
+    char* line;
+    nat length;
+};
+
+
+
+/*
+ 
+ 
+    asdf hi few
+    efkjef
+    weweooooo
+    gg
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ */
+
+static inline struct line* convert_into_lines(char* source, nat length, nat* line_count) {
+    
+    struct line* lines = NULL;
+    nat count = 0;
+    
+    nat i = 0;
+    while (i < length) {
+        
+        lines = realloc(lines, sizeof(struct line) * (count + 1));
+        lines[count].line = source;
+        lines[count].length = 0;
+        while (*source != '\n') {
+            lines[count].length++;
+            source++;
+            i++;
+        }
+        lines[count].length++;
+        source++;
+        i++;
+        count++;
+    }
+    
+    *line_count = count;
+    return lines;
+}
+
+static inline void display(char* source, nat length, struct location origin, struct winsize window) {
+    
+    nat j = 0;
+    char buffer[window.ws_col * window.ws_row];
+    memset(buffer, 0, sizeof buffer);
+    
+    nat line_count = 0;
+    struct line* lines = convert_into_lines(source, length, &line_count);
+    
+    clear_screen();
+    for (nat line = origin.line; line < fmin(origin.line + window.ws_row, line_count - origin.line); line++) {
+        for (nat column = origin.column; column < fmin(origin.column + window.ws_col, lines[line].length - origin.column); column++) {
+            buffer[j++] = lines[line].line[column];
+        }
+    }
+    
+    free(lines);
+    printf("%s", buffer);
+    fflush(stdout);
+}
+
+void print_status_bar(enum editor_mode mode, char* filename, bool saved, char* message,
+                      nat point, struct location cursor, struct location origin, struct location screen, struct location desired,
+                      struct winsize window) {
+    save_cursor();
+    set_cursor(0, window.ws_row);
+    clear_line();
+    char datetime[16] = {0};
+    get_datetime(datetime);
+    printf(set_color "%s : %s%s : ", status_color,
+           datetime, filename, saved ? "" : " (edited)");
+    printf(" p=%lu; c=%lu,%lu; o=%lu,%lu; s=%lu,%lu; d=%lu,%lu   ",
+           point,
+           cursor.line, cursor.column,
+           origin.line, origin.column,
+           screen.line, screen.column,
+           desired.line, desired.column);
+    printf("   %s", message);
+    printf(reset_color);
+    restore_cursor();
+    fflush(stdout);
+}
+
 int main(int argc, const char** argv) {
     
-    char* source = NULL;
-    nat source_length = 0;
-    bool saved = true;
+    char *source = NULL;
+    nat length = 0;
     
-    char name[max_path_length + 1], message[max_message_length + 1];
+    bool saved = true, is_clear = false, show_status = false, should_show_cursor = true;
+    enum editor_mode mode = command_mode;
+    
+    char name[max_path_length], message[max_message_length], c1 = 0, c2 = 0;
     memset(name, 0, sizeof name);
     memset(message, 0, sizeof message);
     
-    char prev1 = 0, prev2 = 0;
-    nat point = 0, select_point = 0;
-    enum editor_mode mode = command_mode;
-    struct location origin = {.line = 0, .column = 0};
-    struct location desired = {.line = 0, .column = 0};
+    nat point = 0;
+    struct location
+    cursor = {.line = 0, .column = 0},
+    origin = {.line = 0, .column = 0},
+    screen = {.line = 0, .column = 0},
+    desired = {.line = 0, .column = 0};
     
-    open_file(argc, argv, &source_length, &source, name);
+    open_file(argc, argv, &source, &length, name);
     save_screen();
     
     while (mode != quit) {
         
-        const struct location cursor = get_location(point, source, source_length);
-        const struct location selected_cursor = get_location(select_point, source, source_length);
-        display(source, source_length, origin);
-        if (mode != edit_mode) print_sidebar(mode, name, cursor, selected_cursor, saved, message);
-        set_cursor(cursor.column + 1, cursor.line + 1);
-        const char input = get_character();
+        nat line_count = 0;
+        struct line* lines = convert_into_lines(source, length, &line_count);
+        
+        point = get_point_from_cursor(cursor, source, length);
+        struct winsize window;
+        ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+        
+        if (is_clear) {
+            clear_screen();
+            hide_cursor();
+        } else {
+            if (should_show_cursor) show_cursor(); else hide_cursor();
+            display(source, length, origin, window);
+            if (show_status) print_status_bar(mode, name, saved, message, point, cursor, origin, screen, desired, window);
+            set_cursor(screen.column + 1, screen.line + 1);
+        }
+        
+        const char c = get_character();
         
         if (mode == command_mode) {
             
-            if (input == up_key and cursor.line > 0) {
-                move_up();
-                
-            } else if (input == down_key) {
-                move_down();
+            if (c == up_key) {
+                if (screen.line) { screen.line--; cursor.line--; }
+                else if (origin.line) { origin.line--; cursor.line--; }
             }
             
-            else if (input == left_key and point > 0) { move_left(); point--; }
-            else if (input == right_key and point < source_length) { move_right(); point++; }
-            else if (input == save_key) { save(source, source_length, name); saved = true; }
-            else if (input == rename_key) { rename_file(name, message); saved = true; }
-            else if (input == quit_key and saved) mode = quit;
-            else if (input == force_quit_key) mode = quit;
-            else if (input == edit_key) mode = edit_mode;
+            else if (c == down_key) {
+                if (screen.line < window.ws_row - 1 - !!show_status) { screen.line++; cursor.line++; }
+                else { origin.line++; cursor.line++; }
+            }
             
+            else if (c == left_key) {
+                
+//                if (not cursor.column) {
+//                    cursor.column = lines[cursor.line].length - 1;
+//                    cursor.line--;
+//                } else {
+                    if (screen.column) { screen.column--; cursor.column--; }
+                    else if (origin.column) { origin.column--; cursor.column--; }
+//                }
+                
+            }
+            
+            else if (c == right_key) {
+                
+//                if (cursor.column == lines[cursor.line].length - 1) {
+//                    cursor.column = 0;
+//                    cursor.line++;
+//                } else {
+                    if (screen.column < window.ws_col - 1) { screen.column++; cursor.column++; }
+                    else { origin.column++; cursor.column++; }
+//                }
+                
+            }
+            
+            else if (c == save_key) save(source, length, name, &saved);
+            else if (c == rename_key) rename_file(name, message);
+            else if (c == quit_key and saved or c == force_quit_key) mode = quit;
+            else if (c == edit_key) mode = edit_mode;
+            else if (c == status_bar_key) show_status = not show_status;
+            else if (c == clear_key) is_clear = not is_clear;
+            else if (c == cursor_key) should_show_cursor = not should_show_cursor;
+        
         } else if (mode == edit_mode) {
-            if (trigraph(left_command_sequence, input, prev1, prev2) or trigraph(right_command_sequence, input, prev1, prev2)) {
-                if (point > 0) delete_at(point--, &source, &source_length);
-                if (point > 0) delete_at(point--, &source, &source_length);
+            if (trigraph(left_exit, c, c1, c2) or trigraph(right_exit, c, c1, c2)) {
+                if (point > 0) delete_at(point--, &source, &length);
+                if (point > 0) delete_at(point--, &source, &length);
                 mode = command_mode;
-            } else if (trigraph(quit_save_command_sequence, input, prev1, prev2)) {
-                if (point > 0) delete_at(point--, &source, &source_length);
-                if (point > 0) delete_at(point--, &source, &source_length);
-                save(source, source_length, name);
+            } else if (bigraph(edit_exit, c, c1)) {
+                if (point > 0) delete_at(point--, &source, &length);
+                save(source, length, name, &saved);
                 mode = quit;
             } else {
                 saved = false;
-                if (input == delete_key and point > 0) delete_at(point--, &source, &source_length);
-                else if (input != delete_key) insert(input, point++, &source, &source_length);
+                if (c == delete_key and point > 0) delete_at(point--, &source, &length);
+                else if (c != delete_key) insert(c, point++, &source, &length);
             }
+            cursor = get_location(point, source, length);
         }
-        prev2 = prev1;
-        prev1 = input;
+        c2 = c1;
+        c1 = c;
+        free(lines);
     }
     free(source);
+    show_cursor();
     restore_screen();
 }
