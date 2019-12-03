@@ -18,12 +18,9 @@
 #define set_color "\033[38;5;%lum"
 #define reset_color "\033[0m"
 const char *save_cursor = "\033[s", *restore_cursor = "\033[u", *hide_cursor = "\033[?25l", *show_cursor = "\033[?25h", *set_cursor = "\033[%lu;%luH",
-*clear_screen = "\033[1;1H\033[2J", *clear_line = "\033[2K", *save_screen = "\033[?1049h", *restore_screen = "\033[?1049l";
+        *clear_screen = "\033[1;1H\033[2J", *clear_line = "\033[2K", *save_screen = "\033[?1049h", *restore_screen = "\033[?1049l";
 
 typedef ssize_t nat;
-
-const char* editor_name = "e";
-const char* editor_version = "0.0.1";
 
 const long rename_color = 214L;
 const long edit_status_color = 235L;
@@ -77,6 +74,7 @@ enum editor_mode {
     hard_edit_mode,
     select_mode,
 };
+
 struct location {
     nat line;
     nat column;
@@ -104,27 +102,6 @@ static inline char get_character() {
     if (tcsetattr(0, TCSADRAIN, &t) < 0) perror("tcsetattr ~ICANON");
     return c;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 static inline void open_file(int argc, const char** argv, char** source, nat* length, char* filename) {
     if (argc == 1) return;
@@ -176,8 +153,8 @@ static inline void display(struct line* lines, nat line_count, struct location o
     char buffer[window.ws_col * window.ws_row];
     memset(buffer, 0, sizeof buffer);
     nat b = 0;
-    for (nat line = origin.line; line < fmin(origin.line + window.ws_row, line_count); line++) {
-        for (nat c = origin.column; c < fmin(origin.column + window.ws_col, lines[line].length); c++) buffer[b++] = lines[line].line[c];
+    for (nat line = origin.line; line < fmin(origin.line + window.ws_row - 1, line_count); line++) {
+        for (nat c = origin.column; c < fmin(origin.column + window.ws_col - 1, lines[line].length); c++) buffer[b++] = lines[line].line[c];
         buffer[b++] = '\n';
     }
     printf("%s", clear_screen);
@@ -197,29 +174,23 @@ static inline void delete(nat at, char** source, nat* length) {
     *source = realloc(*source, sizeof(char) * (--(*length)));
 }
 
-static inline struct line* generate_line_view(char* source, nat source_length, nat* count, nat width) {
-    *count = 0;
+static inline struct line* generate_line_view(char* source, nat* count, nat width) {
+    *count = 1;
     nat length = 0;
     bool continued = false;
-    struct line* lines = NULL;
+    struct line* lines = calloc(1, sizeof(struct line));
+    lines[0] = (struct line){source, 0, false};
     while (*source) {
+        if (*source++ == '\n') { continued = false; length = 0; }
+        else { length++; lines[*count - 1].length++; }
+        if (width and length == width and *source != '\n') { continued = true; length = 0; }
         if (not length) {
             lines = realloc(lines, sizeof(struct line) * (*count + 1));
             lines[*count].line = source;
             lines[*count].continued = continued;
             lines[(*count)++].length = 0;
         }
-        if (*source++ == '\n') { continued = false; length = 0; }
-        else { length++; lines[*count - 1].length++; }
-        if (width and length == width and *source != '\n') { continued = true; length = 0; }
-    }
-    if (source_length > 1 and *--source == '\n') {
-        lines = realloc(lines, sizeof(struct line) * (*count + 1));
-        lines[*count].line = source;
-        lines[*count].continued = false;
-        lines[(*count)++].length = 0;
-    }
-    return lines;
+    } return lines;
 }
 
 //static inline void get_datetime(char buffer[16]) {
@@ -229,14 +200,19 @@ static inline struct line* generate_line_view(char* source, nat source_length, n
 //    strftime(buffer, 15, "%y%m%d%u.%H%M%S", tm_info);
 //}
 
-static inline void print_status_bar(enum editor_mode mode, char* filename, bool saved, char* message, struct location cursor, struct winsize window) {
+static inline void print_status_bar(enum editor_mode mode, char* filename, bool saved, char* message, struct location cursor, struct location screen, struct location origin, struct winsize window) {
     printf("%s", save_cursor);
     printf(set_cursor, window.ws_row, 0);
     printf("%s", clear_line);
     char datetime[16] = {0};
 //    get_datetime(datetime);
     const long color = mode == edit_mode or mode == hard_edit_mode ? edit_status_color : command_status_color;
-    printf("(%zd,%zd) ||| ", cursor.line, cursor.column);
+    
+//    printf("c=%zd,%zd s=%zd,%zd o=%zd,%zd ||| ",
+//           cursor.line, cursor.column,
+//           screen.line, screen.column,
+//           origin.line, origin.column);
+//
     printf(set_color "%s : %s" reset_color
            set_color "%s" reset_color
            set_color ": %s" reset_color,
@@ -246,7 +222,7 @@ static inline void print_status_bar(enum editor_mode mode, char* filename, bool 
     printf("%s", restore_cursor);
 }
 
-static inline void move_up(struct location *cursor, struct location *origin, struct location *screen, struct winsize* window, nat* point, struct line* lines, nat line_count) {
+static inline void move_up(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, nat line_count) {
     
 //    if (not cursor->line) {
 //
@@ -255,100 +231,76 @@ static inline void move_up(struct location *cursor, struct location *origin, str
 //    cursor->line--;
 //    if (screen->line) screen->line--; else if (origin->line) origin->line--;
     
+    
 }
 
-static inline void move_down(struct location *cursor, struct location *origin, struct location *screen, struct winsize* window, nat* point, struct line* lines, nat line_count) {
+static inline void move_down(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, nat line_count, bool showing_status) {
+    
     
 //    if (cursor->line == line_count) {
 //
 //    }
 //
 //    cursor->line++;
-//    if (screen->line < window->ws_row - 1) screen->line++; else origin->line++;
+//    if (screen->line < window.ws_row - 1 - showing_status) screen->line++; else origin->line++;
+    
+    
 }
 
-static inline void move_left(struct location *cursor, struct location *origin, struct location *screen, struct winsize* window,
-                             nat* point, struct line* lines, nat line_count, struct location* desired) {
+static inline void adjust_view(struct location *cursor, struct location *origin, struct location *screen, struct winsize window) {
+    if (cursor->column > window.ws_col - 1) {
+        screen->column = window.ws_col - 1;
+        origin->column = cursor->column - (window.ws_col - 1);
+    } else {
+        screen->column = cursor->column;
+        origin->column = 0;
+    }
+}
+
+static inline void move_left(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, struct location* desired) {
     if (not *point) return;
     if (cursor->column) {
-        cursor->column--;
-        if (screen->column) screen->column--;
-        else if (origin->column) origin->column--;
-        (*point)--;
+        cursor->column--; (*point)--;
+        if (screen->column) screen->column--; else if (origin->column) origin->column--;
     } else if (cursor->line) {
-        
-        // this is the bug. // made a change: delete the cursor->line - 1, to just cl.
-        cursor->column = lines[cursor->line].length - (cursor->line == line_count or lines[cursor->line].continued);
-        // right here ^
-        
-        if (cursor->column > window->ws_col - 1) {
-            screen->column = window->ws_col - 1;
-            origin->column = cursor->column - (window->ws_col - 1);
-        } else {
-            screen->column = cursor->column;
-            origin->column = 0;
-        }
-        cursor->line--;
-        if (screen->line) screen->line--;
-        else if (origin->line) origin->line--;
-        (*point)--;
+        cursor->column = lines[cursor->line - 1].length - lines[cursor->line].continued;
+        adjust_view(cursor, origin, screen, window);
+        cursor->line--; (*point)--;
+        if (screen->line) screen->line--; else if (origin->line) origin->line--;
     }
     *desired = *cursor;
 }
 
-static inline void move_right(struct location* cursor, struct location* origin, struct location* screen, struct winsize* window,
-                              nat* point, struct line* lines, nat line_count, nat length, struct location* desired) {
+static inline void move_right(struct location* cursor, struct location* origin, struct location* screen, struct winsize window, nat* point, struct line* lines, nat line_count, nat length, struct location* desired, bool showing_status) {
     if (*point >= length - 1) return;
-    
     if (cursor->column < lines[cursor->line].length) {
-        cursor->column++;
-        if (screen->column < window->ws_col - 1) screen->column++; else origin->column++;
-        (*point)++;
+        cursor->column++; (*point)++;
+        if (screen->column < window.ws_col - 1) screen->column++; else origin->column++;
     } else if (cursor->line <= line_count) {
-        cursor->line++;
-        if (screen->line < window->ws_row - 1 - 1) screen->line++; else origin->line++;
-        cursor->column = cursor->line == line_count or lines[cursor->line].continued;
-        if (cursor->column > window->ws_col - 1) {
-            screen->column = window->ws_col - 1;
-            origin->column = cursor->column - (window->ws_col - 1);
-        } else {
-            screen->column = cursor->column;
-            origin->column = 0;
-        }
-        (*point)++;
+        cursor->line++; (*point)++;
+        if (screen->line < window.ws_row - 1 - showing_status) screen->line++; else origin->line++;
+        cursor->column = lines[cursor->line].continued;
+        adjust_view(cursor, origin, screen, window);
     }
     *desired = *cursor;
 }
-
-
-/*
- 
- theres a bug in the editor right now, which has to do with downards scrolling, andputting a bunch of newlines and then scrolling back up..
- 
- i dont think that its too hard of a bug.
- 
- */
-
-
-
-
-
-
-
-
 
 //
 //static inline void jump_to(nat line) {
 //
 //}
 
-static inline void backspace(struct location *cursor, struct location *desired, nat *length, nat *line_count, struct line **lines, struct location *origin, nat *point, struct location *screen, char **source, struct winsize *window) {
-    move_left(cursor, origin, screen, window, point, *lines, *line_count, desired);
+static inline void backspace(struct location* cursor, struct location* desired, nat* length, nat* line_count, struct line** lines, struct location *origin, nat* point, struct location* screen, char** source, struct winsize window) {
+    move_left(cursor, origin, screen, window, point, *lines, desired);
     delete(++*point, source, length);
     --*point;
     free(*lines);
-    *lines = generate_line_view(*source, *length, line_count, wrap_width);
+    *lines = generate_line_view(*source, line_count, wrap_width);
 }
+
+/* to do the delete key, simply:  move forwards (actually),      then delete at point,      then move backwards, actually. */
+
+
 
 //static void jump(char c1, struct location *cursor, struct location *desired, bool *jump_to_line, nat length, nat line_count,
 //                 struct line *lines, struct location *origin, nat *point, struct location *screen, struct winsize *window) {
@@ -389,20 +341,18 @@ int main(int argc, const char** argv) {
     
     printf("%s", save_screen);
     open_file(argc, argv, &source, &length, name);
-    struct line* lines = generate_line_view(source, length, &line_count, wrap_width);
+    struct line* lines = generate_line_view(source, &line_count, wrap_width);
     
     while (mode != quit) {
         
         struct winsize window;
-//        ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-        window.ws_col = 10;
-        window.ws_row = 10;
+        ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
         
 //        if (is_clear) { clear_screen(); hide_cursor(); }
 //        else {
 //            if (should_show_cursor) show_cursor(); else hide_cursor();
             display(lines, line_count, origin, window);
-            if (show_status) print_status_bar(mode, name, saved, message, cursor, window);
+            if (show_status) print_status_bar(mode, name, saved, message, cursor, screen, origin, window);
             printf(set_cursor, screen.line + 1, screen.column + 1);
 //        }
         fflush(stdout);
@@ -413,10 +363,10 @@ int main(int argc, const char** argv) {
 //            get_numeric_input(c, &jump_to_line, number);
             if (false) {}
 //            else if (c == jump_key) jump(c, &cursor, &desired, &jump_to_line, length, line_count, lines, &origin, &point, &screen, &window);
-            else if (c == up_key) move_up(&cursor, &origin, &screen, &window, &point, lines, line_count);
-            else if (c == down_key) move_down(&cursor, &origin, &screen, &window, &point, lines, line_count);
-            else if (c == left_key) move_left(&cursor, &origin, &screen, &window, &point, lines, line_count, &desired);
-            else if (c == right_key) move_right(&cursor, &origin, &screen, &window, &point, lines, line_count, length, &desired);
+            else if (c == up_key) move_up(&cursor, &origin, &screen, window, &point, lines, line_count);
+            else if (c == down_key) move_down(&cursor, &origin, &screen, window, &point, lines, line_count, show_status);
+            else if (c == left_key) move_left(&cursor, &origin, &screen, window, &point, lines, &desired);
+            else if (c == right_key) move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired, show_status);
             
 //            else if (c == save_key) save(source, length, name, &saved);
 //            else if (c == rename_key) rename_file(name, message);
@@ -445,12 +395,12 @@ int main(int argc, const char** argv) {
 //            } else if (c == 27) mode = command_mode;
 //                else if (c == 27) mode = command_mode;
             else if (c == 127 and point > 0)
-                backspace(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, &window);
+                backspace(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, window);
             else if (c != 127) {
                 insert(c, point, &source, &length);
                 free(lines);
-                lines = generate_line_view(source, length, &line_count, wrap_width);
-                move_right(&cursor, &origin, &screen, &window, &point, lines, line_count, length, &desired);
+                lines = generate_line_view(source, &line_count, wrap_width);
+                move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired, show_status);
             }
 //        }
 //        c2 = c1;
