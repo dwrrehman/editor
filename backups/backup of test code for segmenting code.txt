@@ -1,0 +1,91 @@
+//
+//  main.c
+//  sandbox1
+//
+//  Created by Daniel Rehman on 1911107.
+//  Copyright © 2019 Daniel Rehman. All rights reserved.
+//
+
+//##########################################################
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
+#include <string.h>
+
+typedef ssize_t nat;
+
+struct line {
+    char* line;
+    nat length;
+};
+
+
+void print_lines(struct line* lines, nat line_count) {
+    printf("printing %d lines: \n\n:::\n", (int) line_count);
+    for (nat i = 0; i < line_count; i++) {
+        printf("#%d: <<<", (int) i);
+        for (nat c = 0; c < lines[i].length; c++)
+            printf("%c", lines[i].line[c]);
+        printf(">>>\n");
+    }
+    printf("\n:::\n\n");
+}
+
+
+void print_pretty_lines(struct line* lines, nat line_count) {
+    printf("pretty printing %d lines: \n\n:::", (int) line_count);
+    for (nat i = 0; i < line_count; i++) {
+        for (nat c = 0; c < lines[i].length; c++)
+            printf("%c", lines[i].line[c]);
+        puts("");
+    }
+    printf(":::\n\n");
+}
+
+static inline struct line*
+segment(char* source, nat* count,
+        const nat width) {
+    nat length = 0;
+    struct line* lines = NULL;
+    while (*source) {
+        
+//        printf("---- processing:  \"%c\"  -------- \n",
+//               *source == '\n' ? 'N' : *source);
+//
+//        if (*source == '\n') {
+//            printf("skipping over newlines.\n");
+//            source++;
+//        }
+        
+        if (!length || *source == '\n' || length == width) {
+//            printf("---> adding a new line!");
+            lines = realloc(lines, sizeof(struct line) * (*count + 1));
+            lines[*count].line = source;
+            lines[(*count)++].length = 0;
+            length = 0;
+        }
+
+//        printf("current line length = %zd, length = %zd, source = %c\n",
+//               lines[*count - 1].length, length, *source);
+//
+        lines[*count - 1].length++;
+        length++;
+        source++;
+    }
+    return lines;
+}
+
+
+int main(int argc, const char * argv[]) {
+    
+    const char* s = "hello\n\nworld\nfrom\nspace.";
+    printf("the source was:\n :::%s:::\n\n", s);
+    
+    nat count = 0;
+    struct line* lines = segment((char*) s, &count, 8);
+    print_lines(lines, count);
+    print_pretty_lines(lines, count);
+    
+    return 0;
+}

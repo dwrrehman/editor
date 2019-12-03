@@ -14,10 +14,10 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "FDF9710A23584A40005F353E"
-               BuildableName = "editor-test"
-               BlueprintName = "editor-test"
-               ReferencedContainer = "container:editor-test.xcodeproj">
+               BlueprintIdentifier = "FDA4B8AD2371328800AD1B57"
+               BuildableName = "editor"
+               BlueprintName = "editor"
+               ReferencedContainer = "container:editor.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -32,10 +32,10 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "FDF9710A23584A40005F353E"
-            BuildableName = "editor-test"
-            BlueprintName = "editor-test"
-            ReferencedContainer = "container:editor-test.xcodeproj">
+            BlueprintIdentifier = "FDA4B8AD2371328800AD1B57"
+            BuildableName = "editor"
+            BlueprintName = "editor"
+            ReferencedContainer = "container:editor.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
       <AdditionalOptions>
@@ -45,29 +45,44 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+      enableAddressSanitizer = "YES"
+      enableASanStackUseAfterReturn = "YES"
+      enableUBSanitizer = "YES"
       launchStyle = "0"
       useCustomWorkingDirectory = "NO"
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
+      stopOnEveryUBSanitizerIssue = "YES"
+      stopOnEveryMainThreadCheckerIssue = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "FDF9710A23584A40005F353E"
-            BuildableName = "editor-test"
-            BlueprintName = "editor-test"
-            ReferencedContainer = "container:editor-test.xcodeproj">
+            BlueprintIdentifier = "FDA4B8AD2371328800AD1B57"
+            BuildableName = "editor"
+            BlueprintName = "editor"
+            ReferencedContainer = "container:editor.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
-            argument = "/Users/deniylreimn/Documents/temp/a.txt"
-            isEnabled = "YES">
+            argument = "/Users/deniylreimn/Documents/temp/simple.txt"
+            isEnabled = "NO">
          </CommandLineArgument>
       </CommandLineArguments>
       <AdditionalOptions>
+         <AdditionalOption
+            key = "NSZombieEnabled"
+            value = "YES"
+            isEnabled = "YES">
+         </AdditionalOption>
+         <AdditionalOption
+            key = "MallocScribble"
+            value = ""
+            isEnabled = "YES">
+         </AdditionalOption>
       </AdditionalOptions>
    </LaunchAction>
    <ProfileAction
@@ -80,10 +95,10 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "FDF9710A23584A40005F353E"
-            BuildableName = "editor-test"
-            BlueprintName = "editor-test"
-            ReferencedContainer = "container:editor-test.xcodeproj">
+            BlueprintIdentifier = "FDA4B8AD2371328800AD1B57"
+            BuildableName = "editor"
+            BlueprintName = "editor"
+            ReferencedContainer = "container:editor.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

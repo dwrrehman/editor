@@ -80,8 +80,6 @@ struct location {
     nat column;
 };
 
-
-
 static inline void save_cursor() { printf("\033[s"); fflush(stdout); }
 static inline void restore_cursor() { printf("\033[u"); fflush(stdout); }
 static inline void set_cursor(nat x, nat y) { printf("\033[%lu;%luH", y, x); fflush(stdout); }
@@ -112,12 +110,13 @@ static inline void get_datetime(char buffer[16]) {
 }
 
 static inline void open_file(int argc, const char** argv, char** source, nat* length, char* filename) {
-    if (argc == 1) { *source = calloc(1, sizeof(char)); return; }
+    if (argc == 1) return;
     strncpy(filename, argv[1], max_path_length);
     FILE* file = fopen(filename, "a+");
     if (not file) error("fopen");
     fseek(file, 0L, SEEK_END);
     *length = ftell(file);
+    free(*source);
     *source = calloc(*length + 1, sizeof(char));
     fseek(file, 0L, SEEK_SET);
     fread(*source, sizeof(char), *length, file);
@@ -161,11 +160,10 @@ void insert(char toinsert, nat at, char** source, nat* length) {
     *source = realloc(*source, sizeof(char) * (*length + 1));
     if (at == *length) (*source)[(*length)++] = toinsert;
     else {
-        (*length)++;
         memmove((*source) + at + 1, (*source) + at, (*length) - at);
+        (*length)++;
         (*source)[at] = toinsert;
     }
-    (*source)[*length] = '\0'; // do we need this?
 }
 
 void delete_at(nat at, char** source, nat* length) {
@@ -177,7 +175,7 @@ void delete_at(nat at, char** source, nat* length) {
     (*source)[*length] = '\0'; // do we need this?
 }
 
-struct location get_location(nat point, char* source, nat length) {
+struct location get_cursor_from_point(nat point, char* source, nat length) {
     struct location result = {.line = 0, .column = 0};
     for (nat i = 0; i < length; i++) {
         if (i == point) return result;
@@ -201,77 +199,14 @@ nat get_point_from_cursor(struct location cursor, char* source, nat length) {
     return 0;
 }
 
-
 struct line {
     char* line;
     nat length;
 };
 
-
-
-/*
- 
- 
-    asdf hi few
-    efkjef
-    weweooooo
-    gg
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- */
-
-static inline struct line* convert_into_lines(char* source, nat length, nat* line_count) {
-    
-    struct line* lines = NULL;
-    nat count = 0;
-    
-    nat i = 0;
-    while (i < length) {
-        
-        lines = realloc(lines, sizeof(struct line) * (count + 1));
-        lines[count].line = source;
-        lines[count].length = 0;
-        while (*source != '\n') {
-            lines[count].length++;
-            source++;
-            i++;
-        }
-        lines[count].length++;
-        source++;
-        i++;
-        count++;
-    }
-    
-    *line_count = count;
-    return lines;
-}
-
 static inline void display(char* source, nat length, struct location origin, struct winsize window) {
-    
-    nat j = 0;
-    char buffer[window.ws_col * window.ws_row];
-    memset(buffer, 0, sizeof buffer);
-    
-    nat line_count = 0;
-    struct line* lines = convert_into_lines(source, length, &line_count);
-    
     clear_screen();
-    for (nat line = origin.line; line < fmin(origin.line + window.ws_row, line_count - origin.line); line++) {
-        for (nat column = origin.column; column < fmin(origin.column + window.ws_col, lines[line].length - origin.column); column++) {
-            buffer[j++] = lines[line].line[column];
-        }
-    }
-    
-    free(lines);
-    printf("%s", buffer);
+    printf("%s", source);
     fflush(stdout);
 }
 
@@ -299,8 +234,8 @@ void print_status_bar(enum editor_mode mode, char* filename, bool saved, char* m
 
 int main(int argc, const char** argv) {
     
-    char *source = NULL;
-    nat length = 0;
+    char* source = calloc(1, sizeof(char));
+    nat length = 1;
     
     bool saved = true, is_clear = false, show_status = false, should_show_cursor = true;
     enum editor_mode mode = command_mode;
@@ -316,13 +251,15 @@ int main(int argc, const char** argv) {
     screen = {.line = 0, .column = 0},
     desired = {.line = 0, .column = 0};
     
-    open_file(argc, argv, &source, &length, name);
     save_screen();
     
+    open_file(argc, argv, &source, &length, name);
+    nat line_count = 0;
+    struct line* lines = convert_into_lines(source, length, &line_count);
+
     while (mode != quit) {
         
-        nat line_count = 0;
-        struct line* lines = convert_into_lines(source, length, &line_count);
+        
         
         point = get_point_from_cursor(cursor, source, length);
         struct winsize window;
@@ -337,7 +274,6 @@ int main(int argc, const char** argv) {
             if (show_status) print_status_bar(mode, name, saved, message, point, cursor, origin, screen, desired, window);
             set_cursor(screen.column + 1, screen.line + 1);
         }
-        
         const char c = get_character();
         
         if (mode == command_mode) {
@@ -353,27 +289,13 @@ int main(int argc, const char** argv) {
             }
             
             else if (c == left_key) {
-                
-//                if (not cursor.column) {
-//                    cursor.column = lines[cursor.line].length - 1;
-//                    cursor.line--;
-//                } else {
-                    if (screen.column) { screen.column--; cursor.column--; }
-                    else if (origin.column) { origin.column--; cursor.column--; }
-//                }
-                
+                if (screen.column) { screen.column--; cursor.column--; }
+                else if (origin.column) { origin.column--; cursor.column--; }
             }
             
             else if (c == right_key) {
-                
-//                if (cursor.column == lines[cursor.line].length - 1) {
-//                    cursor.column = 0;
-//                    cursor.line++;
-//                } else {
-                    if (screen.column < window.ws_col - 1) { screen.column++; cursor.column++; }
-                    else { origin.column++; cursor.column++; }
-//                }
-                
+                if (screen.column < window.ws_col - 1) { screen.column++; cursor.column++; }
+                else { origin.column++; cursor.column++; }
             }
             
             else if (c == save_key) save(source, length, name, &saved);
@@ -398,7 +320,6 @@ int main(int argc, const char** argv) {
                 if (c == delete_key and point > 0) delete_at(point--, &source, &length);
                 else if (c != delete_key) insert(c, point++, &source, &length);
             }
-            cursor = get_location(point, source, length);
         }
         c2 = c1;
         c1 = c;
