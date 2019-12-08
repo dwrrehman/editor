@@ -95,6 +95,7 @@ static inline void open_file(int argc, const char** argv, char** source, nat* le
     free(*source);
     *source = calloc(*length, sizeof(char));
 //    for (nat i = 0; i < *length - 1; i++) if (not isprint((*source)[i])) (*source)[i] = '?';
+    ///TODO: get this editor to work with unicode characters, and ignore non printable characters.
     fseek(file, 0L, SEEK_SET);
     fread(*source, sizeof(char), *length - 1, file);
     if (ferror(file)) { perror("read"); exit(1); }
@@ -132,7 +133,7 @@ static inline void rename_file(char* old, char* message) {
     } else strncpy(old, new, 4096);
 }
 
-static inline void display(struct line* lines, nat line_count, struct location origin, struct winsize window) {
+static inline void display(struct line* lines, nat line_count, struct location origin, struct winsize window, bool showing_status) {
     char buffer[10000]; // window.ws_col * window.ws_row
     memset(buffer, 0, sizeof buffer);
     nat b = 0;
@@ -206,14 +207,13 @@ static inline void print_status_bar(enum editor_mode mode, char* filename, bool 
 }
 
 static inline void move_up(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, nat line_count) {
-    
+
 //    if (not cursor->line) {
 //
 //    }
 //
 //    cursor->line--;
 //    if (screen->line) screen->line--; else if (origin->line) origin->line--;
-    
     
 }
 
@@ -260,7 +260,7 @@ static inline void move_right(struct location* cursor, struct location* origin, 
         if (screen->column < window.ws_col - 1) screen->column++; else origin->column++;
     } else if (cursor->line < line_count - 1) {
         cursor->line++; (*point)++;
-        if (screen->line < window.ws_row - 1 - showing_status) screen->line++; else origin->line++;
+        if (screen->line < window.ws_row - 2) screen->line++; else origin->line++;
         cursor->column = lines[cursor->line].continued;
         adjust_view(cursor, origin, screen, window);
     }
@@ -314,11 +314,31 @@ static inline void get_numeric_input(char c, bool* jump_to_line, char* number) {
     }
 }
 
+
+bool confirmed() {
+    char response[6];
+    struct winsize window;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+    printf("%s", save_cursor); printf(set_cursor, window.ws_row, 0); printf("%s", clear_line);
+    printf(set_color "quit without saving? (yes/no): " reset_color, rename_color);
+    memset(response, 0, sizeof(char) * (6));
+    fgets(response, 5, stdin);
+    response[strlen(response) - 1] = '\0';
+    printf("%s", restore_cursor);
+    bool confirmed = not strncmp(response, "yes", 3);
+    memset(response, 0, sizeof(char) * (6));
+    return confirmed;
+}
+
+static void try_quit(char c, enum editor_mode* mode, bool saved) {
+    if ((c == quit_key and saved) or c == force_quit_key and (saved or confirmed())) *mode = quit;
+}
+
 int main(int argc, const char** argv) {
     
     enum editor_mode mode = command_mode;
     nat line_count = 0, length = 1, point = 0;
-    bool saved = true, is_clear = false, should_show_cursor = true, show_status = true, jump_to_line = false;
+    bool saved = true, is_clear = false, should_show_cursor = true, show_status = false, jump_to_line = false;
     struct location cursor = {0,0}, origin = {0,0}, screen = {0,0}, desired = {0,0};
     char* source = calloc(1, sizeof(char)), name[4096] = {0}, message[1024] = {0}, number[256] = {0}, c = 0, c1 = 0, c2 = 0;
     
@@ -334,7 +354,7 @@ int main(int argc, const char** argv) {
         if (is_clear) { printf("%s", clear_screen); printf("%s", hide_cursor); }
         else {
             if (should_show_cursor) printf("%s", show_cursor); else printf("%s", hide_cursor);
-            display(lines, line_count, origin, window);
+            display(lines, line_count, origin, window, show_status);
             if (show_status) print_status_bar(mode, name, saved, message, cursor, screen, origin, window);
             printf(set_cursor, screen.line + 1, screen.column + 1);
         }
@@ -342,7 +362,7 @@ int main(int argc, const char** argv) {
         c = get_character();
         
         if (mode == command_mode) {
-        
+            
             get_numeric_input(c, &jump_to_line, number);
             if (false) {}
             else if (c == jump_key) jump(c, &cursor, &desired, &jump_to_line, length, line_count, lines, &origin, &point, &screen, window, show_status);
@@ -352,15 +372,16 @@ int main(int argc, const char** argv) {
             else if (c == right_key) move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired, show_status);
             else if (c == save_key) save(source, length, name, &saved);
             else if (c == rename_key) rename_file(name, message);
-            else if (c == quit_key and saved or c == force_quit_key) mode = quit;
+            else if (c == quit_key and saved or c == force_quit_key) try_quit(c, &mode, saved);
             else if (c == force_quit_key) mode = quit;
             else if (c == edit_key) mode = edit_mode;
             else if (c == hard_edit_key) mode = hard_edit_mode;
             else if (c == select_key) mode = select_mode;
-            else if (c == status_bar_key) show_status = not show_status;
+            else if (c == status_bar_key) { show_status = not show_status; memset(message, 0, sizeof message); }
             else if (c == clear_key) is_clear = not is_clear;
             else if (c == cursor_key) should_show_cursor = not should_show_cursor;
-        
+            else if (c == function_key) {}
+            
         } else if (mode == edit_mode or mode == hard_edit_mode) {
             saved = false;
             
@@ -390,7 +411,7 @@ int main(int argc, const char** argv) {
                 
             } else if (c == 127 and point > 0)
                 backspace(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, window);
-            else if (c != 127 and (isprint(c) or c == '\n' or c == '\t')) {
+            else if (c != 127 and c != 27 and (isprint(c) or c == '\n' or c == '\t')) {
                 insert(c, point, &source, &length);
                 free(lines);
                 lines = generate_line_view(source, &line_count, wrap_width);
@@ -401,5 +422,6 @@ int main(int argc, const char** argv) {
         c1 = c;
     }
     free(source);
+    printf("%s", show_cursor);
     printf("%s", restore_screen);
 }
