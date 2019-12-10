@@ -88,7 +88,7 @@
 		FDA4B8A62371328800AD1B57 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 1020;
+				LastUpgradeCheck = 1120;
 				ORGANIZATIONNAME = "Daniel Rehman";
 				TargetAttributes = {
 					FDA4B8AD2371328800AD1B57 = {
@@ -102,6 +102,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				Base,
 			);
 			mainGroup = FDA4B8A52371328800AD1B57;
 			productRefGroup = FDA4B8AF2371328800AD1B57 /* Products */;
@@ -242,6 +243,7 @@
 				CLANG_ADDRESS_SANITIZER_CONTAINER_OVERFLOW = YES;
 				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_INTEGER = YES;
 				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_NULLABILITY = YES;
+				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = JTMD2SW5KN;
 				GCC_WARN_PEDANTIC = YES;
@@ -261,6 +263,7 @@
 				CLANG_ADDRESS_SANITIZER_CONTAINER_OVERFLOW = YES;
 				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_INTEGER = YES;
 				CLANG_UNDEFINED_BEHAVIOR_SANITIZER_NULLABILITY = YES;
+				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = JTMD2SW5KN;
 				GCC_WARN_PEDANTIC = YES;
@@ -284,7 +287,7 @@
 				FDA4B8B42371328800AD1B57 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 		FDA4B8B52371328800AD1B57 /* Build configuration list for PBXNativeTarget "editor" */ = {
 			isa = XCConfigurationList;
@@ -293,7 +296,7 @@
 				FDA4B8B72371328800AD1B57 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
 	};

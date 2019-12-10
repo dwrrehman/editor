@@ -5,6 +5,7 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
+#include <errno.h>
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/ioctl.h>
@@ -24,9 +25,13 @@ const long rename_color = 214L;
 const long edit_status_color = 235L;
 const long command_status_color = 245L;
 const long edited_flag_color = 130L;
+struct termios terminal = {0};
 
-const char *save_cursor = "\033[s", *restore_cursor = "\033[u", *hide_cursor = "\033[?25l", *show_cursor = "\033[?25h", *set_cursor = "\033[%lu;%luH", *clear_screen = "\033[1;1H\033[2J", *clear_line = "\033[2K", *save_screen = "\033[?1049h", *restore_screen = "\033[?1049l";
-const char *left_exit = "wef", *right_exit = "oij", *edit_exit = "wq", *jump_top = "ko", *jump_bottom = "km", *jump_begin = "kj", *jump_end = "kl";
+const char *save_cursor = "\033[s", *restore_cursor = "\033[u", *hide_cursor = "\033[?25l",
+*show_cursor = "\033[?25h", *set_cursor = "\033[%lu;%luH", *clear_screen = "\033[1;1H\033[2J",
+*clear_line = "\033[2K", *save_screen = "\033[?1049h", *restore_screen = "\033[?1049l";
+const char *left_exit = "wef", *right_exit = "oij", *edit_exit = "wq", *jump_top = "ko",
+*jump_bottom = "km", *jump_begin = "kj", *jump_end = "kl";
 
 // globals:
 static nat wrap_width = 100;
@@ -40,6 +45,8 @@ enum key_bindings {
     jump_key = 'k',         find_key = 'l',
 
     cut_key = 'd',          paste_key = 'a',
+    delete_key = 'D',
+    
     redo_key = 'r',         undo_key = 'u',
     rename_key = 'W',       save_key = 'w',
     force_quit_key = 'Q',   quit_key = 'q',
@@ -68,21 +75,66 @@ struct line {
     bool continued;
 };
 
-struct buffer {
+struct clipboard {
     nat index;
     char* text;
+};
+
+struct file {
+    struct line* lines;
+    struct location cursor;
+    struct location screen;
+    struct location origin;
+    struct location desired;
+    enum editor_mode mode;
+    nat line_count;
+    nat length;
+    bool saved;
+    bool is_clear;
+    bool showing_cursor;
+    bool showing_status;
+    bool jump_to_line;
+    char name[4096];
+    char* source;
 };
 
 static inline bool bigraph(const char* seq, char c0, char c1) { return c0 == seq[1] and c1 == seq[0]; }
 static inline bool trigraph(const char* seq, char c0, char c1, char c2) { return c0 == seq[2] and c1 == seq[1] and c2 == seq[0]; }
 
+static inline void restore_terminal() {
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) < 0) {
+        perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal))");
+        abort();
+    }
+}
+
+void configure_terminal() {
+    if (tcgetattr(STDIN_FILENO, &terminal) < 0) { perror("tcgetattr(STDIN_FILENO, &terminal)"); abort(); }
+    atexit(restore_terminal);
+    struct termios raw = terminal;
+    raw.c_lflag &= ~(ECHO | ICANON);
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) < 0) {
+        perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)");
+        abort();
+    }
+}
+
 static inline char get_character() {
-    struct termios t = {0}; if (tcgetattr(0, &t) < 0) perror("tcsetattr()");
-    t.c_lflag &= ~ICANON; t.c_lflag &= ~ECHO; t.c_cc[VMIN] = 1; t.c_cc[VTIME] = 0;
-    if (tcsetattr(0, TCSANOW, &t) < 0) perror("tcsetattr ICANON");
-    char c = 0; if (read(0, &c, 1) < 0) perror("read()"); t.c_lflag |= ICANON; t.c_lflag |= ECHO;
-    if (tcsetattr(0, TCSADRAIN, &t) < 0) perror("tcsetattr ~ICANON");
-    return c;
+    char c = 0;
+    
+    const ssize_t n = read(STDIN_FILENO, &c, 1);
+    
+    if (n < 0) {
+        printf("n < 0 : ");
+        perror("read(STDIN_FILENO, &c, 1) syscall");
+        abort();
+        
+    } else if (n == 0) {
+        printf("n == 0 : ");
+        perror("read(STDIN_FILENO, &c, 1) syscall");
+        abort();
+        
+    } else return c;
 }
 
 static inline void open_file(int argc, const char** argv, char** source, nat* length, char* filename) {
@@ -108,32 +160,34 @@ static inline void prompt_filename(char* filename) {
     printf("%s", save_cursor); printf(set_cursor, window.ws_row, 0); printf("%s", clear_line);
     printf(set_color "filename: " reset_color, rename_color);
     memset(filename, 0, sizeof(char) * (4096));
+    restore_terminal();
     fgets(filename, 4096, stdin);
+    configure_terminal();
     filename[strlen(filename) - 1] = '\0';
     printf("%s", restore_cursor);
 }
 
-static inline void save(char* source, nat source_length, char* name, bool* saved) {
+static inline void save(char* source, nat source_length, char* name, bool* saved, char* message) {
     if (not name or not strlen(name)) prompt_filename(name);
+    if (not strlen(name)) { strcpy(message, "aborted save."); return; }
     FILE* file = fopen(name, "w+");
-    if (not file) perror("fopen");
-    fwrite(source, sizeof(char), source_length, file);
+    if (not file) { sprintf(message, "save unsuccessful: %s", strerror(errno)); return; }
+    else fwrite(source, sizeof(char), source_length, file);
     if (ferror(file)) perror("write");
     fclose(file);
     *saved = true;
 }
 
 static inline void rename_file(char* old, char* message) {
-    char new[4096 + 1];
+    char new[4096];
     prompt_filename(new);
+    if (not strlen(new)) { strcpy(message, "aborted rename."); return; }
     if (rename(old, new)) {
-        char* error_string = strerror(errno);
-        strcpy(message, "rename unsuccessful: ");
-        strcat(message, error_string);
+        sprintf(message, "rename unsuccessful: %s", strerror(errno));
     } else strncpy(old, new, 4096);
 }
 
-static inline void display(struct line* lines, nat line_count, struct location origin, struct winsize window, bool showing_status) {
+static inline void display(struct line* lines, nat line_count, struct location origin, struct winsize window) {
     char buffer[10000]; // window.ws_col * window.ws_row
     memset(buffer, 0, sizeof buffer);
     nat b = 0;
@@ -192,7 +246,7 @@ static inline void print_status_bar(enum editor_mode mode, char* filename, bool 
     get_datetime(datetime);
     const long color = mode == edit_mode or mode == hard_edit_mode ? edit_status_color : command_status_color;
     
-    printf("debug: c=%zd,%zd s=%zd,%zd o=%zd,%zd | ",
+    printf("c=%zd,%zd s=%zd,%zd o=%zd,%zd | ",
            cursor.line, cursor.column,
            screen.line, screen.column,
            origin.line, origin.column);
@@ -253,7 +307,7 @@ static inline void move_left(struct location *cursor, struct location *origin, s
     *desired = *cursor;
 }
 
-static inline void move_right(struct location* cursor, struct location* origin, struct location* screen, struct winsize window, nat* point, struct line* lines, nat line_count, nat length, struct location* desired, bool showing_status) {
+static inline void move_right(struct location* cursor, struct location* origin, struct location* screen, struct winsize window, nat* point, struct line* lines, nat line_count, nat length, struct location* desired) {
     if (*point >= length - 1) return;
     if (cursor->column < lines[cursor->line].length) {
         cursor->column++; (*point)++;
@@ -275,32 +329,30 @@ static inline void jump_to(nat line) {
 
 static inline void backspace(struct location* cursor, struct location* desired, nat* length, nat* line_count, struct line** lines, struct location *origin, nat* point, struct location* screen, char** source, struct winsize window) {
     move_left(cursor, origin, screen, window, point, *lines, desired);
-    delete(++*point, source, length);
-    --*point;
+    delete((*point) + 1, source, length);
     free(*lines);
     *lines = generate_line_view(*source, line_count, wrap_width);
 }
 
-static inline void delete_forwards(struct location* cursor, struct location* desired, nat* length, nat* line_count, struct line** lines, struct location *origin, nat* point, struct location* screen, char** source, struct winsize window, bool show_status) {
-    move_right(cursor, origin, screen, window, point, *lines, *line_count, *length, desired, show_status);
+static inline void delete_forwards(struct location* cursor, struct location* desired, nat* length, nat* line_count, struct line** lines, struct location *origin, nat* point, struct location* screen, char** source, struct winsize window) {
+    move_right(cursor, origin, screen, window, point, *lines, *line_count, *length, desired);
     delete(*point, source, length);
     move_left(cursor, origin, screen, window, point, *lines, desired);
     free(*lines);
     *lines = generate_line_view(*source, line_count, wrap_width);
 }
 
-static void jump(char c1, struct location *cursor, struct location *desired, bool *jump_to_line, nat length, nat line_count,
-                 struct line *lines, struct location *origin, nat *point, struct location *screen, struct winsize window, bool show_status) {
+static void jump(char c1, struct location *cursor, struct location *desired, bool *jump_to_line, nat length, nat line_count, struct line *lines, struct location *origin, nat *point, struct location *screen, struct winsize window) {
     const char c0 = get_character();
     if (bigraph(jump_top, c0, c1)) {
         *screen = *cursor = *origin = (struct location){0, 0}; *point = 0;
     } else if (bigraph(jump_bottom, c0, c1)) {
 //        while (cursor->line < line_count - 1) move_down(...);
-        while (cursor->column < lines[cursor->line].length) move_right(cursor, origin, screen, window, point, lines, line_count, length, desired, show_status);
+        while (cursor->column < lines[cursor->line].length) move_right(cursor, origin, screen, window, point, lines, line_count, length, desired);
     } else if (bigraph(jump_begin, c0, c1)) {
         while (cursor->column) move_left(cursor, origin, screen, window, point, lines, desired);
     } else if (bigraph(jump_end, c0, c1)) {
-        while (cursor->column < lines[cursor->line].length) move_right(cursor, origin, screen, window, point, lines, line_count, length, desired, show_status);
+        while (cursor->column < lines[cursor->line].length) move_right(cursor, origin, screen, window, point, lines, line_count, length, desired);
     } else if (c1 == 'n') *jump_to_line = true;
 }
 
@@ -322,7 +374,9 @@ bool confirmed() {
     printf("%s", save_cursor); printf(set_cursor, window.ws_row, 0); printf("%s", clear_line);
     printf(set_color "quit without saving? (yes/no): " reset_color, rename_color);
     memset(response, 0, sizeof(char) * (6));
+    restore_terminal();
     fgets(response, 5, stdin);
+    configure_terminal();
     response[strlen(response) - 1] = '\0';
     printf("%s", restore_cursor);
     bool confirmed = not strncmp(response, "yes", 3);
@@ -338,14 +392,15 @@ int main(int argc, const char** argv) {
     
     enum editor_mode mode = command_mode;
     nat line_count = 0, length = 1, point = 0;
-    bool saved = true, is_clear = false, should_show_cursor = true, show_status = false, jump_to_line = false;
+    bool saved = true, is_clear = false, should_show_cursor = true, show_status = true, jump_to_line = false;
     struct location cursor = {0,0}, origin = {0,0}, screen = {0,0}, desired = {0,0};
     char* source = calloc(1, sizeof(char)), name[4096] = {0}, message[1024] = {0}, number[256] = {0}, c = 0, c1 = 0, c2 = 0;
     
     printf("%s", save_screen);
+    configure_terminal();
     open_file(argc, argv, &source, &length, name);
     struct line* lines = generate_line_view(source, &line_count, wrap_width);
-    
+
     while (mode != quit) {
         
         struct winsize window;
@@ -354,7 +409,7 @@ int main(int argc, const char** argv) {
         if (is_clear) { printf("%s", clear_screen); printf("%s", hide_cursor); }
         else {
             if (should_show_cursor) printf("%s", show_cursor); else printf("%s", hide_cursor);
-            display(lines, line_count, origin, window, show_status);
+            display(lines, line_count, origin, window);
             if (show_status) print_status_bar(mode, name, saved, message, cursor, screen, origin, window);
             printf(set_cursor, screen.line + 1, screen.column + 1);
         }
@@ -365,34 +420,44 @@ int main(int argc, const char** argv) {
             
             get_numeric_input(c, &jump_to_line, number);
             if (false) {}
-            else if (c == jump_key) jump(c, &cursor, &desired, &jump_to_line, length, line_count, lines, &origin, &point, &screen, window, show_status);
+            
+            else if (c == jump_key) jump(c, &cursor, &desired, &jump_to_line, length, line_count, lines, &origin, &point, &screen, window);
+            
             else if (c == up_key) move_up(&cursor, &origin, &screen, window, &point, lines, line_count);
             else if (c == down_key) move_down(&cursor, &origin, &screen, window, &point, lines, line_count, show_status);
             else if (c == left_key) move_left(&cursor, &origin, &screen, window, &point, lines, &desired);
-            else if (c == right_key) move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired, show_status);
-            else if (c == save_key) save(source, length, name, &saved);
+            else if (c == right_key) move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired);
+            
+            else if (c == save_key) save(source, length, name, &saved, message);
             else if (c == rename_key) rename_file(name, message);
             else if (c == quit_key and saved or c == force_quit_key) try_quit(c, &mode, saved);
             else if (c == force_quit_key) mode = quit;
+            
             else if (c == edit_key) mode = edit_mode;
             else if (c == hard_edit_key) mode = hard_edit_mode;
+            
             else if (c == select_key) mode = select_mode;
-            else if (c == status_bar_key) { show_status = not show_status; memset(message, 0, sizeof message); }
-            else if (c == clear_key) is_clear = not is_clear;
+            
+            else if (c == status_bar_key) show_status = not show_status;
+            else if (c == clear_key) { is_clear = not is_clear; strcpy(message, ""); }
             else if (c == cursor_key) should_show_cursor = not should_show_cursor;
+            
             else if (c == function_key) {}
+            
+            else if (c == paste_key) { /*paste*/ }
+            else if (c == cut_key) { /*cut*/ }
             
         } else if (mode == edit_mode or mode == hard_edit_mode) {
             saved = false;
             
-            if ((trigraph(left_exit, c, c1, c2) or trigraph(right_exit, c, c1, c2)) and mode == edit_mode) {
+            if ((trigraph(left_exit, c, c1, c2) or trigraph(right_exit, c, c1, c2)) and mode == edit_mode and point > 1) {
                 backspace(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, window);
                 backspace(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, window);
                 mode = command_mode;
 
-            } else if (bigraph(edit_exit, c, c1) and mode == edit_mode) {
+            } else if (bigraph(edit_exit, c, c1) and mode == edit_mode and point) {
                 backspace(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, window);
-                save(source, length, name, &saved);
+                save(source, length, name, &saved, message);
                 mode = quit;
             }
             
@@ -403,10 +468,12 @@ int main(int argc, const char** argv) {
                     c = get_character();
                     if (c == 'A') move_up(&cursor, &origin, &screen, window, &point, lines, line_count);
                     else if (c == 'B') move_down(&cursor, &origin, &screen, window, &point, lines, line_count, show_status);
-                    else if (c == 'C') move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired, show_status);
+                    else if (c == 'C') move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired);
                     else if (c == 'D') move_left(&cursor, &origin, &screen, window, &point, lines, &desired);
+                } else if (c == 'd') {
+                    delete_forwards(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, window);
                 } else {
-                    strcpy(message, "error: unknown escape code.");
+                    sprintf(message, "error: unknown escape code: %c (%d)", c, (int) c);
                 }
                 
             } else if (c == 127 and point > 0)
@@ -415,8 +482,13 @@ int main(int argc, const char** argv) {
                 insert(c, point, &source, &length);
                 free(lines);
                 lines = generate_line_view(source, &line_count, wrap_width);
-                move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired, show_status);
+                move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired);
+            } else {
+                sprintf(message, "trying to execute bad edit, aborting.");
             }
+        } else {
+            sprintf(message, "entered erroneous mode %d, reverting to command mode.", mode);
+            mode = command_mode;
         }
         c2 = c1;
         c1 = c;
@@ -424,4 +496,5 @@ int main(int argc, const char** argv) {
     free(source);
     printf("%s", show_cursor);
     printf("%s", restore_screen);
+    restore_terminal();
 }
