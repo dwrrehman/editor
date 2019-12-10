@@ -484,12 +484,9 @@ int main(int argc, const char** argv) {
                 lines = generate_line_view(source, &line_count, wrap_width);
                 move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired);
             } else {
-                sprintf(message, "trying to execute bad edit, aborting.");
+                
             }
-        } else {
-            sprintf(message, "entered erroneous mode %d, reverting to command mode.", mode);
-            mode = command_mode;
-        }
+        } else mode = command_mode;
         c2 = c1;
         c1 = c;
     }
