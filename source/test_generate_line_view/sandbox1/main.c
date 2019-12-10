@@ -48,7 +48,7 @@ void print_pretty_lines(struct line* lines, nat line_count) {
     printf(":::\n\n");
 }
 
-static inline struct line* generate_line_view(char* source, nat source_length, nat* count, nat width) {
+static inline struct line* generate_line_view(char* source, nat* count, nat width) {
     *count = 1;
     nat length = 0;
     bool continued = false;
@@ -66,7 +66,6 @@ static inline struct line* generate_line_view(char* source, nat source_length, n
         }
     } return lines;
 }
-
 
 int main(int argc, const char * argv[]) {
     
@@ -88,7 +87,7 @@ int main(int argc, const char * argv[]) {
     printf("the source was:\n :::%s:::\n\n", s);
     
     nat count = 0;
-    struct line* lines = generate_line_view((char*) s, strlen(s) + 1, &count, 10);
+    struct line* lines = generate_line_view((char*) s, &count, 10);
     print_lines(lines, count);
     print_pretty_lines(lines, count);
     
