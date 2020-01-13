@@ -328,6 +328,8 @@ static inline void move_up(struct location *cursor, struct location *origin, str
         sprintf(message, "target=%zd,%zd,  current=%zd,%zd", line_target, column_target, cursor->line, cursor->column);
         move_left(cursor, origin, screen, window, point, lines, desired, false);
     }
+    
+    adjust_view(cursor, origin, screen, window);
 }
 
 static inline void move_down(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, nat line_count, nat length, struct location* desired, char* message) {
@@ -351,6 +353,9 @@ static inline void move_down(struct location *cursor, struct location *origin, s
         sprintf(message, "target=%zd,%zd,  current=%zd,%zd", line_target, column_target, cursor->line, cursor->column);
         move_right(cursor, origin, screen, window, point, lines, line_count, length, desired, false);
     }
+    
+    adjust_view(cursor, origin, screen, window);
+    
     ///TODO: bug: skips over some lines, when going down on col = 0, on contining line.
 }
 
