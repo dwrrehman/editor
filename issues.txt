@@ -1,12 +1,26 @@
-currrent outstanding issues:
+currrent outstanding issues in the editor:
+===========================================
 
-x: - we dont deal with tabs properly right now. that is something we have to solve.;
 
 
-- we arent displaying line numbers. ---> make this an option, or function. (set line number)
 
-x: - we have bug with the cursor desynching from the point, and cursor.... its weird....
-- - specfically it ususally happens when we resize the terminal size, then it generlly happens, not before. so yeah.
 
-x: - we have a bigger bug oour down arrow not working.
-- - essentially what happens, is that we dont make undertand that if its a contiuned line, then we still need to go through each 100 charcter subsections, when we press down. instead of just skipping over the whole line in one swoop regardlesss of line length.
+BUGS:
+=============
+
+
+
+
+FEATURES:
+=============
+
+
+
+
+
+- we arent displaying line numbers. 
+	---> make this an option, or function. (line numbers)
+
+
+
+
