@@ -103,6 +103,7 @@ static inline bool bigraph(const char* seq, char c0, char c1) { return c0 == seq
 static inline bool trigraph(const char* seq, char c0, char c1, char c2) { return c0 == seq[2] and c1 == seq[1] and c2 == seq[0]; }
 
 static inline void restore_terminal() {
+    printf("%s", show_cursor);
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) < 0) {
         perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal))");
         abort();
@@ -110,6 +111,7 @@ static inline void restore_terminal() {
 }
 
 void configure_terminal() {
+    printf("%s", hide_cursor);
     if (tcgetattr(STDIN_FILENO, &terminal) < 0) { perror("tcgetattr(STDIN_FILENO, &terminal)"); abort(); }
     atexit(restore_terminal);
     struct termios raw = terminal;
@@ -138,7 +140,7 @@ static inline void open_file(int argc, const char** argv, char** source, nat* le
     if (argc == 1) return;
     strncpy(filename, argv[1], 4096);
     FILE* file = fopen(filename, "r");
-    if (not file) { perror("fopen"); exit(1); }
+    if (not file) { perror("fopen"); restore_terminal();printf("%s", show_cursor); printf("%s", restore_screen); exit(1); }
     fseek(file, 0L, SEEK_END);
     *length = ftell(file) + 1;
     free(*source);
@@ -147,7 +149,7 @@ static inline void open_file(int argc, const char** argv, char** source, nat* le
     ///TODO: get this editor to work with unicode characters, and ignore non printable characters.
     fseek(file, 0L, SEEK_SET);
     fread(*source, sizeof(char), *length - 1, file);
-    if (ferror(file)) { perror("read"); exit(1); }
+    if (ferror(file)) { perror("read"); restore_terminal(); exit(1); }
     fclose(file);
 }
 
@@ -181,7 +183,7 @@ static inline void save(char* source, nat source_length, char* name, bool* saved
     if (prompted and access(name, F_OK) != -1 and not confirmed("file already exists, overwrite")) { strcpy(name, ""); strcpy(message, "aborted save."); return; }
     FILE* file = fopen(name, "w+");
     if (not file) { sprintf(message, "save unsuccessful: %s", strerror(errno)); return; }
-    else fwrite(source, sizeof(char), source_length, file);
+    else { fwrite(source, sizeof(char), source_length, file); memset(message, 0, 1024); }
     if (ferror(file)) perror("write");
     fclose(file);
     *saved = true;
@@ -194,16 +196,42 @@ static inline void rename_file(char* old, char* message) {
     if (access(new, F_OK) != -1 and not confirmed("file already exists, overwrite")) { strcpy(message, "aborted rename."); return; }
     if (rename(old, new)) {
         sprintf(message, "rename unsuccessful: %s", strerror(errno));
-    } else strncpy(old, new, 4096);
+    } else { strncpy(old, new, 4096); memset(message, 0, 1024); }
 }
 
-static inline void display(struct line* lines, nat line_count, struct location origin, struct winsize window) {
-    char buffer[20000]; // window.ws_col * window.ws_row
+static inline void display(struct line* lines, nat line_count, struct location origin, struct winsize window, enum editor_mode mode, struct location cursor) {
+    char buffer[window.ws_col * window.ws_row];
     memset(buffer, 0, sizeof buffer);
     nat b = 0;
     for (nat line = origin.line; line < fmin(origin.line + window.ws_row - 1, line_count); line++) {
-        for (nat c = origin.column; c < fmin(origin.column + window.ws_col - 1, lines[line].length); c++)
-            buffer[b++] = lines[line].line[c];
+        for (nat c = origin.column; c < fmin(origin.column + window.ws_col - 1, lines[line].length); c++) {
+            
+            const char g = lines[line].line[c];
+                
+//            if (mode == edit_mode) {
+//                buffer[b++] = g;
+//
+//            } else
+                
+//                if (mode == command_mode) {
+                
+//                if (line == cursor.line and c == cursor.column) {
+                    
+//                    const char* cursor_color = "\033[38;5;245m";
+//                    for (nat i = 0; i < (nat) strlen(cursor_color); i++) {
+//                        buffer[b++] = cursor_color[i];
+//                    }
+                    buffer[b++] = g;
+//                    for (nat i = 0; i < (nat) strlen(reset_color); i++) {
+//                        buffer[b++] = reset_color[i];
+//                    }
+//                } else {
+//                    buffer[b++] = g;
+//                }
+//            }
+            
+        }
+        
         buffer[b++] = '\n';
     }
     printf("%s", clear_screen);
@@ -242,7 +270,7 @@ static inline struct line* generate_line_view(char* source, nat* count, nat widt
     } return lines;
 }
 
-static inline void get_datetime(char buffer[16]) {
+static inline void get_datetime(char buffer[16]) { // used via option, or function: datetime.
     struct timeval tv;
     gettimeofday(&tv, NULL);
     struct tm* tm_info = localtime(&tv.tv_sec);
@@ -254,14 +282,21 @@ static inline void print_status_bar(enum editor_mode mode, char* filename, bool 
     printf("%s", save_cursor);
     printf(set_cursor, window.ws_row, 0);
     printf("%s", clear_line);
-    char datetime[16] = {0};
-    get_datetime(datetime);
-    const long color = mode == edit_mode or mode == hard_edit_mode ? edit_status_color : command_status_color;
     
-    printf(set_color "%s   %s" reset_color
+//    char datetime[16] = {0};
+//    get_datetime(datetime);
+    
+    const long color = mode == edit_mode or mode == hard_edit_mode ? edit_status_color : command_status_color;
+//
+//    printf("c=%zd,%zd s=%zd,%zd o=%zd,%zd p=%zd | ",
+//              cursor.line, cursor.column,
+//              screen.line, screen.column,
+//              origin.line, origin.column, point);
+//
+    printf(set_color "%s" reset_color
            set_color "%s" reset_color
            set_color "  %s" reset_color,
-           color, datetime, filename,
+           color, filename,
            edited_flag_color, saved ? "" : " (e)",
            color, message);
     printf("%s", restore_cursor);
@@ -287,11 +322,6 @@ static inline void adjust_line_view(struct location *cursor, struct location **o
     }
 }
 
-static inline void adjust_view(struct location *cursor, struct location *origin, struct location *screen, struct winsize window) {
-    adjust_column_view(cursor, &origin, &screen, &window);    
-    adjust_line_view(cursor, &origin, &screen, &window);
-}
-
 static inline void move_left(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, struct location* desired, bool user) {
     if (not *point) return;
     if (cursor->column) {
@@ -314,9 +344,9 @@ static inline void move_right(struct location* cursor, struct location* origin, 
         cursor->line++; (*point)++;
         if (screen->line < window.ws_row - 2) screen->line++; else origin->line++;
         cursor->column = lines[cursor->line].continued;
+        adjust_column_view(cursor, &origin, &screen, &window);
     }
     if (user) *desired = *cursor;
-    adjust_view(cursor, origin, screen, window);
 }
 
 static inline void move_up(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, struct location* desired) {
@@ -336,7 +366,8 @@ static inline void move_down(struct location *cursor, struct location *origin, s
         cursor->line = line_count - 1;
         cursor->column = lines[cursor->line].length;
         *point = length - 1;
-        adjust_view(cursor, origin, screen, window);
+        adjust_column_view(cursor, &origin, &screen, &window);
+        adjust_line_view(cursor, &origin, &screen, &window);
         return;
     }
     const nat column_target = fmin(lines[cursor->line + 1].length, desired->column);
@@ -368,7 +399,8 @@ static void jump(char c1, struct location *cursor, struct location *desired, boo
     } else if (bigraph(jump_bottom, c0, c1)) {
         cursor->line = line_count - 1;
         cursor->column = lines[cursor->line].length; *point = length - 1;
-        adjust_view(cursor, origin, screen, window);
+        adjust_column_view(cursor, &origin, &screen, &window);
+        adjust_line_view(cursor, &origin, &screen, &window);
     } else if (bigraph(jump_begin, c0, c1)) {
         while (cursor->column) move_left(cursor, origin, screen, window, point, lines, desired, true);
     } else if (bigraph(jump_end, c0, c1)) {
@@ -384,7 +416,7 @@ int main(int argc, const char** argv) {
     
     enum editor_mode mode = command_mode;
     nat line_count = 0, length = 1, point = 0;
-    bool saved = true, should_show_cursor = true, show_status = true, jump_to_line = false;
+    bool saved = true, should_show_cursor = false, show_status = true, jump_to_line = false;
     struct location cursor = {0,0}, origin = {0,0}, screen = {0,0}, desired = {0,0};
     char* source = calloc(1, sizeof(char)), name[4096] = {0}, message[1024] = {0}, c = 0, c1 = 0, c2 = 0;
     
@@ -397,11 +429,17 @@ int main(int argc, const char** argv) {
         
         struct winsize window;
         ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+        
         if (should_show_cursor) printf("%s", show_cursor); else printf("%s", hide_cursor);
-        display(lines, line_count, origin, window);
+        
+        display(lines, line_count, origin, window, mode, cursor);
+        
         if (show_status) print_status_bar(mode, name, saved, message, cursor, screen, origin, window, point);
+        
         printf(set_cursor, screen.line + 1, screen.column + 1);
+        
         fflush(stdout);
+        
         c = get_character();
         
         if (mode == command_mode) {
@@ -472,8 +510,7 @@ int main(int argc, const char** argv) {
         c1 = c;
     }
     free(source);
-    printf("%s", show_cursor);
-    printf("%s", restore_screen);
     restore_terminal();
+    printf("%s", restore_screen);
 }
 
