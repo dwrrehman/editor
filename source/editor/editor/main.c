@@ -1,4 +1,7 @@
+
 // My editor, written in C.
+// Created by Daniel Rehman.
+
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -28,11 +31,25 @@ const long command_status_color = 245L;
 const long edited_flag_color = 130L;
 struct termios terminal = {0};
 
-const char *save_cursor = "\033[s", *restore_cursor = "\033[u", *hide_cursor = "\033[?25l",
-*show_cursor = "\033[?25h", *set_cursor = "\033[%lu;%luH", *clear_screen = "\033[1;1H\033[2J",
-*clear_line = "\033[2K", *save_screen = "\033[?1049h", *restore_screen = "\033[?1049l";
-const char *left_exit = "wef", *right_exit = "oij", *edit_exit = "wq", *jump_top = "ko",
-*jump_bottom = "km", *jump_begin = "kj", *jump_end = "kl";
+const char
+    *save_cursor = "\033[s",
+    *restore_cursor = "\033[u",
+    *hide_cursor = "\033[?25l",
+    *show_cursor = "\033[?25h",
+    *set_cursor = "\033[%lu;%luH",
+    *clear_screen = "\033[1;1H\033[2J",
+    *clear_line = "\033[2K",
+    *save_screen = "\033[?1049h",
+    *restore_screen = "\033[?1049l";
+
+const char
+    *left_exit = "wef",
+    *right_exit = "oij",
+    *edit_exit = "wq",
+    *jump_top = "ko",
+    *jump_bottom = "km",
+    *jump_begin = "kj",
+    *jump_end = "kl";
 
 // globals:
 static nat wrap_width = 100;
@@ -53,7 +70,6 @@ enum key_bindings {
 
     option_key = 'p',       function_key = 'f',
     status_bar_key = '.',   help_key = '?',
-    // . will be in p eventually? pi?    po will be the screen wrap width..?
     cursor_key = '|',
 };
 
@@ -91,7 +107,6 @@ struct file {
     nat line_count;
     nat length;
     bool saved;
-    bool is_clear;
     bool showing_cursor;
     bool showing_status;
     bool jump_to_line;
@@ -154,11 +169,17 @@ static inline void open_file(int argc, const char** argv, char** source, nat* le
 }
 
 static inline bool confirmed(const char* question) {
-    char response[6]; struct winsize window; ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-    printf("%s", save_cursor); printf(set_cursor, window.ws_row, 0); printf("%s", clear_line);
+    char response[6];
+    struct winsize window;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+    printf("%s", save_cursor);
+    printf(set_cursor, window.ws_row, 0);
+    printf("%s", clear_line);
     printf(set_color "%s? (yes/no): " reset_color, confirm_color, question);
     memset(response, 0, sizeof(char) * (6));
-    restore_terminal(); fgets(response, 5, stdin); configure_terminal();
+    restore_terminal();
+    fgets(response, 5, stdin);
+    configure_terminal();
     response[strlen(response) - 1] = '\0';
     printf("%s", restore_cursor);
     bool confirmed = not strncmp(response, "yes", 3);
@@ -167,23 +188,45 @@ static inline bool confirmed(const char* question) {
 }
 
 static inline void prompt_filename(char* filename) {
-    struct winsize window; ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-    printf("%s", save_cursor); printf(set_cursor, window.ws_row, 0); printf("%s", clear_line);
+    struct winsize window;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+    printf("%s", save_cursor);
+    printf(set_cursor, window.ws_row, 0);
+    printf("%s", clear_line);
     printf(set_color "filename: " reset_color, rename_color);
     memset(filename, 0, sizeof(char) * (4096));
-    restore_terminal(); fgets(filename, 4096, stdin); configure_terminal();
+    restore_terminal();
+    fgets(filename, 4096, stdin);
+    configure_terminal();
     filename[strlen(filename) - 1] = '\0';
     printf("%s", restore_cursor);
 }
 
 static inline void save(char* source, nat source_length, char* name, bool* saved, char* message) {
     bool prompted = false;
-    if (not name or not strlen(name)) { prompt_filename(name); prompted = true; }
-    if (not strlen(name)) { strcpy(message, "aborted save."); return; }
-    if (prompted and access(name, F_OK) != -1 and not confirmed("file already exists, overwrite")) { strcpy(name, ""); strcpy(message, "aborted save."); return; }
+    
+    if (not name or not strlen(name)) {
+        prompt_filename(name);
+        prompted = true;
+    }
+    
+    if (not strlen(name)) {
+        strcpy(message, "aborted save.");
+        return;
+    } else if (prompted and access(name, F_OK) != -1 and not confirmed("file already exists, overwrite")) {
+        strcpy(name, "");
+        strcpy(message, "aborted save.");
+        return;
+    }
+    
     FILE* file = fopen(name, "w+");
-    if (not file) { sprintf(message, "save unsuccessful: %s", strerror(errno)); return; }
-    else { fwrite(source, sizeof(char), source_length, file); memset(message, 0, 1024); }
+    if (not file) {
+        sprintf(message, "save unsuccessful: %s", strerror(errno));
+        return;
+    } else {
+        fwrite(source, sizeof(char), source_length, file);
+        memset(message, 0, 1024);
+    }
     if (ferror(file)) perror("write");
     fclose(file);
     *saved = true;
@@ -192,11 +235,23 @@ static inline void save(char* source, nat source_length, char* name, bool* saved
 static inline void rename_file(char* old, char* message) {
     char new[4096];
     prompt_filename(new);
-    if (not strlen(new)) { strcpy(message, "aborted rename."); return; }
-    if (access(new, F_OK) != -1 and not confirmed("file already exists, overwrite")) { strcpy(message, "aborted rename."); return; }
+    
+    if (not strlen(new)) {
+        strcpy(message, "aborted rename.");
+        return;
+    }
+    
+    if (access(new, F_OK) != -1 and not confirmed("file already exists, overwrite")) {
+        strcpy(message, "aborted rename.");
+        return;
+    }
+    
     if (rename(old, new)) {
         sprintf(message, "rename unsuccessful: %s", strerror(errno));
-    } else { strncpy(old, new, 4096); memset(message, 0, 1024); }
+    } else {
+        strncpy(old, new, 4096);
+        memset(message, 0, 1024);
+    }
 }
 
 static inline void display(struct line* lines, nat line_count, struct location origin, struct winsize window, enum editor_mode mode, struct location cursor) {
@@ -351,7 +406,8 @@ static inline void move_right(struct location* cursor, struct location* origin, 
 
 static inline void move_up(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, struct location* desired) {
     if (not cursor->line) {
-        *screen = *cursor = *origin = (struct location){0, 0}; *point = 0;
+        *screen = *cursor = *origin = (struct location){0, 0};
+        *point = 0;
         return;
     }
     const nat column_target = fmin(lines[cursor->line - 1].length, desired->column);
@@ -363,11 +419,11 @@ static inline void move_up(struct location *cursor, struct location *origin, str
 
 static inline void move_down(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, nat line_count, nat length, struct location* desired) {
     if (cursor->line >= line_count - 1) {
-        cursor->line = line_count - 1;
-        cursor->column = lines[cursor->line].length;
-        *point = length - 1;
-        adjust_column_view(cursor, &origin, &screen, &window);
-        adjust_line_view(cursor, &origin, &screen, &window);
+//        cursor->line = line_count - 1;
+//        cursor->column = lines[cursor->line].length;
+//        *point = length - 1;
+//        adjust_column_view(cursor, &origin, &screen, &window);
+//        adjust_line_view(cursor, &origin, &screen, &window);
         return;
     }
     const nat column_target = fmin(lines[cursor->line + 1].length, desired->column);
@@ -395,16 +451,20 @@ static inline void delete_forwards(struct location* cursor, struct location* des
 static void jump(char c1, struct location *cursor, struct location *desired, bool *jump_to_line, nat length, nat line_count, struct line *lines, struct location *origin, nat *point, struct location *screen, struct winsize window) {
     const char c0 = get_character();
     if (bigraph(jump_top, c0, c1)) {
-        *screen = *cursor = *origin = (struct location){0, 0}; *point = 0;
+        *screen = *cursor = *origin = (struct location){0, 0};
+        *point = 0;
     } else if (bigraph(jump_bottom, c0, c1)) {
-        cursor->line = line_count - 1;
-        cursor->column = lines[cursor->line].length; *point = length - 1;
-        adjust_column_view(cursor, &origin, &screen, &window);
-        adjust_line_view(cursor, &origin, &screen, &window);
+//        cursor->line = line_count - 1;
+//        cursor->column = lines[cursor->line].length;
+//        *point = length - 1;
+//        adjust_column_view(cursor, &origin, &screen, &window);
+//        adjust_line_view(cursor, &origin, &screen, &window);
     } else if (bigraph(jump_begin, c0, c1)) {
-        while (cursor->column) move_left(cursor, origin, screen, window, point, lines, desired, true);
+        while (cursor->column)
+            move_left(cursor, origin, screen, window, point, lines, desired, true);
     } else if (bigraph(jump_end, c0, c1)) {
-        while (cursor->column < lines[cursor->line].length) move_right(cursor, origin, screen, window, point, lines, line_count, length, desired, true);
+        while (cursor->column < lines[cursor->line].length)
+            move_right(cursor, origin, screen, window, point, lines, line_count, length, desired, true);
     } else if (c1 == 'n') *jump_to_line = true;
 }
 
@@ -422,6 +482,7 @@ int main(int argc, const char** argv) {
     
     printf("%s", save_screen);
     configure_terminal();
+    
     open_file(argc, argv, &source, &length, name);
     struct line* lines = generate_line_view(source, &line_count, wrap_width);
 
@@ -431,15 +492,12 @@ int main(int argc, const char** argv) {
         ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
         
         if (should_show_cursor) printf("%s", show_cursor); else printf("%s", hide_cursor);
-        
         display(lines, line_count, origin, window, mode, cursor);
         
         if (show_status) print_status_bar(mode, name, saved, message, cursor, screen, origin, window, point);
-        
         printf(set_cursor, screen.line + 1, screen.column + 1);
         
         fflush(stdout);
-        
         c = get_character();
         
         if (mode == command_mode) {
@@ -466,9 +524,9 @@ int main(int argc, const char** argv) {
             else if (c == help_key) strcpy(message, "qQwWeEsdaurkljio;pf.?|");
             
 //            else if (c == function_key) {}
-//            else if (c == paste_key) { /*paste*/ }
+//            else if (c == paste_key) {}
 //            else if (c == select_key) mode = select_mode;
-//            else if (c == cut_key) { /*cut*/ }
+//            else if (c == cut_key) { }
             
         } else if (mode == edit_mode or mode == hard_edit_mode) {
             saved = false;
@@ -513,4 +571,3 @@ int main(int argc, const char** argv) {
     restore_terminal();
     printf("%s", restore_screen);
 }
-
