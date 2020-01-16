@@ -204,7 +204,6 @@ static inline void prompt_filename(char* filename) {
 
 static inline void save(char* source, nat source_length, char* name, bool* saved, char* message) {
     bool prompted = false;
-    
     if (not name or not strlen(name)) {
         prompt_filename(name);
         prompted = true;
@@ -233,25 +232,11 @@ static inline void save(char* source, nat source_length, char* name, bool* saved
 }
 
 static inline void rename_file(char* old, char* message) {
-    char new[4096];
-    prompt_filename(new);
-    
-    if (not strlen(new)) {
-        strcpy(message, "aborted rename.");
-        return;
-    }
-    
-    if (access(new, F_OK) != -1 and not confirmed("file already exists, overwrite")) {
-        strcpy(message, "aborted rename.");
-        return;
-    }
-    
-    if (rename(old, new)) {
-        sprintf(message, "rename unsuccessful: %s", strerror(errno));
-    } else {
-        strncpy(old, new, 4096);
-        memset(message, 0, 1024);
-    }
+    char new[4096]; prompt_filename(new);
+    if (not strlen(new)) strcpy(message, "aborted rename.");
+    else if (access(new, F_OK) != -1 and not confirmed("file already exists, overwrite")) strcpy(message, "aborted rename.");
+    else if (rename(old, new)) sprintf(message, "rename unsuccessful: %s", strerror(errno));
+    else { strncpy(old, new, 4096); memset(message, 0, 1024); }
 }
 
 static inline void display(struct line* lines, nat line_count, struct location origin, struct winsize window, enum editor_mode mode, struct location cursor) {
@@ -262,31 +247,11 @@ static inline void display(struct line* lines, nat line_count, struct location o
         for (nat c = origin.column; c < fmin(origin.column + window.ws_col - 1, lines[line].length); c++) {
             
             const char g = lines[line].line[c];
-                
-//            if (mode == edit_mode) {
-//                buffer[b++] = g;
-//
-//            } else
-                
-//                if (mode == command_mode) {
-                
-//                if (line == cursor.line and c == cursor.column) {
-                    
-//                    const char* cursor_color = "\033[38;5;245m";
-//                    for (nat i = 0; i < (nat) strlen(cursor_color); i++) {
-//                        buffer[b++] = cursor_color[i];
-//                    }
-                    buffer[b++] = g;
-//                    for (nat i = 0; i < (nat) strlen(reset_color); i++) {
-//                        buffer[b++] = reset_color[i];
-//                    }
-//                } else {
-//                    buffer[b++] = g;
-//                }
-//            }
             
+            if (g == '\t') {
+                for (nat i = 0; i < 8; i++) buffer[b++] = ' ';
+            } else buffer[b++] = g;
         }
-        
         buffer[b++] = '\n';
     }
     printf("%s", clear_screen);
@@ -338,16 +303,13 @@ static inline void print_status_bar(enum editor_mode mode, char* filename, bool 
     printf(set_cursor, window.ws_row, 0);
     printf("%s", clear_line);
     
-//    char datetime[16] = {0};
-//    get_datetime(datetime);
-    
     const long color = mode == edit_mode or mode == hard_edit_mode ? edit_status_color : command_status_color;
-//
+
 //    printf("c=%zd,%zd s=%zd,%zd o=%zd,%zd p=%zd | ",
 //              cursor.line, cursor.column,
 //              screen.line, screen.column,
 //              origin.line, origin.column, point);
-//
+
     printf(set_color "%s" reset_color
            set_color "%s" reset_color
            set_color "  %s" reset_color,
@@ -357,23 +319,23 @@ static inline void print_status_bar(enum editor_mode mode, char* filename, bool 
     printf("%s", restore_cursor);
 }
 
-static inline void adjust_column_view(struct location *cursor, struct location **origin, struct location **screen, const struct winsize *window) {
-    if (cursor->column > window->ws_col - 1) {
-        (*screen)->column = window->ws_col - 1;
-        (*origin)->column = cursor->column - ((*screen)->column);
+static inline void adjust_column_view(struct location *cursor, struct location *origin, struct location *screen, const struct winsize window) {
+    if (cursor->column > window.ws_col - 1) {
+        screen->column = window.ws_col - 1;
+        origin->column = cursor->column - screen->column;
     } else {
-        (*screen)->column = cursor->column;
-        (*origin)->column = 0;
+        screen->column = cursor->column;
+        origin->column = 0;
     }
 }
 
-static inline void adjust_line_view(struct location *cursor, struct location **origin, struct location **screen, const struct winsize *window) {
-    if (cursor->line > window->ws_row - 2) {
-        (*screen)->line = window->ws_row - 2;
-        (*origin)->line = cursor->line - ((*screen)->line);
+static inline void adjust_line_view(struct location *cursor, struct location *origin, struct location *screen, const struct winsize window) {
+    if (cursor->line > window.ws_row - 2) {
+        screen->line = window.ws_row - 2;
+        origin->line = cursor->line - screen->line;
     } else {
-        (*screen)->line = cursor->line;
-        (*origin)->line = 0;
+        screen->line = cursor->line;
+        origin->line = 0;
     }
 }
 
@@ -386,7 +348,7 @@ static inline void move_left(struct location *cursor, struct location *origin, s
         cursor->column = lines[cursor->line - 1].length - lines[cursor->line].continued;
         cursor->line--; (*point)--;
         if (screen->line) screen->line--; else if (origin->line) origin->line--;
-        adjust_column_view(cursor, &origin, &screen, &window);
+        adjust_column_view(cursor, origin, screen, window);
     } if (user) *desired = *cursor;
 }
 
@@ -399,7 +361,7 @@ static inline void move_right(struct location* cursor, struct location* origin, 
         cursor->line++; (*point)++;
         if (screen->line < window.ws_row - 2) screen->line++; else origin->line++;
         cursor->column = lines[cursor->line].continued;
-        adjust_column_view(cursor, &origin, &screen, &window);
+        adjust_column_view(cursor, origin, screen, window);
     }
     if (user) *desired = *cursor;
 }
@@ -414,7 +376,7 @@ static inline void move_up(struct location *cursor, struct location *origin, str
     const nat line_target = cursor->line - 1;
     while (cursor->column > column_target or cursor->line > line_target)
         move_left(cursor, origin, screen, window, point, lines, desired, false);
-    adjust_column_view(cursor, &origin, &screen, &window);
+    adjust_column_view(cursor, origin, screen, window);
 }
 
 static inline void move_down(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, nat line_count, nat length, struct location* desired) {
@@ -557,11 +519,14 @@ int main(int argc, const char** argv) {
                 }
                 
             } else if (c == 127 and point > 0) backspace(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, window);
-            else if (c != 127 and c != 27 and (isprint(c) or c == '\n' or c == '\t')) {
-                insert(c, point, &source, &length);
-                free(lines);
-                lines = generate_line_view(source, &line_count, wrap_width);
-                move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired, true);
+            else if ((c != 127 and c != 27 and (isprint(c) or c == '\n' or c == '\t')) or (c < 0)) {
+                if (c < 0) strcpy(message, "found a unicode char!");
+                else {
+                    insert(c, point, &source, &length);
+                    free(lines);
+                    lines = generate_line_view(source, &line_count, wrap_width);
+                    move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired, true);
+                }
             }
         } else mode = command_mode;
         c2 = c1;

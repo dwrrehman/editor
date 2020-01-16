@@ -23,6 +23,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		FD7542CA23D0D9D600A36350 /* issues.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; name = issues.txt; path = ../../../issues.txt; sourceTree = "<group>"; };
 		FDA4B8AE2371328800AD1B57 /* editor */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = editor; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDA4B8B12371328800AD1B57 /* main.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = main.c; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -58,6 +59,7 @@
 			isa = PBXGroup;
 			children = (
 				FDA4B8B12371328800AD1B57 /* main.c */,
+				FD7542CA23D0D9D600A36350 /* issues.txt */,
 			);
 			path = editor;
 			sourceTree = "<group>";
