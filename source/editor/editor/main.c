@@ -258,31 +258,38 @@ static inline void print_status_bar(enum editor_mode mode, char* filename, bool 
     get_datetime(datetime);
     const long color = mode == edit_mode or mode == hard_edit_mode ? edit_status_color : command_status_color;
     
-    printf("c=%zd,%zd s=%zd,%zd o=%zd,%zd p=%zd | ",
-           cursor.line, cursor.column,
-           screen.line, screen.column,
-           origin.line, origin.column, point);
-
-    printf(set_color "%s : %s" reset_color
+    printf(set_color "%s   %s" reset_color
            set_color "%s" reset_color
-           set_color ": %s" reset_color,
+           set_color "  %s" reset_color,
            color, datetime, filename,
            edited_flag_color, saved ? "" : " (e)",
            color, message);
     printf("%s", restore_cursor);
 }
 
+static inline void adjust_column_view(struct location *cursor, struct location **origin, struct location **screen, const struct winsize *window) {
+    if (cursor->column > window->ws_col - 1) {
+        (*screen)->column = window->ws_col - 1;
+        (*origin)->column = cursor->column - ((*screen)->column);
+    } else {
+        (*screen)->column = cursor->column;
+        (*origin)->column = 0;
+    }
+}
+
+static inline void adjust_line_view(struct location *cursor, struct location **origin, struct location **screen, const struct winsize *window) {
+    if (cursor->line > window->ws_row - 2) {
+        (*screen)->line = window->ws_row - 2;
+        (*origin)->line = cursor->line - ((*screen)->line);
+    } else {
+        (*screen)->line = cursor->line;
+        (*origin)->line = 0;
+    }
+}
+
 static inline void adjust_view(struct location *cursor, struct location *origin, struct location *screen, struct winsize window) {
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-    
-    if (cursor->column > window.ws_col - 1) {
-        screen->column = window.ws_col - 1;
-        origin->column = cursor->column - (screen->column);
-    } else { screen->column = cursor->column; origin->column = 0; }
-    if (cursor->line > window.ws_row - 2) {
-        screen->line = window.ws_row - 2;
-        origin->line = cursor->line - (screen->line);
-    } else { screen->line = cursor->line; origin->line = 0; }
+    adjust_column_view(cursor, &origin, &screen, &window);    
+    adjust_line_view(cursor, &origin, &screen, &window);
 }
 
 static inline void move_left(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, struct location* desired, bool user) {
@@ -292,11 +299,10 @@ static inline void move_left(struct location *cursor, struct location *origin, s
         if (screen->column) screen->column--; else if (origin->column) origin->column--;
     } else if (cursor->line) {
         cursor->column = lines[cursor->line - 1].length - lines[cursor->line].continued;
-        adjust_view(cursor, origin, screen, window);
         cursor->line--; (*point)--;
         if (screen->line) screen->line--; else if (origin->line) origin->line--;
-    }
-    if (user) *desired = *cursor;
+        adjust_column_view(cursor, &origin, &screen, &window);
+    } if (user) *desired = *cursor;
 }
 
 static inline void move_right(struct location* cursor, struct location* origin, struct location* screen, struct winsize window, nat* point, struct line* lines, nat line_count, nat length, struct location* desired, bool user) {
@@ -308,9 +314,9 @@ static inline void move_right(struct location* cursor, struct location* origin, 
         cursor->line++; (*point)++;
         if (screen->line < window.ws_row - 2) screen->line++; else origin->line++;
         cursor->column = lines[cursor->line].continued;
-        adjust_view(cursor, origin, screen, window);
     }
     if (user) *desired = *cursor;
+    adjust_view(cursor, origin, screen, window);
 }
 
 static inline void move_up(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, struct location* desired) {
@@ -322,7 +328,7 @@ static inline void move_up(struct location *cursor, struct location *origin, str
     const nat line_target = cursor->line - 1;
     while (cursor->column > column_target or cursor->line > line_target)
         move_left(cursor, origin, screen, window, point, lines, desired, false);
-    adjust_view(cursor, origin, screen, window);
+    adjust_column_view(cursor, &origin, &screen, &window);
 }
 
 static inline void move_down(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, nat line_count, nat length, struct location* desired) {
@@ -337,8 +343,7 @@ static inline void move_down(struct location *cursor, struct location *origin, s
     const nat line_target = cursor->line + 1;
     while (cursor->column < column_target or cursor->line < line_target)
         move_right(cursor, origin, screen, window, point, lines, line_count, length, desired, false);
-    if (lines[cursor->line].continued) move_left(cursor, origin, screen, window, point, lines, desired, false);
-    adjust_view(cursor, origin, screen, window);
+    if (lines[cursor->line].continued and not column_target) move_left(cursor, origin, screen, window, point, lines, desired, false);
 }
 
 static inline void backspace(struct location* cursor, struct location* desired, nat* length, nat* line_count, struct line** lines, struct location *origin, nat* point, struct location* screen, char** source, struct winsize window) {
@@ -361,13 +366,9 @@ static void jump(char c1, struct location *cursor, struct location *desired, boo
     if (bigraph(jump_top, c0, c1)) {
         *screen = *cursor = *origin = (struct location){0, 0}; *point = 0;
     } else if (bigraph(jump_bottom, c0, c1)) {
-        
-        ///TODO: buggy.
-        
         cursor->line = line_count - 1;
         cursor->column = lines[cursor->line].length; *point = length - 1;
         adjust_view(cursor, origin, screen, window);
-        
     } else if (bigraph(jump_begin, c0, c1)) {
         while (cursor->column) move_left(cursor, origin, screen, window, point, lines, desired, true);
     } else if (bigraph(jump_end, c0, c1)) {
