@@ -462,6 +462,11 @@ int main(int argc, const char** argv) {
         fflush(stdout);
         c = get_character();
         
+        
+        sprintf(message, "c = %d", c);
+        usleep(1000000);
+        
+
         if (mode == command_mode) {
             
             if (false) {}
@@ -519,14 +524,20 @@ int main(int argc, const char** argv) {
                 }
                 
             } else if (c == 127 and point > 0) backspace(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, window);
-            else if ((c != 127 and c != 27 and (isprint(c) or c == '\n' or c == '\t')) or (c < 0)) {
-                if (c < 0) strcpy(message, "found a unicode char!");
-                else {
-                    insert(c, point, &source, &length);
-                    free(lines);
-                    lines = generate_line_view(source, &line_count, wrap_width);
-                    move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired, true);
-                }
+              else if (c == '\t') {
+                
+            } else if (c < 127 and c != 27 and (isprint(c) or c == '\n' or c == '\t')) {
+                
+                insert(c, point, &source, &length);
+                free(lines);
+                lines = generate_line_view(source, &line_count, wrap_width);
+                move_right(&cursor, &origin, &screen, window, &point, lines, line_count, length, &desired, true);
+                
+            } else if (c < 0) {
+                insert(c, point, &source, &length);
+                free(lines);
+                lines = generate_line_view(source, &line_count, wrap_width);
+                
             }
         } else mode = command_mode;
         c2 = c1;
