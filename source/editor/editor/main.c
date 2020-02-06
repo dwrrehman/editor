@@ -161,7 +161,9 @@ static inline void open_file(int argc, const char** argv, char** source, nat* le
     free(*source);
     *source = calloc(*length, sizeof(char));
 //    for (nat i = 0; i < *length - 1; i++) if (not isprint((*source)[i])) (*source)[i] = '?';
+    
     ///TODO: get this editor to work with unicode characters, and ignore non printable characters.
+    
     fseek(file, 0L, SEEK_SET);
     fread(*source, sizeof(char), *length - 1, file);
     if (ferror(file)) { perror("read"); restore_terminal(); exit(1); }
@@ -223,7 +225,7 @@ static inline void save(char* source, nat source_length, char* name, bool* saved
         sprintf(message, "save unsuccessful: %s", strerror(errno));
         return;
     } else {
-        fwrite(source, sizeof(char), source_length, file);
+        fwrite(source, sizeof(char), source_length - 1, file); // dont write the null character.
         memset(message, 0, 1024);
     }
     if (ferror(file)) perror("write");
@@ -380,14 +382,7 @@ static inline void move_up(struct location *cursor, struct location *origin, str
 }
 
 static inline void move_down(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, nat line_count, nat length, struct location* desired) {
-    if (cursor->line >= line_count - 1) {
-//        cursor->line = line_count - 1;
-//        cursor->column = lines[cursor->line].length;
-//        *point = length - 1;
-//        adjust_column_view(cursor, &origin, &screen, &window);
-//        adjust_line_view(cursor, &origin, &screen, &window);
-        return;
-    }
+    if (cursor->line >= line_count - 1) { while (*point < length - 2) move_right(cursor, origin, screen, window, point, lines, line_count, length, desired, false); return; }
     const nat column_target = fmin(lines[cursor->line + 1].length, desired->column);
     const nat line_target = cursor->line + 1;
     while (cursor->column < column_target or cursor->line < line_target)
@@ -413,14 +408,9 @@ static inline void delete_forwards(struct location* cursor, struct location* des
 static void jump(char c1, struct location *cursor, struct location *desired, bool *jump_to_line, nat length, nat line_count, struct line *lines, struct location *origin, nat *point, struct location *screen, struct winsize window) {
     const char c0 = get_character();
     if (bigraph(jump_top, c0, c1)) {
-        *screen = *cursor = *origin = (struct location){0, 0};
-        *point = 0;
+        *screen = *cursor = *origin = (struct location){0, 0}; *point = 0;
     } else if (bigraph(jump_bottom, c0, c1)) {
-//        cursor->line = line_count - 1;
-//        cursor->column = lines[cursor->line].length;
-//        *point = length - 1;
-//        adjust_column_view(cursor, &origin, &screen, &window);
-//        adjust_line_view(cursor, &origin, &screen, &window);
+        while (*point < length - 2) move_down(cursor, origin, screen, window, point, lines, line_count, length, desired);
     } else if (bigraph(jump_begin, c0, c1)) {
         while (cursor->column)
             move_left(cursor, origin, screen, window, point, lines, desired, true);
@@ -461,11 +451,6 @@ int main(int argc, const char** argv) {
         
         fflush(stdout);
         c = get_character();
-        
-        
-        sprintf(message, "c = %d", c);
-        usleep(1000000);
-        
 
         if (mode == command_mode) {
             

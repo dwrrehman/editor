@@ -1,3 +1,4 @@
+
 currrent outstanding issues in the editor:
 ===========================================
 
@@ -9,13 +10,16 @@ BUGS:
 =============
 
 
+we accidenitly put a null character at the end of the text. we need to stop before that in order to write the file.
+
+i think we are simply writing source_length, instead of the crrect source_length minus one.
+
+we dont deal with tabs correctly.
+we dont deal with unicode correctly.
 
 
 FEATURES:
 =============
-
-
-
 
 
 - we arent displaying line numbers. 
@@ -24,3 +28,28 @@ FEATURES:
 
 
 
+
+
+
+
+
+
+
+
+note:
+
+
+    once we deal with unicode characters,
+    and once we get tabs to display properly,
+    and once we fix the jump_bottom and max-downarrow functionality,
+    
+    
+    
+    
+    
+                        i think our editor is ready to use, for real.
+                        
+                        
+                        
+                        
+                        
