@@ -382,7 +382,10 @@ static inline void move_up(struct location *cursor, struct location *origin, str
 }
 
 static inline void move_down(struct location *cursor, struct location *origin, struct location *screen, struct winsize window, nat* point, struct line* lines, nat line_count, nat length, struct location* desired) {
-    if (cursor->line >= line_count - 1) { while (*point < length - 2) move_right(cursor, origin, screen, window, point, lines, line_count, length, desired, false); return; }
+    if (cursor->line >= line_count - 1) {
+        while (*point < length - 2) move_right(cursor, origin, screen, window, point, lines, line_count, length, desired, false);
+        return;
+    }
     const nat column_target = fmin(lines[cursor->line + 1].length, desired->column);
     const nat line_target = cursor->line + 1;
     while (cursor->column < column_target or cursor->line < line_target)
@@ -437,7 +440,7 @@ int main(int argc, const char** argv) {
     
     open_file(argc, argv, &source, &length, name);
     struct line* lines = generate_line_view(source, &line_count, wrap_width);
-
+    
     while (mode != quit) {
         
         struct winsize window;
@@ -475,10 +478,10 @@ int main(int argc, const char** argv) {
             
             else if (c == help_key) strcpy(message, "qQwWeEsdaurkljio;pf.?|");
             
-//            else if (c == function_key) {}
-//            else if (c == paste_key) {}
+            else if (c == function_key) {}
+            else if (c == paste_key) {}
+            else if (c == cut_key) {}
 //            else if (c == select_key) mode = select_mode;
-//            else if (c == cut_key) { }
             
         } else if (mode == edit_mode or mode == hard_edit_mode) {
             saved = false;
@@ -492,9 +495,8 @@ int main(int argc, const char** argv) {
                 backspace(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, window);
                 save(source, length, name, &saved, message);
                 try_quit('q', &mode, saved);
-            }
-            
-            else if (c == 27) {
+                
+            } else if (c == 27) {
                 c = get_character();
                 if (c == 27) { mode = command_mode; }
                 else if (c == 'd') delete_forwards(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, window);
@@ -507,12 +509,9 @@ int main(int argc, const char** argv) {
                 } else {
                     sprintf(message, "error: unknown escape code: %c (%d)", c, (int) c);
                 }
-                
             } else if (c == 127 and point > 0) backspace(&cursor, &desired, &length, &line_count, &lines, &origin, &point, &screen, &source, window);
               else if (c == '\t') {
-                
             } else if (c < 127 and c != 27 and (isprint(c) or c == '\n' or c == '\t')) {
-                
                 insert(c, point, &source, &length);
                 free(lines);
                 lines = generate_line_view(source, &line_count, wrap_width);
@@ -522,7 +521,6 @@ int main(int argc, const char** argv) {
                 insert(c, point, &source, &length);
                 free(lines);
                 lines = generate_line_view(source, &line_count, wrap_width);
-                
             }
         } else mode = command_mode;
         c2 = c1;
