@@ -19,8 +19,9 @@
 #define reset_color "\033[0m"
 
 /// Parameters:
-static size_t wrap_width = 60;
+static size_t wrap_width = 128;
 static size_t tab_width = 8;
+
 static const long rename_color = 214L;
 static const long confirm_color = 196L;
 static const long edit_status_color = 234L;
@@ -48,29 +49,24 @@ struct line {
     bool continued;
 };
 
+struct clipboard {
+    int unused;
+};
+
 enum key_bindings {
     edit_key = 'e',         hard_edit_key = 'E',
     select_key = 's',
-    
     up_key = 'o',           down_key = 'i',
     left_key = 'j',         right_key = ';',
     jump_key = 'k',         find_key = 'l',
-    
     cut_key = 'd',          paste_key = 'a',
-    
     redo_key = 'r',         undo_key = 'u',
-    
     rename_key = 'W',       save_key = 'w',
     force_quit_key = 'Q',   quit_key = 'q',
-
-    function_key = 'f', status_bar_key = 'p'
+    function_key = 'f', option_key = 'p'
 };
 
 static const char
-//    *save_cursor = "\033[s",
-//    *restore_cursor = "\033[u",
-//    *hide_cursor = "\033[?25l",
-//    *show_cursor = "\033[?25h",
     *set_cursor = "\033[%lu;%luH",
     *clear_screen = "\033[1;1H\033[2J",
     *clear_line = "\033[2K",
@@ -81,42 +77,63 @@ static const char
     *left_exit = "wf",
     *right_exit = "oj",
     *edit_exit = "wq",
-
     *jump_top = "ko",
     *jump_bottom = "km",
     *jump_begin = "kj",
     *jump_end = "kl";
 
-
+unicode** global_text = NULL;
+size_t *global_length = NULL;
 struct termios terminal = {0};
 
-static inline void debug_panic() {
-    printf("internal error! aborting...\n");
-    abort();
+static inline void get_datetime(char buffer[16]) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    struct tm* tm_info = localtime(&tv.tv_sec);
+    strftime(buffer, 15, "%y%m%d%u.%H%M%S", tm_info);
 }
 
-static inline void debug_error() {
-    printf("internal error! aborting...\n");
-    sleep(1);
+static void dump() {
+    char tempname[4096] = {0};
+    char datetime[16] = {0};
+    get_datetime(datetime);
+    strcpy(tempname, "temporary_savefile_");
+    strcat(tempname, datetime);
+    strcat(tempname, ".txt");
+    FILE* tempfile = fopen(tempname, "w");
+    if (!tempfile) tempfile = stdout;
+    for (size_t i = 0; i < *global_length; i++) fputs((*global_text)[i], tempfile);
+    fclose(tempfile);
+}
+
+static inline void dump_and_panic() {
+    printf("panic: internal error: dumping and aborting...\n");
+    dump(); abort();
+}
+
+static inline void signal_interrupt(int unused) {
+    printf("error: process interrupted, dumping and exiting...\n");
+    dump(); exit(1);
 }
 
 static inline void restore_terminal() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) < 0) {
         perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal))");
-        debug_panic();
+        dump_and_panic();
     }
 }
 
 static inline void configure_terminal() {
     if (tcgetattr(STDIN_FILENO, &terminal) < 0) {
         perror("tcgetattr(STDIN_FILENO, &terminal)");
-        debug_panic();
-    } atexit(restore_terminal);
+        dump_and_panic();
+    }
+    atexit(restore_terminal);
     struct termios raw = terminal;
     raw.c_lflag &= ~(ECHO | ICANON);
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) < 0) {
         perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)");
-        debug_panic();
+        dump_and_panic();
     }
 }
 
@@ -126,11 +143,11 @@ static inline char read_byte_from_stdin() {
     if (n < 0) {
         printf("n < 0 : ");
         perror("read(STDIN_FILENO, &c, 1) syscall");
-        debug_error();
+        dump_and_panic();
     } else if (n == 0) {
         printf("n == 0 : ");
         perror("read(STDIN_FILENO, &c, 1) syscall");
-        debug_error();
+        dump_and_panic();
     }
     return c;
 }
@@ -156,14 +173,14 @@ static inline unicode read_unicode() {
 }
 
 static inline void insert(unicode c, size_t at, unicode** text, size_t* length) {
-    if (at > *length) { debug_error(); return; }
+    if (at > *length) { dump_and_panic(); return; }
     *text = realloc(*text, sizeof(unicode) * (*length + 1));
     memmove(*text + at + 1, *text + at, sizeof(unicode) * (*length - at));
     ++*length; (*text)[at] = c;
 }
 
 static inline void delete(size_t at, unicode** text, size_t* length) {
-    if (at > *length) { debug_error(); return; }
+    if (at > *length) { dump_and_panic(); return; }
     if (!at || !*length) return;
     memmove((*text) + at - 1, (*text) + at, sizeof(unicode) * (*length - at));
     *text = realloc(*text, sizeof(unicode) * (--*length));
@@ -381,22 +398,22 @@ static inline bool confirmed(const char* question) {
     return !strncmp(response, "yes", 3);;
 }
 
-static inline void prompt_filename(char* filename) {
+static inline void prompt(const char* message, char* filename, int max) {
     struct winsize window;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
     printf(set_cursor, window.ws_row, 0);
     printf("%s", clear_line);
-    printf(set_color "filename: " reset_color, rename_color);
-    memset(filename, 0, sizeof(char) * (4096));
+    printf(set_color "%s: " reset_color, rename_color, message);
+    memset(filename, 0, sizeof(char) * (max));
     restore_terminal();
-    fgets(filename, 4096, stdin);
+    fgets(filename, max, stdin);
     configure_terminal();
     filename[strlen(filename) - 1] = '\0';
 }
 
 static inline void save(unicode* text, size_t length, char* filename, bool* saved, char* message) {
     bool prompted = false;
-    if (!strlen(filename)) { prompt_filename(filename); prompted = true; }
+    if (!strlen(filename)) { prompt("filename", filename, 4096); prompted = true; }
     
     if (!strlen(filename)) {
         sprintf(message, "aborted save.");
@@ -420,7 +437,7 @@ static inline void save(unicode* text, size_t length, char* filename, bool* save
 }
 
 static inline void rename_file(char* old, char* message) {
-    char new[4096]; prompt_filename(new);
+    char new[4096]; prompt("filename", new, 4096);
     if (!strlen(new)) sprintf(message, "aborted rename.");
     else if (access(new, F_OK) != -1 && !confirmed("file already exists, overwrite")) sprintf(message, "aborted rename.");
     else if (rename(old, new)) sprintf(message, "rename unsuccessful: %s", strerror(errno));
@@ -428,24 +445,19 @@ static inline void rename_file(char* old, char* message) {
 }
 
 int main(const int argc, const char** argv) {
-    
+        
     enum editor_mode mode = command_mode;
     bool saved = true, show_status = true;
     char message[2048] = {0}, filename[4096] = {0};
     size_t length = 0, at = 0, line_count = 0;
     unicode* text = NULL, c = 0, p = 0;
-    struct winsize window;
+    global_text = &text; global_length = &length; struct winsize window;
     struct location origin = {0,0}, cursor = {0,0}, screen = {0,0}, desired = {0,0};
-            
-    if (argc != 1) {
-        open_file(argv[1], &text, &length);
-        strncpy(filename, argv[1], 4096);
-    }
-    
+    if (argc != 1) { open_file(argv[1], &text, &length); strncpy(filename, argv[1], 4096); }
+    signal(SIGINT, signal_interrupt);
     printf("%s", save_screen);
     configure_terminal();
     struct line* lines = generate_line_view(text, length, &line_count);
-    
     while (mode != quit) {
         
         ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
@@ -458,7 +470,28 @@ int main(const int argc, const char** argv) {
             else if (is(c, edit_key)) mode = edit_mode;
             else if (is(c, hard_edit_key)) mode = hard_edit_mode;
             else if (is(c, select_key)) mode = select_mode;
-            else if (is(c, status_bar_key)) { show_status = !show_status; strcpy(message, ""); }
+            else if (is(c, option_key))  {
+                unicode c = read_unicode();
+                if (is(c, '0')) strcpy(message, "");
+                else if (is(c, '[')) show_status = !show_status;
+                else if (is(c, '?')) sprintf(message, "options: 0:clear [:togg ?:help t:tab w:wrap p:get ");
+                else if (is(c, 't')) {
+                    char tab_width_string[64];
+                    prompt("tab width", tab_width_string, 64);
+                    size_t n = atoi(tab_width_string);
+                    tab_width = n ? n : 8;
+                    screen = cursor = origin = (struct location){0, 0}; at = 0;
+                } else if (is(c, 'w')) {
+                    char wrap_width_string[64];
+                    prompt("wrap width", wrap_width_string, 64);
+                    size_t n = atoi(wrap_width_string);
+                    wrap_width = n ? n : 128;
+                } else if (is(c, 'p')) {
+                    sprintf(message, "ww = %lu | tw = %lu | ", wrap_width, tab_width);
+                } else {
+                    sprintf(message, "error: unknown option argument.");
+                }
+            }
             else if (is(c, up_key)) move_up(&cursor, &origin, &screen, window, &at, lines, &desired);
             else if (is(c, down_key)) move_down(&cursor, &origin, &screen, window, &at, lines, line_count, length, &desired);
             else if (is(c, right_key)) { if (at < length) { at++; move_right(&cursor, &origin, &screen, window, lines, line_count, length, &desired, true); } }
