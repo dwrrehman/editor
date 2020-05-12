@@ -15,10 +15,8 @@
 #include <termios.h>
 #include <errno.h>
 #include <ctype.h>
-
 #define set_color "\033[38;5;%lum"
 #define reset_color "\033[0m"
-
 
 /// Parameters:
 static size_t wrap_width = 60;
@@ -65,8 +63,7 @@ enum key_bindings {
     rename_key = 'W',       save_key = 'w',
     force_quit_key = 'Q',   quit_key = 'q',
 
-    option_key = 'p',       function_key = 'f',
-    status_bar_key = '.',   help_key = '?',
+    function_key = 'f', status_bar_key = 'p'
 };
 
 static const char
@@ -461,18 +458,15 @@ int main(const int argc, const char** argv) {
             else if (is(c, edit_key)) mode = edit_mode;
             else if (is(c, hard_edit_key)) mode = hard_edit_mode;
             else if (is(c, select_key)) mode = select_mode;
-            else if (is(c, status_bar_key)) show_status = !show_status;
-    
+            else if (is(c, status_bar_key)) { show_status = !show_status; strcpy(message, ""); }
             else if (is(c, up_key)) move_up(&cursor, &origin, &screen, window, &at, lines, &desired);
             else if (is(c, down_key)) move_down(&cursor, &origin, &screen, window, &at, lines, line_count, length, &desired);
             else if (is(c, right_key)) { if (at < length) { at++; move_right(&cursor, &origin, &screen, window, lines, line_count, length, &desired, true); } }
             else if (is(c, left_key)) { if (at) { at--; move_left(&cursor, &origin, &screen, window, lines, &desired, true); } }
             else if (is(c, jump_key)) jump(c, &cursor, &origin, &screen, &desired, window, &at, length, lines, line_count);
-            
             else if (is(c, save_key)) save(text, length, filename, &saved, message);
             else if (is(c, rename_key)) rename_file(filename, message);
             else if (is(c, quit_key) || is(c, force_quit_key)) { if (saved || (is(c, force_quit_key) && confirmed("quit without saving"))) mode = quit; }
-            else if (is(c, option_key)) { sprintf(message, "error: option key not implemented."); }
             else { sprintf(message, "error: unknown command %d", (int) c[0]); }
             
         } else if (mode == select_mode) {
@@ -518,25 +512,3 @@ int main(const int argc, const char** argv) {
     restore_terminal();
     printf("%s", restore_screen);
 }
-
-
-//static inline void convert_string_to_utf8_string(unicode** dest, size_t* length, const char* source) {
-//    *length = 0;
-//    for (size_t i = 0; i < strlen(source); ) {
-//        unsigned char c = source[i++];
-//        size_t u_length = 1;
-//        unicode u = malloc(sizeof(char)); u[0] = c;
-//        size_t count = 0;
-//        if ((c >> 3) == 30) count = 3;
-//        else if ((c >> 4) == 14) count = 2;
-//        else if ((c >> 5) == 6) count = 1;
-//        for (size_t ii = 0; ii < count; ii++) {
-//            u = realloc(u, sizeof(char) * (u_length + 1));
-//            u[u_length++] = source[i++];
-//        }
-//        u = realloc(u, sizeof(char) * (u_length + 1));
-//        u[u_length++] = 0;
-//        *dest = realloc(*dest, sizeof(unicode) * (*length + 1));
-//        (*dest)[(*length)++] = u;
-//    }
-//}
