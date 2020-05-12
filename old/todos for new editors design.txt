@@ -2,10 +2,10 @@ todo: editor:
 
 
 
-	- atexit(ask_if_should_save)           /* very important */
+x	- atexit(ask_if_should_save)           /* very important */
 
 
-	- make alll arrow keys work as in text edit.
+x	- make alll arrow keys work as in text edit.
 
 
 
@@ -29,4 +29,18 @@ todo: editor:
 		 - from n3zqx2l, of course
 
 	
-	- 
+	-
+
+
+
+
+
+
+
+all of these are basically done.
+
+
+
+we need more substnaital ones.
+
+

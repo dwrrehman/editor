@@ -1,0 +1,38 @@
+----------- manual for my text editor -------------
+
+
+	w	write
+
+	q	quit
+
+	e	edit
+
+	jio;	arrow keys
+
+	kj kl ko km 	begin end top bottom
+
+
+	u	undo
+
+	r 	redo
+
+	f	function
+
+	d	delete
+
+	s 	select
+
+	a	paste
+
+	W	rename
+
+	Q	force quit
+
+
+
+
+
+
+
+
+

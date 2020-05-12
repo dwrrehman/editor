@@ -17,7 +17,13 @@ currrent outstanding issues in the editor:
 			this is actually bug. not a big one, but one.
 
 
+		- the following command line command bunch doesnt work:
 
+
+			wef todos\ for\ new\ editors\ design.txt 
+
+
+		- - ie, maybe we arent handling spaces in our thingy as good... or maybe its just an argc and argv thing
 
 
 
