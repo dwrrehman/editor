@@ -161,9 +161,7 @@ static inline void open_file(int argc, const char** argv, char** source, nat* le
     free(*source);
     *source = calloc(*length, sizeof(char));
 //    for (nat i = 0; i < *length - 1; i++) if (not isprint((*source)[i])) (*source)[i] = '?';
-    
     ///TODO: get this editor to work with unicode characters, and ignore non printable characters.
-    
     fseek(file, 0L, SEEK_SET);
     fread(*source, sizeof(char), *length - 1, file);
     if (ferror(file)) { perror("read"); restore_terminal(); exit(1); }
