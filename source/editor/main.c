@@ -25,9 +25,9 @@ static size_t wrap_width = 60;
 static size_t tab_width = 8;
 //static const long rename_color = 214L;
 static const long confirm_color = 196L;
-//static const long edit_status_color = 235L;
-//static const long command_status_color = 245L;
-//static const long edited_flag_color = 130L;
+static const long edit_status_color = 235L;
+static const long command_status_color = 245L;
+static const long edited_flag_color = 130L;
 
 typedef char* unicode;
 
@@ -57,7 +57,7 @@ enum key_bindings {
     up_key = 'o',           down_key = 'i',
     left_key = 'j',         right_key = ';',
     jump_key = 'k',         find_key = 'l',
-
+    
     cut_key = 'd',          paste_key = 'a',
     
     redo_key = 'r',         undo_key = 'u',
@@ -173,12 +173,32 @@ static inline void delete(size_t at, unicode** text, size_t* length) {
     *text = realloc(*text, sizeof(unicode) * (--*length));
 }
 
+static inline void print_status_bar(enum editor_mode mode, bool saved,
+                                    char* message, struct winsize window) {
+    printf(set_cursor, window.ws_row, 1);
+    printf("%s", clear_line);
+    const long color = mode == edit_mode || mode == hard_edit_mode ? edit_status_color : command_status_color;
+    
+    printf(set_color "%s" reset_color
+           set_color "%s" reset_color
+           set_color "  %s" reset_color,
+           color, "filenamehere",
+           edited_flag_color, saved ? "" : " (e)",
+           color, message);
+}
+
+
 static inline void display
- (struct line* lines,
-  size_t line_count,
+ (enum editor_mode mode,
   struct location origin,
   struct location cursor,
-  struct winsize window) {
+  struct winsize window,
+  struct line* lines,
+  size_t line_count,
+  char* message,
+  bool saved,
+  bool show_status
+  ) {
     size_t text_length = 0;
     char screen[window.ws_col * window.ws_row];
     memset(screen, 0, sizeof screen);
@@ -197,8 +217,8 @@ static inline void display
             screen_cursor.column = 1;
         } screen[text_length++] = '\n';
     }
-    printf("%s", clear_screen);
-    printf("%s", screen);
+    printf("%s%s", clear_screen, screen);
+     if (show_status) print_status_bar(mode, saved, message, window);
     printf(set_cursor, screen_cursor.line, screen_cursor.column);
 }
 
@@ -367,8 +387,8 @@ static void jump
     unicode c1 = read_unicode();
     if (bigraph(jump_top, c0, c1)) { *screen = *cursor = *origin = (struct location){0, 0}; *point = 0; }
     else if (bigraph(jump_bottom, c0, c1)) while (*point < length - 1) move_down(cursor, origin, screen, window, point, lines, line_count, length, desired);
-    else if (bigraph(jump_begin, c0, c1)) while (cursor->column) move_left(cursor, origin, screen, window, lines, desired, true);
-    else if (bigraph(jump_end, c0, c1)) while (cursor->column < lines[cursor->line].length) move_right(cursor, origin, screen, window, lines, line_count, length, desired, true);
+    else if (bigraph(jump_begin, c0, c1)) while (cursor->column) { (*point)--; move_left(cursor, origin, screen, window, lines, desired, true); }
+    else if (bigraph(jump_end, c0, c1)) while (cursor->column < lines[cursor->line].length) {  (*point)++; move_right(cursor, origin, screen, window, lines, line_count, length, desired, true); }
 }
 
 static inline bool confirmed(const char* question) {
@@ -388,7 +408,10 @@ static inline bool confirmed(const char* question) {
 
 int main(const int argc, const char** argv) {
     enum editor_mode mode = edit_mode;
-    bool saved = true;
+    bool saved = true, show_status = true;
+    unicode name[4096] = {0};
+    char message[1024] = {0};
+    
     size_t length = 0, at = 0, line_count = 0;
     unicode *text = 0, c = 0, p = 0;
     struct location
@@ -400,23 +423,24 @@ int main(const int argc, const char** argv) {
     struct winsize window;
     printf("%s", save_screen);
     configure_terminal();
-    
     struct line* lines = generate_line_view(text, length, &line_count);
     
     while (mode != quit) {
+        
         ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-        display(lines, line_count, origin, cursor, window);
-        fflush(stdout); c = read_unicode();
+        display(mode, origin, cursor, window, lines, line_count, message, saved, show_status);
+        fflush(stdout);
+        c = read_unicode();
         
         if (mode == command_mode) {
             if (is(c, edit_key)) mode = edit_mode;
             else if (is(c, up_key)) move_up(&cursor, &origin, &screen, window, &at, lines, &desired);
             else if (is(c, down_key)) move_down(&cursor, &origin, &screen, window, &at, lines, line_count, length, &desired);
-            else if (is(c, left_key) && at < length) { at++; move_right(&cursor, &origin, &screen, window, lines, line_count, length, &desired, true); }
-            else if (is(c, right_key) && at) { at--; move_left(&cursor, &origin, &screen, window, lines, &desired, true); }
+            else if (is(c, right_key) && at < length) { at++; move_right(&cursor, &origin, &screen, window, lines, line_count, length, &desired, true); }
+            else if (is(c, left_key) && at) { at--; move_left(&cursor, &origin, &screen, window, lines, &desired, true); }
             else if (is(c, jump_key)) jump(c, &cursor, &origin, &screen, &desired, window, &at, length, lines, line_count);
             else if (is(c, quit_key) || is(c, force_quit_key)) { if (saved || (is(c, force_quit_key) && confirmed("quit without saving"))) mode = quit; }
-        
+            else { sprintf(message, "error: unknown command %s", c); }
         } else {
             if (bigraph(left_exit, c, p) ||
                 bigraph(right_exit, c, p) ||
@@ -434,6 +458,7 @@ int main(const int argc, const char** argv) {
                     move_left(&cursor, &origin, &screen, window, lines, &desired, true);
                     free(lines);
                     lines = generate_line_view(text, length, &line_count);
+                    saved = false;
                 }
             } else if (is(c, 27)) {
                 unicode c = read_unicode();
@@ -450,6 +475,7 @@ int main(const int argc, const char** argv) {
                 free(lines);
                 lines = generate_line_view(text, length, &line_count);
                 move_right(&cursor, &origin, &screen, window, lines, line_count, length, &desired, true);
+                saved = false;
             }
         }
         p = c;
