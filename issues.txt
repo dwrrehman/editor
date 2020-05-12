@@ -5,6 +5,47 @@ currrent outstanding issues in the editor:
 
 
 
+	------------ bugs ---------------
+
+		when we are displaying the cursor,
+
+			we arent handling the case of a moving origin, 
+
+			as well as the case of continued wrapped lines.
+
+
+			this is actually bug. not a big one, but one.
+
+
+
+
+
+
+
+	--------- features ---------------
+
+
+		- we need to some how display line numners, or make them toggleable.
+
+
+		- we also need to figure out how to allow more togglable features or options. 
+
+
+
+
+
+
+------------------------------ old -----------------------------------
+
+
+
+
+
+
+
+
+
+
 
 BUGS:
 =============
