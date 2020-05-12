@@ -1,7 +1,11 @@
-///     The "wef" text editor.
 ///
-/// Created by Daniel Rehman.
-/// Created on: 2005122.113101
+///        My Text Editor.
+///
+///   Created by: Daniel Rehman
+///
+///   Created on: 2005122.113101
+///
+///
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -50,7 +54,8 @@ struct line {
 };
 
 struct clipboard {
-    int unused;
+    char* text;
+    size_t length;
 };
 
 enum key_bindings {
@@ -106,15 +111,8 @@ static void dump() {
     fclose(tempfile);
 }
 
-static inline void dump_and_panic() {
-    printf("panic: internal error: dumping and aborting...\n");
-    dump(); abort();
-}
-
-static inline void signal_interrupt(int unused) {
-    printf("error: process interrupted, dumping and exiting...\n");
-    dump(); exit(1);
-}
+static inline void dump_and_panic() { printf("panic: internal error: dump() & abort()'ing...\n"); dump(); abort(); }
+static inline void signal_interrupt(int unused) { printf("error: process interrupted, dump() & exit()'ing...\n"); dump(); exit(1); }
 
 static inline void restore_terminal() {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) < 0) {
@@ -186,10 +184,7 @@ static inline void delete(size_t at, unicode** text, size_t* length) {
     *text = realloc(*text, sizeof(unicode) * (--*length));
 }
 
-static inline void print_status_bar
-(enum editor_mode mode, bool saved,
- char* message, struct winsize window,
- char* filename) {
+static inline void print_status_bar(enum editor_mode mode, bool saved, char* message, struct winsize window, char* filename) {
     printf(set_cursor, window.ws_row, 1);
     printf("%s", clear_line);
     const long color = mode == edit_mode || mode == hard_edit_mode ? edit_status_color : command_status_color;
@@ -398,12 +393,12 @@ static inline bool confirmed(const char* question) {
     return !strncmp(response, "yes", 3);;
 }
 
-static inline void prompt(const char* message, char* filename, int max) {
+static inline void prompt(const char* message, char* filename, int max, long color) {
     struct winsize window;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
     printf(set_cursor, window.ws_row, 0);
     printf("%s", clear_line);
-    printf(set_color "%s: " reset_color, rename_color, message);
+    printf(set_color "%s: " reset_color, color, message);
     memset(filename, 0, sizeof(char) * (max));
     restore_terminal();
     fgets(filename, max, stdin);
@@ -413,7 +408,7 @@ static inline void prompt(const char* message, char* filename, int max) {
 
 static inline void save(unicode* text, size_t length, char* filename, bool* saved, char* message) {
     bool prompted = false;
-    if (!strlen(filename)) { prompt("filename", filename, 4096); prompted = true; }
+    if (!strlen(filename)) { prompt("filename", filename, 4096, rename_color); prompted = true; }
     
     if (!strlen(filename)) {
         sprintf(message, "aborted save.");
@@ -437,7 +432,7 @@ static inline void save(unicode* text, size_t length, char* filename, bool* save
 }
 
 static inline void rename_file(char* old, char* message) {
-    char new[4096]; prompt("filename", new, 4096);
+    char new[4096]; prompt("filename", new, 4096, rename_color);
     if (!strlen(new)) sprintf(message, "aborted rename.");
     else if (access(new, F_OK) != -1 && !confirmed("file already exists, overwrite")) sprintf(message, "aborted rename.");
     else if (rename(old, new)) sprintf(message, "rename unsuccessful: %s", strerror(errno));
@@ -445,7 +440,6 @@ static inline void rename_file(char* old, char* message) {
 }
 
 int main(const int argc, const char** argv) {
-        
     enum editor_mode mode = command_mode;
     bool saved = true, show_status = true;
     char message[2048] = {0}, filename[4096] = {0};
@@ -477,13 +471,13 @@ int main(const int argc, const char** argv) {
                 else if (is(c, '?')) sprintf(message, "options: 0:clear [:togg ?:help t:tab w:wrap p:get ");
                 else if (is(c, 't')) {
                     char tab_width_string[64];
-                    prompt("tab width", tab_width_string, 64);
+                    prompt("tab width", tab_width_string, 64, rename_color);
                     size_t n = atoi(tab_width_string);
                     tab_width = n ? n : 8;
                     screen = cursor = origin = (struct location){0, 0}; at = 0;
                 } else if (is(c, 'w')) {
                     char wrap_width_string[64];
-                    prompt("wrap width", wrap_width_string, 64);
+                    prompt("wrap width", wrap_width_string, 64, rename_color);
                     size_t n = atoi(wrap_width_string);
                     wrap_width = n ? n : 128;
                 } else if (is(c, 'p')) {
