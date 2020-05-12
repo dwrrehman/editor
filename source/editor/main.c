@@ -1,11 +1,7 @@
-//
-//  main.c
-//  editor
-//
-//  Created by Daniel Rehman on 2004245.
-//  Copyright © 2020 Daniel Rehman. All rights reserved.
-//
-
+///     The "wef" text editor.
+///
+/// Created by Daniel Rehman.
+/// Created on: 2005122.113101
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -20,10 +16,18 @@
 #include <errno.h>
 #include <ctype.h>
 
-/// Parameters:
+#define set_color "\033[38;5;%lum"
+#define reset_color "\033[0m"
 
+
+/// Parameters:
 static size_t wrap_width = 60;
 static size_t tab_width = 8;
+//static const long rename_color = 214L;
+static const long confirm_color = 196L;
+//static const long edit_status_color = 235L;
+//static const long command_status_color = 245L;
+//static const long edited_flag_color = 130L;
 
 typedef char* unicode;
 
@@ -199,21 +203,13 @@ static inline void display
 }
 
 static inline struct line* generate_line_view(unicode* text, size_t text_length, size_t* count) {
-    *count = 0;
-    struct line* lines = NULL;
-    
-    size_t length = 0;
-    bool continued = false;
-    
-    if (!length) {
-        lines = realloc(lines, sizeof(struct line) * (*count + 1));
-        lines[*count].line = text + 0;
-        lines[*count].continued = continued;
-        lines[(*count)++].length = 0;
-    }
-    
+    size_t length = 0; bool continued = false;
+    struct line* lines = malloc(sizeof(struct line));
+    lines[0].line = text;
+    lines[0].continued = 0;
+    lines[0].length = 0;
+    *count = 1;
     for (size_t i = 0; i < text_length; i++) {
-
         if (is(text[i], '\n')) {
             lines[*count - 1].continued = false;
             length = 0;
@@ -221,20 +217,17 @@ static inline struct line* generate_line_view(unicode* text, size_t text_length,
             if (is(text[i], '\t')) length += tab_width; else length++;
             lines[*count - 1].length++;
         }
-        
         if (wrap_width && length >= wrap_width && !is(text[i],'\n')) {
             lines[*count - 1].continued = true;
             length = 0;
         }
-        
         if (!length) {
             lines = realloc(lines, sizeof(struct line) * (*count + 1));
             lines[*count].line = text + i + 1;
             lines[*count].continued = continued;
             lines[(*count)++].length = 0;
         }
-    }
-    return lines;
+    } return lines;
 }
 
 void debug_lines(struct line* lines, size_t line_count) {
@@ -302,7 +295,6 @@ static inline void move_right
     } if (user) *desired = *cursor;
 }
 
-
 static inline void move_up
 (struct location *cursor,
  struct location *origin,
@@ -360,8 +352,6 @@ static inline void move_down
     }
 }
 
-
-
 static void jump
  (unicode c0,
   struct location *cursor,
@@ -381,9 +371,24 @@ static void jump
     else if (bigraph(jump_end, c0, c1)) while (cursor->column < lines[cursor->line].length) move_right(cursor, origin, screen, window, lines, line_count, length, desired, true);
 }
 
+static inline bool confirmed(const char* question) {
+    struct winsize window;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+    printf("%s", save_cursor);
+    printf(set_cursor, window.ws_row, 1);
+    printf("%s", clear_line);
+    printf(set_color "%s? (yes/no): " reset_color, confirm_color, question);
+    char response[8] = {0};
+    restore_terminal();
+    fgets(response, 8, stdin);
+    configure_terminal();
+    printf("%s", restore_cursor);
+    return !strncmp(response, "yes", 3);;
+}
 
 int main(const int argc, const char** argv) {
     enum editor_mode mode = edit_mode;
+    bool saved = true;
     size_t length = 0, at = 0, line_count = 0;
     unicode *text = 0, c = 0, p = 0;
     struct location
@@ -399,7 +404,6 @@ int main(const int argc, const char** argv) {
     struct line* lines = generate_line_view(text, length, &line_count);
     
     while (mode != quit) {
-        
         ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
         display(lines, line_count, origin, cursor, window);
         fflush(stdout); c = read_unicode();
@@ -411,7 +415,8 @@ int main(const int argc, const char** argv) {
             else if (is(c, left_key) && at < length) { at++; move_right(&cursor, &origin, &screen, window, lines, line_count, length, &desired, true); }
             else if (is(c, right_key) && at) { at--; move_left(&cursor, &origin, &screen, window, lines, &desired, true); }
             else if (is(c, jump_key)) jump(c, &cursor, &origin, &screen, &desired, window, &at, length, lines, line_count);
-                                    
+            else if (is(c, quit_key) || is(c, force_quit_key)) { if (saved || (is(c, force_quit_key) && confirmed("quit without saving"))) mode = quit; }
+        
         } else {
             if (bigraph(left_exit, c, p) ||
                 bigraph(right_exit, c, p) ||
