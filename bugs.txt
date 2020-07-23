@@ -1,0 +1,37 @@
+------------------- bugs in the "wef" editor ----------------
+
+
+
+[!]	- the cursor still gets desynced from where the text is being inserted, 
+		usually only by one character. 
+		it happens when using tabs, and wrap around from the wrap width.
+
+
+
+[!]	- i think this still crashes, i think. 
+
+		we need to make this thing more stable. we need to make sure that we 
+		NEVER EVER seg fault. thats super important.
+
+			ie, we need to do a range bounds check on literally everything.
+			thats probably the only way we can prevent against that, tbh. 
+			im not sure how we could, otherwise.
+
+	
+		
+[!]	- when wrapping around text, we dont handle it properly, yet. 
+		seriously have to work on this. get it right.
+
+
+
+[!]	- we are handling down and up arrows incorrectly, when it comes to tabs. 
+		we need to account for the width of characters, when going downards, 
+		not the number of characters. ie, we need to know how far into the screen 
+		we are, ie, not the line length, i think.
+
+
+
+	- 
+
+
+

@@ -19,6 +19,7 @@
 #include <termios.h>
 #include <errno.h>
 #include <ctype.h>
+
 #define set_color "\033[38;5;%lum"
 #define reset_color "\033[0m"
 
@@ -61,14 +62,21 @@ struct clipboard {
 enum key_bindings {
     edit_key = 'e',         hard_edit_key = 'E',
     select_key = 's',
+    
     up_key = 'o',           down_key = 'i',
     left_key = 'j',         right_key = ';',
+    
+    word_up_key = 'O',      word_down_key = 'I',
+    word_left_key = 'J',    word_right_key = ':',
+    
     jump_key = 'k',         find_key = 'l',
     cut_key = 'd',          paste_key = 'a',
-    redo_key = 'r',         undo_key = 'u',
+            
     rename_key = 'W',       save_key = 'w',
     force_quit_key = 'Q',   quit_key = 'q',
-    function_key = 'f', option_key = 'p'
+    
+    redo_key = 'r',         undo_key = 'u',
+    function_key = 'f',     option_key = 'p'
 };
 
 static const char
@@ -180,6 +188,7 @@ static inline void insert(unicode c, size_t at, unicode** text, size_t* length) 
 static inline void delete(size_t at, unicode** text, size_t* length) {
     if (at > *length) { dump_and_panic(); return; }
     if (!at || !*length) return;
+    free((*text)[at - 1]);
     memmove((*text) + at - 1, (*text) + at, sizeof(unicode) * (*length - at));
     *text = realloc(*text, sizeof(unicode) * (--*length));
 }
@@ -380,17 +389,21 @@ static inline void open_file(const char* filename, unicode** text, size_t* lengt
 }
 
 static inline bool confirmed(const char* question) {
-    struct winsize window;
-    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-    printf(set_cursor, window.ws_row, 1);
-    printf("%s", clear_line);
-    printf(set_color "%s? (yes/no): " reset_color, confirm_color, question);
-    char response[8] = {0};
-    restore_terminal();
-    fgets(response, 8, stdin);
-    response[strlen(response) - 1] = 0;
-    configure_terminal();
-    return !strncmp(response, "yes", 3);;
+    while (true) {
+        struct winsize window;
+        ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+        printf(set_cursor, window.ws_row, 1);
+        printf("%s", clear_line);
+        printf(set_color "%s? (yes/no): " reset_color, confirm_color, question);
+        fflush(stdout);
+        char response[8] = {0};
+        restore_terminal();
+        fgets(response, 8, stdin);
+        configure_terminal();
+        if (!strncmp(response, "yes\n", 4)) return true;
+        else if (!strncmp(response, "no\n", 3)) return false;
+        else printf("error: please type \"yes\" or \"no\".\n");
+    }
 }
 
 static inline void prompt(const char* message, char* filename, int max, long color) {
@@ -439,6 +452,35 @@ static inline void rename_file(char* old, char* message) {
     else { strncpy(old, new, 4096); sprintf(message, "renamed."); }
 }
 
+static void read_option(size_t* at,
+                        struct location* cursor,
+                        char* message,
+                        struct location* origin,
+                        struct location* screen,
+                        bool* show_status) {
+    unicode c = read_unicode();
+    if (is(c, '0')) strcpy(message, "");
+    else if (is(c, '[')) *show_status = !*show_status;
+    else if (is(c, 'p')) sprintf(message, "options: 0:clear [:togg p:help t:tab w:wrap l:get ");
+    else if (is(c, 't')) {
+        char tab_width_string[64];
+        prompt("tab width", tab_width_string, 64, rename_color);
+        size_t n = atoi(tab_width_string);
+        tab_width = n ? n : 8;
+        *screen = *cursor = *origin = (struct location){0, 0}; *at = 0;
+    } else if (is(c, 'w')) {
+        char wrap_width_string[64];
+        prompt("wrap width", wrap_width_string, 64, rename_color);
+        size_t n = atoi(wrap_width_string);
+        wrap_width = n ? n : 128;
+        *screen = *cursor = *origin = (struct location){0, 0}; *at = 0;
+    } else if (is(c, 'l')) {
+        sprintf(message, "ww = %lu | tw = %lu | ", wrap_width, tab_width);
+    } else {
+        sprintf(message, "error: unknown option argument. try ? for help.");
+    }
+}
+
 int main(const int argc, const char** argv) {
     enum editor_mode mode = command_mode;
     bool saved = true, show_status = true;
@@ -464,29 +506,12 @@ int main(const int argc, const char** argv) {
             else if (is(c, edit_key)) mode = edit_mode;
             else if (is(c, hard_edit_key)) mode = hard_edit_mode;
             else if (is(c, select_key)) mode = select_mode;
-            else if (is(c, option_key))  {
-                unicode c = read_unicode();
-                if (is(c, '0')) strcpy(message, "");
-                else if (is(c, '[')) show_status = !show_status;
-                else if (is(c, '?')) sprintf(message, "options: 0:clear [:togg ?:help t:tab w:wrap p:get ");
-                else if (is(c, 't')) {
-                    char tab_width_string[64];
-                    prompt("tab width", tab_width_string, 64, rename_color);
-                    size_t n = atoi(tab_width_string);
-                    tab_width = n ? n : 8;
-                    screen = cursor = origin = (struct location){0, 0}; at = 0;
-                } else if (is(c, 'w')) {
-                    char wrap_width_string[64];
-                    prompt("wrap width", wrap_width_string, 64, rename_color);
-                    size_t n = atoi(wrap_width_string);
-                    wrap_width = n ? n : 128;
-                } else if (is(c, 'p')) {
-                    sprintf(message, "ww = %lu | tw = %lu | ", wrap_width, tab_width);
-                } else {
-                    sprintf(message, "error: unknown option argument.");
-                }
-            }
+            else if (is(c, option_key)) read_option(&at, &cursor, message, &origin, &screen, &show_status);
             else if (is(c, up_key)) move_up(&cursor, &origin, &screen, window, &at, lines, &desired);
+            
+            else if (is(c, word_up_key)) for (int i = 0; i < 5; i++) move_up(&cursor, &origin, &screen, window, &at, lines, &desired);
+            else if (is(c, word_down_key)) for (int i = 0; i < 5; i++) move_down(&cursor, &origin, &screen, window, &at, lines, line_count, length, &desired);
+                        
             else if (is(c, down_key)) move_down(&cursor, &origin, &screen, window, &at, lines, line_count, length, &desired);
             else if (is(c, right_key)) { if (at < length) { at++; move_right(&cursor, &origin, &screen, window, lines, line_count, length, &desired, true); } }
             else if (is(c, left_key)) { if (at) { at--; move_left(&cursor, &origin, &screen, window, lines, &desired, true); } }
@@ -501,14 +526,19 @@ int main(const int argc, const char** argv) {
             mode = command_mode;
             
         } else {
-            if (mode == edit_mode && (bigraph(left_exit, p, c) ||
-                bigraph(right_exit, p, c) ||
-                bigraph(edit_exit, p, c))) {
+            if (mode == edit_mode && bigraph(edit_exit, p, c)) {
+                delete(at--, &text, &length);
+                move_left(&cursor, &origin, &screen, window, lines, &desired, true);
+                mode = command_mode;
+                save(text, length, filename, &saved, message);
+                if (saved) mode = quit;
+                
+            } else if (mode == edit_mode && (bigraph(left_exit, p, c) || bigraph(right_exit, p, c))) {
                 delete(at--, &text, &length);
                 move_left(&cursor, &origin, &screen, window, lines, &desired, true);
                 free(lines); lines = generate_line_view(text, length, &line_count);
                 mode = command_mode;
-                if (bigraph(edit_exit, p, c)) { save(text, length, filename, &saved, message); if (saved) mode = quit; }
+                
             } else if (is(c, 127)) {
                 if (at && length) {
                     delete(at--, &text, &length);
@@ -535,7 +565,9 @@ int main(const int argc, const char** argv) {
         }
         p = c;
     }
-    
+    for (size_t i = 0; i < length; i++) free(text[i]);
+    free(text);
+    free(lines);
     restore_terminal();
     printf("%s", restore_screen);
 }
