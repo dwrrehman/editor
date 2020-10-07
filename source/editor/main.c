@@ -19,6 +19,8 @@
 #include <termios.h>
 #include <errno.h>
 #include <ctype.h>
+#include <clang-c/Index.h>
+#include <iso646.h>
 
 static const long
     rename_color = 214L,
@@ -97,11 +99,21 @@ struct options {
     size_t tab_width;
     bool show_status;
     bool use_txt_extension_when_absent;
+    bool use_c_syntax_highlighting;
+    bool show_line_numbers;
+};
+
+struct colored_range {
+    long color;
+    struct location start;
+    struct location end;
 };
 
 struct file {
     struct line* lines;
     unicode* text;
+    struct colored_range* coloring;
+    size_t coloring_count;
     size_t window_columns;
     size_t window_rows;
     size_t length;
@@ -121,18 +133,22 @@ struct file {
 struct file file = {
     .lines = NULL,
     .text = NULL,
+    .coloring = NULL,
+    .coloring_count = 0,
     .window_columns = 0,
     .window_rows = 0,
     .length = 0,
     .at = 0,
     .line_count = 0,
-    .mode = edit_mode,
+    .mode = command_mode,
     .saved = true,
     .options = {
         .wrap_width = 128,
         .tab_width = 8,
         .show_status = true,
         .use_txt_extension_when_absent = true,
+        .use_c_syntax_highlighting = true,
+        .show_line_numbers = true,
     },
     .origin = {0, 0},
     .cursor = {0, 0},
@@ -140,6 +156,7 @@ struct file file = {
     .desired = {0, 0},
     .message = {0},
     .filename = {0},
+    
 };
 
 struct termios terminal = {0};
@@ -218,11 +235,11 @@ static inline char read_byte_from_stdin() {
 }
 
 static inline bool is(unicode u, char c) {
-    return u && !strncmp(u, &c, 1);
+    return u and !strncmp(u, &c, 1);
 }
 
 static inline bool bigraph(const char* seq, unicode c0, unicode c1) {
-    return is(c0, seq[0]) && is(c1, seq[1]);
+    return is(c0, seq[0]) and is(c1, seq[1]);
 }
 
 static inline unicode read_unicode() {
@@ -266,7 +283,7 @@ static inline void delete(struct file* file) {
         return;
     }
     
-    if (!file->at || !file->length)
+    if (!file->at or !file->length)
         return;
     
     free(file->text[file->at - 1]);
@@ -284,7 +301,7 @@ static inline void print_status_bar(struct file* file) {
     printf("%s", clear_line);
     
     const long color =
-        file->mode == edit_mode || file->mode == hard_edit_mode
+        file->mode == edit_mode or file->mode == hard_edit_mode
             ? edit_status_color
             : command_status_color;
     
@@ -293,20 +310,122 @@ static inline void print_status_bar(struct file* file) {
     printf(set_color "  %s" reset_color, color, file->message);
 }
 
-static inline void display(struct file* file) {
+
+bool unicode_string_equals_literal(unicode* s1, const char* s2, size_t n) {
+    while (n and is(*s1, *s2)) {
+        ++s1;
+        ++s2;
+        --n;
+    }
+    return !n;
+}
+
+static inline void syntax_highlight(struct file* file) {
+    file->coloring_count = 0;
     
+    const int keyword_count = 31;
+    
+    const char* keywords[] = {
+        "0", "1",  "(", ")",
+        "{", "}", "=", "+",
+        
+        "exit", "puts", "MACRO",
+        
+        "void", "int", "static", "inline",
+        "struct", "unsigned", "sizeof", "const",
+        
+        "char", "for", "if", "else",
+        "while", "break", "continue", "long",
+        
+        "float", "double", "short", "type"
+    };
+    
+    const long colors[] = {
+        214, 214, 246, 246,
+        246, 246, 246, 246,
+        
+        41, 41, 52,
+        
+        33, 33, 33, 33,
+        33, 33, 33, 33,
+        
+        33, 33, 33, 33,
+        33, 33, 33, 33,
+        
+        33, 33, 33, 46,
+    };
+    
+    for (size_t line = 0; line < file->line_count; line++) {
+        for (size_t column = 0; column < file->lines[line].length; column++) {
+            for (int k = 0; k < keyword_count; k++) {
+                if (file->lines[line].length - column >= strlen(keywords[k]) and
+                    unicode_string_equals_literal(file->lines[line].line + column,
+                                                  keywords[k], strlen(keywords[k]))) {
+                    
+                    struct location start = {line, column};
+                    struct location end = {line, column + strlen(keywords[k])};
+                    struct colored_range node = {colors[k], start, end};
+                    
+                    file->coloring = realloc(file->coloring, sizeof(struct colored_range)
+                                             * (file->coloring_count + 1));
+                    file->coloring[file->coloring_count++] = node;
+                }
+            }
+        }
+    }
+}
+
+static inline void display(struct file* file) {
+    if (!file->window_columns and !file->window_rows) return;
+    
+    char* screen = NULL;
     size_t screen_length = 0;
     struct location screen_cursor = {1, 1};
-    char screen[file->window_columns * file->window_rows + 1];
     
-    memset(screen, 0, sizeof screen);
-
+    unsigned int line_number_width = floor(log10(file->line_count)) + 1;
+    
     for (size_t line = file->origin.line; line < fmin(file->origin.line + file->window_rows - 1, file->line_count); line++) {
+                        
+        if (file->options.show_line_numbers) {
+            if (line <= file->cursor.line)
+                screen_cursor.column += line_number_width + 2;
+            char line_number_buffer[128] = {0};
+            sprintf(line_number_buffer, set_color "%*lu" reset_color set_color "  " reset_color,
+                    59L, line_number_width, line + 1/*because people are stupid*/, 62L);
+            
+            for (int i = 0; i < strlen(line_number_buffer); i++) {
+                screen = realloc(screen, sizeof(char) * (screen_length + 1));
+                screen[screen_length++] = line_number_buffer[i];
+            }
+        }
+        
         for (size_t column = file->origin.column; column < fmin(file->origin.column + file->window_columns - 1, file->lines[line].length); column++) {
             
             unicode g = file->lines[line].line[column];
             
-            if (line < file->cursor.line || (line == file->cursor.line && column < file->cursor.column)) {
+            for (size_t range = 0; range < file->coloring_count; range++) {
+                if (line == file->coloring[range].start.line and
+                    column == file->coloring[range].start.column) {
+                    char highlight_buffer[128] = {0};
+                    sprintf(highlight_buffer, set_color, file->coloring[range].color);
+                    for (int i = 0; i < strlen(highlight_buffer); i++) {
+                        screen = realloc(screen, sizeof(char) * (screen_length + 1));
+                        screen[screen_length++] = highlight_buffer[i];
+                    }
+                }
+                
+                if (line == file->coloring[range].end.line and
+                    column == file->coloring[range].end.column) {
+                    char highlight_buffer[128] = {0};
+                    sprintf(highlight_buffer, reset_color);
+                    for (int i = 0; i < strlen(highlight_buffer); i++) {
+                        screen = realloc(screen, sizeof(char) * (screen_length + 1));
+                        screen[screen_length++] = highlight_buffer[i];
+                    }
+                }
+            }
+                
+            if (line < file->cursor.line or (line == file->cursor.line and column < file->cursor.column)) {
                 if (is(g, '\t'))
                     screen_cursor.column += file->options.tab_width;
                 else
@@ -314,11 +433,15 @@ static inline void display(struct file* file) {
             }
             
             if (is(g, '\t')) {
-                for (size_t i = 0; i < file->options.tab_width; i++)
+                for (size_t i = 0; i < file->options.tab_width; i++) {
+                    screen = realloc(screen, sizeof(char) * (screen_length + 1));
                     screen[screen_length++] = ' ';
+                }
             } else {
-                for (size_t i = 0; i < strlen(g); i++)
+                for (size_t i = 0; i < strlen(g); i++) {
+                    screen = realloc(screen, sizeof(char) * (screen_length + 1));
                     screen[screen_length++] = g[i];
+                }
             }
         }
         
@@ -327,13 +450,16 @@ static inline void display(struct file* file) {
             screen_cursor.column = 1;
         }
         
+        screen = realloc(screen, sizeof(char) * (screen_length + 1));
         screen[screen_length++] = '\n';
     }
     
+    screen = realloc(screen, sizeof(char) * (screen_length + 1));
+    screen[screen_length++] = '\0';
+    
     printf("%s%s", clear_screen, screen);
     
-    if (file->options.show_status)
-        print_status_bar(file);
+    if (file->options.show_status) print_status_bar(file);
     
     printf(set_cursor, screen_cursor.line, screen_cursor.column);
 }
@@ -352,7 +478,7 @@ static inline struct line* generate_line_view(struct file* file) {
         } else {
             if (is(file->text[i], '\t')) length += file->options.tab_width; else length++;
             lines[file->line_count - 1].length++;
-            if (file->options.wrap_width && length >= file->options.wrap_width) {
+            if (file->options.wrap_width and length >= file->options.wrap_width) {
                 lines[file->line_count - 1].continued = true;
                 length = 0;
             }
@@ -444,7 +570,7 @@ static inline void move_up(struct file* file) {
      }
      const size_t column_target = fmin(file->lines[file->cursor.line - 1].length, file->desired.column);
      const size_t line_target = file->cursor.line - 1;
-     while (file->cursor.column > column_target || file->cursor.line > line_target) {
+     while (file->cursor.column > column_target or file->cursor.line > line_target) {
          move_left(file, false);
          file->at--;
      }
@@ -470,12 +596,12 @@ static inline void move_down(struct file* file) {
     const size_t column_target = fmin(file->lines[file->cursor.line + 1].length, file->desired.column);
     const size_t line_target = file->cursor.line + 1;
     
-    while (file->cursor.column < column_target || file->cursor.line < line_target) {
+    while (file->cursor.column < column_target or file->cursor.line < line_target) {
         move_right(file, false);
         file->at++;
     }
     
-    if (file->cursor.line && file->lines[file->cursor.line - 1].continued && !column_target) {
+    if (file->cursor.line and file->lines[file->cursor.line - 1].continued and !column_target) {
         move_left(file, false);
         file->at--;
     }
@@ -576,7 +702,7 @@ static inline void save(struct file* buffer) {
             return;
         }
         
-        if (!strrchr(buffer->filename, '.') &&
+        if (!strrchr(buffer->filename, '.') and
             buffer->options.use_txt_extension_when_absent) {
             strcat(buffer->filename, ".txt");
         }
@@ -584,7 +710,7 @@ static inline void save(struct file* buffer) {
         prompted = true;
     }
     
-    if (prompted && file_exists(buffer->filename) &&
+    if (prompted and file_exists(buffer->filename) and
         !confirmed("file already exists, overwrite")) {
         strcpy(buffer->filename, "");
         sprintf(buffer->message, "aborted save.");
@@ -620,7 +746,7 @@ static inline void rename_file(char* old, char* message) {
     if (!strlen(new))
         sprintf(message, "aborted rename.");
     
-    else if (access(new, F_OK) != -1 &&
+    else if (access(new, F_OK) != -1 and
              !confirmed("file already exists, overwrite"))
         sprintf(message, "aborted rename.");
     
@@ -694,11 +820,68 @@ static inline void backspace(struct file* file) {
     file->lines = generate_line_view(file);
 }
 
+
+
+
+
+
+enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
+    CXString spelling = clang_getCursorSpelling(cursor);
+    CXString kind = clang_getCursorKindSpelling(clang_getCursorKind(cursor));
+    
+    printf("Cursor '%s' of kind '%s'.\n", clang_getCString(spelling), clang_getCString(kind));
+    
+    CXSourceRange range = clang_getCursorExtent(cursor);
+    CXSourceLocation begin = clang_getRangeStart(range);
+    CXSourceLocation end = clang_getRangeEnd(range);
+        
+    unsigned int line, column, offset;
+    clang_getSpellingLocation(begin, NULL, &line, &column, &offset);
+    printf("begin: (%u,%u) : %u \n", line, column, offset);
+    
+    clang_getSpellingLocation(end, NULL, &line, &column, &offset);
+    printf("end: (%u,%u) : %u \n", line, column, offset);
+    
+    clang_disposeString(spelling);
+    clang_disposeString(kind);
+    
+    return CXChildVisit_Recurse;
+}
+           
+           
+        
 int main(const int argc, const char** argv) {
             
-    signal(SIGINT, signal_interrupt);
-    printf("%s", save_screen);
-    configure_terminal();
+    
+//        CXIndex index = clang_createIndex(0, 0);
+//
+//        CXTranslationUnit unit = clang_parseTranslationUnit
+//        (index, "/Users/deniylreimn/Documents/header.hpp", NULL, 0, NULL, 0, CXTranslationUnit_None);
+//
+//        if (!unit) {
+//            printf("Unable to parse translation unit. Quitting.\n");
+//            exit(1);
+//        }
+//
+//        CXCursor cursor = clang_getTranslationUnitCursor(unit);
+//        clang_visitChildren(cursor, visitor, NULL);
+//        clang_disposeTranslationUnit(unit);
+//        clang_disposeIndex(index);
+//
+//        exit(0);
+//
+//
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
     
     if (argc > 1) {
         strncpy(file.filename, argv[1], 4096);
@@ -707,11 +890,17 @@ int main(const int argc, const char** argv) {
     
     file.lines = generate_line_view(&file);
     
+    signal(SIGINT, signal_interrupt);
+    printf("%s", save_screen);
+    configure_terminal();
+    
     unicode c = 0, p = 0;
     
     while (file.mode != quit) {
         
         adjust_window_size(&file);
+        
+        syntax_highlight(&file);
         
         display(&file);
         
@@ -762,7 +951,7 @@ int main(const int argc, const char** argv) {
                     file.mode = quit;
                 
             } else if (is(c, force_quit_key)) {
-                if (file.saved || confirmed("quit without saving"))
+                if (file.saved or confirmed("quit without saving"))
                     file.mode = quit;
                 
             } else {
@@ -774,22 +963,22 @@ int main(const int argc, const char** argv) {
             file.mode = command_mode;
             
         } else {
-            if (file.mode == edit_mode && bigraph(edit_exit, p, c)) {
+            if (file.mode == edit_mode and bigraph(edit_exit, p, c)) {
                 
                 backspace(&file);
                 file.mode = command_mode;
                 save(&file);
                 if (file.saved) file.mode = quit;
                 
-            } else if (file.mode == edit_mode &&
-                       (bigraph(left_exit, p, c) ||
+            } else if (file.mode == edit_mode and
+                       (bigraph(left_exit, p, c) or
                         bigraph(right_exit, p, c))) {
                 
                 backspace(&file);
                 file.mode = command_mode;
                 
             } else if (is(c, 127)) {
-                if (file.at && file.length) {
+                if (file.at and file.length) {
                     backspace(&file);
                     file.saved = false;
                 }
@@ -833,3 +1022,36 @@ int main(const int argc, const char** argv) {
     restore_terminal();
     printf("%s", restore_screen);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+//    clang_getExpansionLocation(*begin, NULL, &line, &column, &offset);
+//    printf("LOCATION: (%s): file = %s, line = %u, col = %u, offset = %u\n", name, "", line, column, offset);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
+
+// │ unicode box-drawing vertical line.
