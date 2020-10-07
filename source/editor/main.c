@@ -20,15 +20,12 @@
 #include <errno.h>
 #include <ctype.h>
 
-// --------------------------------------
-/// Parameters:
-// --------------------------------------
-
-static const long rename_color = 214L;
-static const long confirm_color = 196L;
-static const long edit_status_color = 234L;
-static const long command_status_color = 239L;
-static const long edited_flag_color = 130L;
+static const long
+    rename_color = 214L,
+    confirm_color = 196L,
+    edit_status_color = 234L,
+    command_status_color = 239L,
+    edited_flag_color = 130L;
 
 enum key_bindings {
     edit_key = 'e',         hard_edit_key = 'E',
@@ -51,20 +48,20 @@ enum key_bindings {
 };
 
 static const char
-*left_exit = "wf",
-*right_exit = "oj",
-*edit_exit = "wq",
-*jump_top = "ko",
-*jump_bottom = "km",
-*jump_begin = "kj",
-*jump_end = "kl";
+    *left_exit = "wf",
+    *right_exit = "oj",
+    *edit_exit = "wq",
+    *jump_top = "ko",
+    *jump_bottom = "km",
+    *jump_begin = "kj",
+    *jump_end = "kl";
 
 static const char
-*set_cursor = "\033[%lu;%luH",
-*clear_screen = "\033[1;1H\033[2J",
-*clear_line = "\033[2K",
-*save_screen = "\033[?1049h",
-*restore_screen = "\033[?1049l";
+    *set_cursor = "\033[%lu;%luH",
+    *clear_screen = "\033[1;1H\033[2J",
+    *clear_line = "\033[2K",
+    *save_screen = "\033[?1049h",
+    *restore_screen = "\033[?1049l";
 
 #define set_color "\033[38;5;%lum"
 #define reset_color "\033[0m"
@@ -95,19 +92,24 @@ struct clipboard {
     size_t length;
 };
 
+struct options {
+    size_t wrap_width;
+    size_t tab_width;
+    bool show_status;
+    bool use_txt_extension_when_absent;
+};
+
 struct file {
     struct line* lines;
     unicode* text;
     size_t window_columns;
     size_t window_rows;
-    size_t wrap_width;
-    size_t tab_width;
     size_t length;
     size_t at;
     size_t line_count;
-    enum editor_mode mode;
     bool saved;
-    bool show_status;
+    enum editor_mode mode;
+    struct options options;
     struct location origin;
     struct location cursor;
     struct location screen;
@@ -116,28 +118,51 @@ struct file {
     char filename[4096];
 };
 
-unicode** global_text = NULL;
-size_t *global_length = NULL;
+struct file file = {
+    .lines = NULL,
+    .text = NULL,
+    .window_columns = 0,
+    .window_rows = 0,
+    .length = 0,
+    .at = 0,
+    .line_count = 0,
+    .mode = edit_mode,
+    .saved = true,
+    .options = {
+        .wrap_width = 128,
+        .tab_width = 8,
+        .show_status = true,
+        .use_txt_extension_when_absent = true,
+    },
+    .origin = {0, 0},
+    .cursor = {0, 0},
+    .screen = {0, 0},
+    .desired = {0, 0},
+    .message = {0},
+    .filename = {0},
+};
+
 struct termios terminal = {0};
 
-static inline void get_datetime(char buffer[16]) {
+void get_datetime(char buffer[16]) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     struct tm* tm_info = localtime(&tv.tv_sec);
     strftime(buffer, 15, "%y%m%d%u.%H%M%S", tm_info);
 }
 
-static void dump() {
+void dump() {
     char tempname[4096] = {0};
     char datetime[16] = {0};
     get_datetime(datetime);
     strcpy(tempname, "temporary_savefile_");
     strcat(tempname, datetime);
     strcat(tempname, ".txt");
+    printf("dump: dumping save file to: %s\n", tempname);
     FILE* tempfile = fopen(tempname, "w");
     if (!tempfile) tempfile = stdout;
-    for (size_t i = 0; i < *global_length; i++)
-        fputs((*global_text)[i], tempfile);
+    for (size_t i = 0; i < file.length; i++)
+        fputs((file.text)[i], tempfile);
     fclose(tempfile);
 }
 
@@ -283,13 +308,13 @@ static inline void display(struct file* file) {
             
             if (line < file->cursor.line || (line == file->cursor.line && column < file->cursor.column)) {
                 if (is(g, '\t'))
-                    screen_cursor.column += file->tab_width;
+                    screen_cursor.column += file->options.tab_width;
                 else
                     screen_cursor.column++;
             }
             
             if (is(g, '\t')) {
-                for (size_t i = 0; i < file->tab_width; i++)
+                for (size_t i = 0; i < file->options.tab_width; i++)
                     screen[screen_length++] = ' ';
             } else {
                 for (size_t i = 0; i < strlen(g); i++)
@@ -307,7 +332,7 @@ static inline void display(struct file* file) {
     
     printf("%s%s", clear_screen, screen);
     
-    if (file->show_status)
+    if (file->options.show_status)
         print_status_bar(file);
     
     printf(set_cursor, screen_cursor.line, screen_cursor.column);
@@ -325,9 +350,9 @@ static inline struct line* generate_line_view(struct file* file) {
             lines[file->line_count - 1].continued = false;
             length = 0;
         } else {
-            if (is(file->text[i], '\t')) length += file->tab_width; else length++;
+            if (is(file->text[i], '\t')) length += file->options.tab_width; else length++;
             lines[file->line_count - 1].length++;
-            if (file->wrap_width && length >= file->wrap_width) {
+            if (file->options.wrap_width && length >= file->options.wrap_width) {
                 lines[file->line_count - 1].continued = true;
                 length = 0;
             }
@@ -441,12 +466,15 @@ static inline void move_down(struct file* file) {
         }
         return;
     }
+    
     const size_t column_target = fmin(file->lines[file->cursor.line + 1].length, file->desired.column);
     const size_t line_target = file->cursor.line + 1;
+    
     while (file->cursor.column < column_target || file->cursor.line < line_target) {
         move_right(file, false);
         file->at++;
     }
+    
     if (file->cursor.line && file->lines[file->cursor.line - 1].continued && !column_target) {
         move_left(file, false);
         file->at--;
@@ -473,23 +501,31 @@ static inline void open_file(struct file* buffer) {
         perror("fopen");
         exit(1);
     }
-    int c = 0;
-    while ((c = fgetc(file)) != EOF) {
-        size_t u_length = 1;
-        unicode u = malloc(sizeof(char)); u[0] = c;
-        size_t count = 0;
-        unsigned char cc = c;
-        if ((cc >> 3) == 30) count = 3;
+    
+    int character = 0;
+    
+    while ((character = fgetc(file)) != EOF) {
+        
+        unsigned char c = character;
+        size_t length = 0, count = 0;
+        
+        unicode bytes = malloc(sizeof(char));
+        bytes[length++] = c;
+        
+        if ((c >> 3) == 30) count = 3;
         else if ((c >> 4) == 14) count = 2;
-        else if ((cc >> 5) == 6) count = 1;
+        else if ((c >> 5) == 6) count = 1;
+        
         for (size_t i = 0; i < count; i++) {
-            u = realloc(u, sizeof(char) * (u_length + 1));
-            u[u_length++] = fgetc(file);
+            bytes = realloc(bytes, sizeof(char) * (length + 1));
+            bytes[length++] = fgetc(file);
         }
-        u = realloc(u, sizeof(char) * (u_length + 1));
-        u[u_length++] = 0;
+        
+        bytes = realloc(bytes, sizeof(char) * (length + 1));
+        bytes[length++] = '\0';
+        
         buffer->text = realloc(buffer->text, sizeof(unicode) * (buffer->length + 1));
-        buffer->text[buffer->length++] = u;
+        buffer->text[buffer->length++] = bytes;
     }
     fclose(file);
 }
@@ -525,66 +561,120 @@ static inline void prompt(const char* message, char* response, int max, long col
     response[strlen(response) - 1] = '\0';
 }
 
+static inline bool file_exists(const char* filename) {
+    return access(filename, F_OK) != -1;
+}
+
 static inline void save(struct file* buffer) {
     bool prompted = false;
-    if (!strlen(buffer->filename)) { prompt("filename", buffer->filename, 4096, rename_color); prompted = true; }
     
     if (!strlen(buffer->filename)) {
-        sprintf(buffer->message, "aborted save.");
-        return;
-    } else if (prompted && access(buffer->filename, F_OK) != -1 && ! confirmed("file already exists, overwrite")) {
+        prompt("filename", buffer->filename, 4096, rename_color);
+        
+        if (!strlen(buffer->filename)) {
+            sprintf(buffer->message, "aborted save.");
+            return;
+        }
+        
+        if (!strrchr(buffer->filename, '.') &&
+            buffer->options.use_txt_extension_when_absent) {
+            strcat(buffer->filename, ".txt");
+        }
+        
+        prompted = true;
+    }
+    
+    if (prompted && file_exists(buffer->filename) &&
+        !confirmed("file already exists, overwrite")) {
         strcpy(buffer->filename, "");
         sprintf(buffer->message, "aborted save.");
         return;
     }
+        
     FILE* file = fopen(buffer->filename, "w+");
     if (!file) {
         sprintf(buffer->message, "save unsuccessful: %s", strerror(errno));
+        strcpy(buffer->filename, "");
         return;
+        
     } else {
-        for (size_t i = 0; i < buffer->length; i++) fputs(buffer->text[i], file);
-        if (ferror(file)) sprintf(buffer->message, "save unsuccessful: %s", strerror(errno));
-        else sprintf(buffer->message, "saved.");
+        for (size_t i = 0; i < buffer->length; i++)
+            fputs(buffer->text[i], file);
+        if (ferror(file)) {
+            sprintf(buffer->message, "write unsuccessful: %s", strerror(errno));
+            strcpy(buffer->filename, "");
+            return;
+        }
+        else {
+            sprintf(buffer->message, "saved.");
+            buffer->saved = true;
+        }
     }
     fclose(file);
-    buffer->saved = true;
 }
 
 static inline void rename_file(char* old, char* message) {
-    char new[4096]; prompt("filename", new, 4096, rename_color);
-    if (!strlen(new)) sprintf(message, "aborted rename.");
-    else if (access(new, F_OK) != -1 && !confirmed("file already exists, overwrite")) sprintf(message, "aborted rename.");
-    else if (rename(old, new)) sprintf(message, "rename unsuccessful: %s", strerror(errno));
-    else { strncpy(old, new, 4096); sprintf(message, "renamed."); }
+    char new[4096];
+    prompt("filename", new, 4096, rename_color);
+    
+    if (!strlen(new))
+        sprintf(message, "aborted rename.");
+    
+    else if (access(new, F_OK) != -1 &&
+             !confirmed("file already exists, overwrite"))
+        sprintf(message, "aborted rename.");
+    
+    else if (rename(old, new))
+        sprintf(message, "rename unsuccessful: %s", strerror(errno));
+    
+    else {
+        strncpy(old, new, 4096);
+        sprintf(message, "renamed.");
+    }
 }
 
 static void read_option(struct file* file) {
     unicode c = read_unicode();
     if (is(c, '0')) strcpy(file->message, "");
-    else if (is(c, '[')) file->show_status = !file->show_status;
+    else if (is(c, '[')) file->options.show_status = !file->options.show_status;
     else if (is(c, 'p')) sprintf(file->message, "options: 0:clear [:togg p:help t:tab w:wrap l:get ");
+    
+    else if (is(c, 'o')) {
+        char option_command[128] = {0};
+        prompt("option", option_command, 128, rename_color);
+        sprintf(file->message, "error: programmatic options are currently unimplemented.");
+        // split / break down option_command by spaces.
+        // ": set <OPTION_NAME> <OPTION_VALUE>"       // where option value can be a string or an int.
+        // this should really be using our programming language!
+        // this function shouldnt even exist!
+        // this can all be aaccomplished in code! seriously! this entire function! literally!
+        // just use "fs" for toggle status bar, "fset" for setting an option, "fclear" to clear message,
+        // foptions for seeing the current settings   or maybe even fsettings
+    }
+    
     else if (is(c, 't')) {
         char tab_width_string[64];
         prompt("tab width", tab_width_string, 64, rename_color);
         size_t n = atoi(tab_width_string);
-        file->tab_width = n ? n : 8;
+        file->options.tab_width = n ? n : 8;
         file->screen = file->cursor = file->origin = (struct location){0, 0}; file->at = 0;
     } else if (is(c, 'w')) {
         char wrap_width_string[64];
         prompt("wrap width", wrap_width_string, 64, rename_color);
         size_t n = atoi(wrap_width_string);
-        file->wrap_width = n ? n : 128;
+        file->options.wrap_width = n ? n : 128;
         file->screen = file->cursor = file->origin = (struct location){0, 0}; file->at = 0;
     } else if (is(c, 'l')) {
-        sprintf(file->message, "ww = %lu | tw = %lu | ", file->wrap_width, file->tab_width);
+        sprintf(file->message, "ww = %lu | tw = %lu | ", file->options.wrap_width, file->options.tab_width);
     } else {
         sprintf(file->message, "error: unknown option argument. try ? for help.");
     }
 }
 
 static inline void destroy(struct file* file) {
-    for (size_t i = 0; i < file->length; i++)
-    free(file->text[i]);
+    for (size_t i = 0; i < file->length; i++) {
+        free(file->text[i]);
+    }
     free(file->text);
     free(file->lines);
 }
@@ -605,28 +695,7 @@ static inline void backspace(struct file* file) {
 }
 
 int main(const int argc, const char** argv) {
-    
-    struct file file = {
-        .lines = NULL,
-        .text = NULL,
-        .window_columns = 0,
-        .window_rows = 0,
-        .wrap_width = 128,
-        .tab_width = 8,
-        .length = 0,
-        .at = 0,
-        .line_count = 0,
-        .mode = command_mode,
-        .saved = true,
-        .show_status = true,
-        .origin = {0, 0},
-        .cursor = {0, 0},
-        .screen = {0, 0},
-        .desired = {0, 0},
-        .message = {0},
-        .filename = {0},
-    };
-    
+            
     signal(SIGINT, signal_interrupt);
     printf("%s", save_screen);
     configure_terminal();
@@ -643,7 +712,9 @@ int main(const int argc, const char** argv) {
     while (file.mode != quit) {
         
         adjust_window_size(&file);
+        
         display(&file);
+        
         fflush(stdout);
         
         c = read_unicode();
@@ -654,14 +725,13 @@ int main(const int argc, const char** argv) {
             else if (is(c, hard_edit_key)) file.mode = hard_edit_mode;
             else if (is(c, select_key)) file.mode = select_mode;
             else if (is(c, option_key)) read_option(&file);
-            
-            
+                        
             else if (is(c, word_up_key)) {
-                for (int i = 0; i < 5; i++)
+                for (int i = 0; i < 10; i++)
                 move_up(&file);
             }
             else if (is(c, word_down_key)) {
-                for (int i = 0; i < 5; i++)
+                for (int i = 0; i < 10; i++)
                 move_down(&file);
             }
             
