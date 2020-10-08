@@ -179,7 +179,7 @@ struct file empty_buffer = {
         .preserve_autosave_contents_on_save = false,
         .ms_until_inactive_autosave = 30 * 1000,
         .edits_until_active_autosave = 30,
-        .pause_on_shell_command_output = true,
+        .pause_on_shell_command_output = false,
     },
     .origin = {0, 0},
     .cursor = {0, 0},
@@ -859,6 +859,15 @@ static inline void execute_shell_command(char* line, struct file* file) {
     free(argv);
 }
 
+static inline char* strip(char* str) {
+    while (isspace(*str)) str++;
+    if (!*str) return str;
+    char* end = str + strlen(str) - 1;
+    while (end > str && isspace(*end)) end--;
+    end[1] = '\0';
+    return str;
+}
+
 static inline bool confirmed(const char* question) {
     while (true) {
         struct winsize window;
@@ -993,7 +1002,7 @@ static inline void read_option(struct file* file) {
     else if (is(c, 'o')) {
             char new[4096];
             prompt("open", new, 4096, rename_color);
-            open_file(new);
+            open_file(strip(new));
         
     } else if (is(c, 'f')) {
         char option_command[128] = {0};
@@ -1049,19 +1058,20 @@ int main(const int argc, const char** argv) {
     using_history();
     if (argc <= 1) create_new_buffer();
     else for (int i = argc - 1; i; i--) open_file(argv[i]);
-    
     if (!buffer_count) exit(1);
     
     printf("%s", save_screen);
     configure_terminal();
     signal(SIGINT, signal_interrupt);
     
+    
+    // for my purposes:
+    if (argc == 1) buffers[active]->mode = edit_mode;
+
+    
     unicode c = 0, p = 0;
     size_t autosave_counter = 0;
 
-    // for my purposes:
-    if (argc == 1) buffers[active]->mode = edit_mode;
-    
     while (buffer_count) {
         
         struct file* this = buffers[active];
@@ -1242,18 +1252,3 @@ int main(const int argc, const char** argv) {
 
 // i think i fixed it. it was just because i wasnt grabbing the input of the escape key, and before i was, and so was solving the problem. i put the code that grabs it back, and now we are good.
 
-
-
-
-//
-//     code that strips the leading and trailing whitespace of a string.
-//     note: modifies the given string.
-//
-//static inline char* strip(char* str) {
-//    while (isspace(*str)) str++;
-//    if (!*str) return str;
-//    char* end = str + strlen(str) - 1;
-//    while (end > str && isspace(*end)) end--;
-//    end[1] = '\0';
-//    return str;
-//}
