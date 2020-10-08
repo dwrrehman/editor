@@ -51,7 +51,7 @@ hello, i am really happy with my editor.
 
 
 
-      this is litearlly an editor that i made myself, and im testing it by typing in this document!
+      this is litearlly an Editor that i made myself, and im testing it by typing in this document!
 
 
       its reallly cool.

@@ -27,7 +27,7 @@ enum key_bindings {
     down_key = '8',//'i',
     left_key = '7',//'j',
     right_key = '0',//';',
-    right_key = '0',//';',
+//    right_key = '0',//';',
 };
 
 typedef char* unicode;

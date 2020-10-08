@@ -25,7 +25,7 @@
 #include <pthread.h>
 #include <clang-c/Index.h>
 
-const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
+static const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
 static const long
     rename_color = 214L,
@@ -51,7 +51,9 @@ enum key_bindings {
     force_quit_key = 'Q',   quit_key = 'q',
     
     redo_key = 'r',         undo_key = 'u',
-    function_key = 'f',     option_key = 'p'
+    function_key = 'f',     option_key = 'p',
+    
+    next_buffer_key = 'n',  previous_buffer_key = 'v',
 };
 
 static const char
@@ -138,9 +140,15 @@ struct file {
     char message[4096];
     char filename[4096];
     char autosave_name[4096];
+    pthread_t autosave_thread;
 };
 
-struct file file = {
+
+static volatile size_t active = 0;
+static volatile size_t buffer_count = 0;
+static struct file** buffers = NULL;
+
+struct file empty_buffer = {
     .lines = NULL,
     .text = NULL,
     .coloring = NULL,
@@ -171,6 +179,7 @@ struct file file = {
     .message = {0},
     .filename = {0},
     .autosave_name = {0},
+    .autosave_thread = 0,
 };
 
 struct termios terminal = {0};
@@ -197,8 +206,8 @@ static inline void dump() {
     FILE* tempfile = fopen(tempname, "w");
     if (!tempfile) tempfile = stdout;
     
-    for (size_t i = 0; i < file.length; i++)
-        fputs((file.text)[i], tempfile);
+    for (size_t i = 0; i < buffers[active]->length; i++)
+        fputs((buffers[active]->text)[i], tempfile);
     
     fclose(tempfile);
 }
@@ -215,7 +224,7 @@ static inline void autosave(struct file* buffer) {
     strcat(filename, datetime);
     strcat(filename, ".txt");
     
-    mkdir(file.autosave_name, 0777);
+    mkdir(buffer->autosave_name, 0777);
     
     FILE* savefile = fopen(filename, "w");
     if (!savefile) {
@@ -227,25 +236,25 @@ static inline void autosave(struct file* buffer) {
     fclose(savefile);
 }
 
-
-void* autosaver(void* unused) {
-    while (file.mode != quit) {
+void* autosaver(void* _buffer) {
+    struct file* buffer = _buffer;
+    while (buffer->mode != quit) {
         
-        for (unsigned int i = 0; i < file.options.ms_until_inactive_autosave; i++) {
-            if (file.mode == quit) return NULL;
+        for (unsigned int i = 0; i < buffer->options.ms_until_inactive_autosave; i++) {
+            if (buffer->mode == quit) return NULL;
             usleep(1000);
         }
         char saved_message[4096] = {0};
-        strcpy(saved_message, file.message);
-        sprintf(file.message, "autosaving..");
+        strcpy(saved_message, buffer->message);
+        sprintf(buffer->message, "autosaving..");
         
         for (unsigned int i = 0; i < 500; i++) {
-            if (file.mode == quit) return NULL;
+            if (buffer->mode == quit) return NULL;
             usleep(1000);
         }
         
-        autosave(&file);
-        strcpy(file.message, saved_message);
+        autosave(buffer);
+        strcpy(buffer->message, saved_message);
     }
     return NULL;
 }
@@ -705,17 +714,66 @@ static void jump(unicode c0, struct file* file) {
     }
 }
 
-static inline void open_file(struct file* buffer) {
-    FILE* file = fopen(buffer->filename, "r");
+static struct file* create_new_buffer() {
+    buffers = realloc(buffers, sizeof(struct file*) * (buffer_count + 1));
+    buffers[buffer_count] = malloc(sizeof(struct file));
+    
+    struct file* buffer = buffers[buffer_count];
+    *(buffers[buffer_count]) = empty_buffer;
+    
+    active = buffer_count;
+    buffer_count++;
+    
+    buffer->id = rand();
+    sprintf(buffer->autosave_name, "%s/%x/", autosave_directory, buffer->id);
+    
+    buffer->lines = generate_line_view(buffer);
+    syntax_highlight(buffer);
+        
+    pthread_create(&buffer->autosave_thread, NULL, autosaver, buffer);
+    
+    return buffer;
+}
+
+static inline void destroy(struct file* file) {
+    for (size_t i = 0; i < file->length; i++) {
+        free(file->text[i]);
+    }
+    free(file->text);
+    free(file->lines);
+    free(file->coloring);
+    free(file);
+}
+
+static inline void close_buffer() {
+    
+    buffers[active]->mode = quit;
+    pthread_join(buffers[active]->autosave_thread, NULL);
+    
+    struct file* swap = buffers[buffer_count - 1];
+    buffers[buffer_count - 1] = buffers[active];
+    buffers[active] = swap;
+    destroy(buffers[--buffer_count]);
+    active = buffer_count - 1;
+}
+
+static inline int open_file(const char* given_filename) {
+    
+    if (!strlen(given_filename)) return 1;
+    
+    FILE* file = fopen(given_filename, "r");
     if (!file) {
-        perror("fopen");
-        exit(1);
+        if (buffer_count) {
+            sprintf(buffers[active]->message, "could not open %s: %s",
+                    given_filename, strerror(errno));
+        } else perror("fopen");
+        return 1;
     }
     
+    struct file* buffer = create_new_buffer();
+
     int character = 0;
-    
     while ((character = fgetc(file)) != EOF) {
-        
         unsigned char c = character;
         size_t length = 0, count = 0;
         
@@ -738,6 +796,11 @@ static inline void open_file(struct file* buffer) {
         buffer->text[buffer->length++] = bytes;
     }
     fclose(file);
+    strncpy(buffer->filename, given_filename, 4096);
+    
+    buffer->lines = generate_line_view(buffer);
+    syntax_highlight(buffer);
+    return 0;
 }
 
 static inline bool confirmed(const char* question) {
@@ -851,22 +914,20 @@ static void read_option(struct file* file) {
     else if (is(c, 'l')) file->options.show_line_numbers = !file->options.show_line_numbers;
     else if (is(c, '[')) file->options.show_status = !file->options.show_status;
     else if (is(c, 'c')) file->options.use_c_syntax_highlighting = !file->options.use_c_syntax_highlighting;
-    else if (is(c, 'p')) sprintf(file->message, "0:sb_clear [:sb_toggle l:numbers c:csyntax o:__ ");
+    else if (is(c, 'p')) sprintf(file->message, "0:sb_clear [:sb_toggle l:numbers c:csyntax o:open_buf f:func ");
+    else if (is(c, 'i')) create_new_buffer();
     else if (is(c, 'o')) {
+            char new[4096];
+            prompt("open", new, 4096, rename_color);
+            open_file(new);
+        
+    } else if (is(c, 'f')) {
         char option_command[128] = {0};
         prompt("option", option_command, 128, rename_color);
         sprintf(file->message, "error: programmatic options are currently unimplemented.");
     } else {
         sprintf(file->message, "error: unknown option argument. try pp for help.");
     }
-}
-
-static inline void destroy(struct file* file) {
-    for (size_t i = 0; i < file->length; i++) {
-        free(file->text[i]);
-    }
-    free(file->text);
-    free(file->lines);
 }
 
 static inline void adjust_window_size(struct file* file) {
@@ -909,108 +970,113 @@ enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData c
 }
            
 int main(const int argc, const char** argv) {
-            
-    if (argc > 1) {
-        strncpy(file.filename, argv[1], 4096);
-        open_file(&file);
-    }
     
-    srand((unsigned)time(0));
-    file.id = rand();
-    sprintf(file.autosave_name, "%s/%x/", autosave_directory, file.id);
+    srand((unsigned) time(0));
     
-    file.lines = generate_line_view(&file);
-    syntax_highlight(&file);
+    if (argc <= 1) create_new_buffer();
+    else for (int i = argc - 1; i; i--) open_file(argv[i]);
     
-    signal(SIGINT, signal_interrupt);
+    if (!buffer_count) exit(1);
+    
     printf("%s", save_screen);
     configure_terminal();
+    signal(SIGINT, signal_interrupt);
     
     unicode c = 0, p = 0;
-    
     size_t autosave_counter = 0;
-    
-    pthread_t autosave_thread;
-    pthread_create(&autosave_thread, NULL, autosaver, NULL);
-    
-    while (file.mode != quit) {
+
+    while (buffer_count) {
         
-        adjust_window_size(&file);
-        display(&file);
+        struct file* this = buffers[active];
+        adjust_window_size(this);
+        display(this);
         fflush(stdout);
         
         c = read_unicode();
         
-        if (file.mode == command_mode) {
+        if (this->mode == command_mode) {
             if (is(c, 27)) {}
-            else if (is(c, edit_key)) file.mode = edit_mode;
-            else if (is(c, hard_edit_key)) file.mode = hard_edit_mode;
-            else if (is(c, select_key)) file.mode = select_mode;
-            else if (is(c, option_key)) read_option(&file);
-                        
+            else if (is(c, edit_key)) this->mode = edit_mode;
+            else if (is(c, hard_edit_key)) this->mode = hard_edit_mode;
+            else if (is(c, select_key)) this->mode = select_mode;
+            else if (is(c, option_key)) read_option(this);
+            
             else if (is(c, word_up_key)) {
                 for (int i = 0; i < 10; i++)
-                move_up(&file);
+                move_up(this);
             }
             else if (is(c, word_down_key)) {
                 for (int i = 0; i < 10; i++)
-                move_down(&file);
+                move_down(this);
             }
             
-            else if (is(c, up_key)) move_up(&file);
-            else if (is(c, down_key)) move_down(&file);
+            else if (is(c, up_key)) move_up(this);
+            else if (is(c, down_key)) move_down(this);
             
             else if (is(c, right_key)) {
-                if (file.at < file.length) {
-                    file.at++;
-                    move_right(&file, true);
+                if (this->at < this->length) {
+                    this->at++;
+                    move_right(this, true);
                 }
             }
             else if (is(c, left_key)) {
-                if (file.at) {
-                    file.at--;
-                    move_left(&file, true);
+                if (this->at) {
+                    this->at--;
+                    move_left(this, true);
                 }
             }
             
-            else if (is(c, jump_key)) jump(c, &file);
+            else if (is(c, jump_key)) jump(c, this);
             
-            else if (is(c, save_key)) save(&file);
+            else if (is(c, save_key)) save(this);
             
-            else if (is(c, rename_key)) rename_file(file.filename, file.message);
+            else if (is(c, rename_key)) rename_file(this->filename, this->message);
             
             else if (is(c, quit_key)) {
-                if (file.saved)
-                    file.mode = quit;
+                if (this->saved) close_buffer();
                 
             } else if (is(c, force_quit_key)) {
-                if (file.saved or confirmed("quit without saving"))
-                    file.mode = quit;
+                if (this->saved or confirmed("quit without saving")) close_buffer();
+                
+            } else if (is(c, next_buffer_key)) {
+                if (active < buffer_count - 1) {
+                    active++;
+                    sprintf(buffers[active]->message, "set active buffer [%lu]", active);
+                }
+                
+            } else if (is(c, previous_buffer_key)) {
+                if (active) {
+                    active--;
+                    sprintf(buffers[active]->message, "set active buffer [%lu]", active);
+                }
                 
             } else {
-                sprintf(file.message, "error: unknown command %d", (int) c[0]);
+                sprintf(this->message, "error: unknown command %d", (int) c[0]);
             }
             
-        } else if (file.mode == select_mode) {
-            sprintf(file.message, "error: select mode not implemented.");
-            file.mode = command_mode;
+        } else if (this->mode == select_mode) {
+            sprintf(this->message, "error: select mode not implemented.");
+            this->mode = command_mode;
             
-        } else if (file.mode == edit_mode) {
+        } else if (this->mode == edit_mode) {
             
             if (bigraph(edit_exit, p, c)) {
-                backspace(&file);
-                file.mode = command_mode;
-                save(&file);
-                if (file.saved) file.mode = quit;
+                
+                backspace(this);
+                this->mode = command_mode;
+                
+                save(this);
+                if (this->saved)
+                    close_buffer();
                 
             } else if (bigraph(left_exit, p, c) or bigraph(right_exit, p, c)) {
-                backspace(&file);
-                file.mode = command_mode;
+                backspace(this);
+                this->mode = command_mode;
                 
             } else if (is(c, 127)) {
-                if (file.at and file.length) {
-                    backspace(&file);
-                    file.saved = false;
+                if (this->at and this->length) {
+                    backspace(this);
+                    this->saved = false;
                 }
                 
             } else if (is(c, 27)) {
@@ -1019,54 +1085,46 @@ int main(const int argc, const char** argv) {
                 if (is(c, '[')) {
                     unicode c = read_unicode();
                     
-                    if (is(c, 'A')) move_up(&file);
-                    else if (is(c, 'B')) move_down(&file);
+                    if (is(c, 'A')) move_up(this);
+                    else if (is(c, 'B')) move_down(this);
                     else if (is(c, 'C')) {
-                        if (file.at < file.length) {
-                            file.at++;
-                            move_right(&file, true);
+                        if (this->at < this->length) {
+                            this->at++;
+                            move_right(this, true);
                         }
                     } else if (is(c, 'D')) {
-                        if (file.at) {
-                            file.at--;
-                            move_left(&file, true);
+                        if (this->at) {
+                            this->at--;
+                            move_left(this, true);
                         }
                     }
                 } else if (is(c, 27))
-                    file.mode = command_mode;
+                    this->mode = command_mode;
                 
             } else {
-                insert(c, &file);
-                file.at++;
-                free(file.lines);
-                file.lines = generate_line_view(&file);
-                syntax_highlight(&file);
-                move_right(&file, true);
+                insert(c, this);
+                this->at++;
+                free(this->lines);
+                this->lines = generate_line_view(this);
+                syntax_highlight(this);
+                move_right(this, true);
                 
-                file.saved = false;
-                if (++autosave_counter == file.options.edits_until_active_autosave) {
+                this->saved = false;
+                if (++autosave_counter == this->options.edits_until_active_autosave) {
                     autosave_counter = 0;
-                    autosave(&file);
+                    autosave(this);
                 }
             }
             
         } else {
-            sprintf(file.message, "unknown mode: %d", file.mode);
-            file.mode = command_mode;
+            sprintf(this->message, "unknown mode: %d", this->mode);
+            this->mode = command_mode;
         }
         p = c;
     }
-    pthread_join(autosave_thread, NULL);
-    destroy(&file);
     restore_terminal();
     printf("%s", restore_screen);
 }
-
-
-
-
-
-
 
 
 
@@ -1078,22 +1136,3 @@ int main(const int argc, const char** argv) {
 // just use "fs" for toggle status bar, "fset" for setting an option, "fclear" to clear message,
 // foptions for seeing the current settings   or maybe even fsettings
 
-//    else if (is(c, 't')) {
-//        char tab_width_string[64];
-//        prompt("tab width", tab_width_string, 64, rename_color);
-//        size_t n = atoi(tab_width_string);
-//        file->options.tab_width = n ? n : 8;
-//        file->screen = file->cursor = file->origin = (struct location){0, 0}; file->at = 0;
-//
-//    } else if (is(c, 'w')) {
-//        char wrap_width_string[64];
-//        prompt("wrap width", wrap_width_string, 64, rename_color);
-//        size_t n = atoi(wrap_width_string);
-//        file->options.wrap_width = n ? n : 128;
-//        file->screen = file->cursor = file->origin = (struct location){0, 0}; file->at = 0;
-//
-//    }
-
-
-//    adjust_window_size(&file);
-//    file.options.wrap_width = file.window_columns;
