@@ -11,18 +11,23 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <math.h>
 #include <time.h>
+#include <ftw.h>
 #include <errno.h>
 #include <unistd.h>
-#include <ftw.h>
+#include <termios.h>
+#include <pthread.h>
 #include <sys/time.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
-#include <termios.h>
-#include <errno.h>
-#include <ctype.h>
-#include <pthread.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+
+#include <readline/history.h>
+#include <readline/readline.h>
+
 #include <clang-c/Index.h>
 
 static const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
@@ -32,7 +37,8 @@ static const long
     confirm_color = 196L,
     edit_status_color = 234L,
     command_status_color = 239L,
-    edited_flag_color = 130L;
+    edited_flag_color = 130L,
+    shell_prompt_color = 33L;
 
 enum key_bindings {
     edit_key = 'e',         hard_edit_key = 'E',
@@ -63,7 +69,8 @@ static const char
     *jump_top = "ko",
     *jump_bottom = "km",
     *jump_begin = "kj",
-    *jump_end = "kl";
+    *jump_end = "kl",
+    *shell_command_key = "fd";
 
 static const char
     *set_cursor = "\033[%lu;%luH",
@@ -111,6 +118,7 @@ struct options {
     bool preserve_autosave_contents_on_save;
     unsigned int ms_until_inactive_autosave;
     unsigned int edits_until_active_autosave;
+    bool pause_on_shell_command_output;
 };
 
 struct colored_range {
@@ -159,7 +167,7 @@ struct file empty_buffer = {
     .at = 0,
     .line_count = 0,
     .id = 0,
-    .mode = edit_mode,
+    .mode = command_mode,
     .saved = true,
     .options = {
         .wrap_width = 128,
@@ -171,6 +179,7 @@ struct file empty_buffer = {
         .preserve_autosave_contents_on_save = false,
         .ms_until_inactive_autosave = 30 * 1000,
         .edits_until_active_autosave = 30,
+        .pause_on_shell_command_output = true,
     },
     .origin = {0, 0},
     .cursor = {0, 0},
@@ -395,7 +404,7 @@ static inline void print_status_bar(struct file* file) {
     printf(set_color "  %s" reset_color, color, file->message);
 }
 
-bool unicode_string_equals_literal(unicode* s1, const char* s2, size_t n) {
+static inline bool unicode_string_equals_literal(unicode* s1, const char* s2, size_t n) {
     while (n and is(*s1, *s2)) {
         ++s1;
         ++s2;
@@ -473,7 +482,7 @@ static inline void display(struct file* file) {
     for (size_t line = file->origin.line; line < fmin(file->origin.line + file->window_rows - 1, file->line_count); line++) {
         
         size_t line_length = 0;
-                
+        
         if (file->options.show_line_numbers) {
             if (line <= file->cursor.line)
                 screen_cursor.column += line_number_width + 2;
@@ -487,7 +496,7 @@ static inline void display(struct file* file) {
             }
         }
         
-        for (size_t column = file->origin.column; column < fmin(file->origin.column + file->window_columns - 1, file->lines[line].length); column++) {
+        for (size_t column = file->origin.column; column < fmin(file->origin.column + file->window_columns - (line_number_width + 2), file->lines[line].length); column++) {
             
             unicode g = file->lines[line].line[column];
             
@@ -700,10 +709,10 @@ static inline void move_down(struct file* file) {
     }
 }
 
-static void jump(unicode c0, struct file* file) {
+static inline void jump(unicode c0, struct file* file) {
     unicode c1 = read_unicode();
     if (bigraph(jump_top, c0, c1)) { file->screen = file->cursor = file->origin = (struct location){0, 0}; file->at = 0; }
-    else if (bigraph(jump_bottom, c0, c1)) while (file->at < file->length - 1) move_down(file);
+    else if (bigraph(jump_bottom, c0, c1)) while (file->at < file->length) move_down(file);
     else if (bigraph(jump_begin, c0, c1)) while (file->cursor.column) { (file->at)--; move_left(file, true); }
     
     else if (bigraph(jump_end, c0, c1)) {
@@ -714,7 +723,7 @@ static void jump(unicode c0, struct file* file) {
     }
 }
 
-static struct file* create_new_buffer() {
+static inline struct file* create_new_buffer() {
     buffers = realloc(buffers, sizeof(struct file*) * (buffer_count + 1));
     buffers[buffer_count] = malloc(sizeof(struct file));
     
@@ -803,6 +812,53 @@ static inline int open_file(const char* given_filename) {
     return 0;
 }
 
+
+
+static inline char** segment(char* line) {
+    char** argv = NULL;
+    size_t argc = 0;
+    char* c = strtok(line, " ");
+    while (c) {
+        argv = realloc(argv, sizeof(const char*) * (argc + 1));
+        argv[argc++] = c;
+        c = strtok(NULL, " ");
+    }
+    argv = realloc(argv, sizeof(const char*) * (argc + 1));
+    (argv)[argc++] = NULL;
+    return argv;
+}
+
+static inline void execute_shell_command(char* line, struct file* file) {
+    
+    char** argv = segment(line);
+    if (!argv[0]) return;
+    
+    bool succeeded = false, foreground = true;
+    if (line[strlen(line) - 1] == '&') {
+        line[strlen(line) - 1] = '\0';
+        foreground = false;
+    }
+    
+    char* original = getenv("PATH");
+    char paths[strlen(original) + 4];
+    strcpy(paths, original);
+    strcat(paths, ":./");
+    
+    char* path = strtok(paths, ":");
+    while (path) {
+        char command[strlen(path) + strlen(argv[0]) + 2];
+        sprintf(command, "%s/%s", path, argv[0]);
+        if (!access(command, X_OK)) {
+            if (!fork()) execv(command, argv);
+            if (foreground) wait(NULL);
+            succeeded = true;
+        }
+        path = strtok(NULL, ":");
+    }
+    if (!succeeded) sprintf(file->message, "%s: command not found", argv[0]);
+    free(argv);
+}
+
 static inline bool confirmed(const char* question) {
     while (true) {
         struct winsize window;
@@ -817,7 +873,7 @@ static inline bool confirmed(const char* question) {
         configure_terminal();
         if (!strncmp(response, "yes\n", 4)) return true;
         else if (!strncmp(response, "no\n", 3)) return false;
-        else printf("error: please type \"yes\" or \"no\".\n");
+        else printf("please type \"yes\" or \"no\".\n");
     }
 }
 
@@ -829,9 +885,27 @@ static inline void prompt(const char* message, char* response, int max, long col
     printf(set_color "%s: " reset_color, color, message);
     memset(response, 0, sizeof(char) * (max));
     restore_terminal();
-    fgets(response, max, stdin);
+    char* line = readline("");
+    add_history(line);
+    strncpy(response, line, max - 1);
+    free(line);
     configure_terminal();
-    response[strlen(response) - 1] = '\0';
+}
+
+static inline void shell(struct file* file) {
+    struct winsize window;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+    printf(set_cursor, window.ws_row, 0);
+    printf("%s", clear_line);
+    char prompt[128] = {0};
+    sprintf(prompt, set_color ": " reset_color, shell_prompt_color);
+    restore_terminal();
+    char* line = readline(prompt);
+    add_history(line);
+    execute_shell_command(line, file);
+    free(line);
+    configure_terminal();
+    if (file->options.pause_on_shell_command_output) read_unicode();
 }
 
 static inline bool file_exists(const char* filename) {
@@ -908,7 +982,7 @@ static inline void rename_file(char* old, char* message) {
     }
 }
 
-static void read_option(struct file* file) {
+static inline void read_option(struct file* file) {
     unicode c = read_unicode();
     if (is(c, '0')) strcpy(file->message, "");
     else if (is(c, 'l')) file->options.show_line_numbers = !file->options.show_line_numbers;
@@ -972,7 +1046,7 @@ enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData c
 int main(const int argc, const char** argv) {
     
     srand((unsigned) time(0));
-    
+    using_history();
     if (argc <= 1) create_new_buffer();
     else for (int i = argc - 1; i; i--) open_file(argv[i]);
     
@@ -985,6 +1059,9 @@ int main(const int argc, const char** argv) {
     unicode c = 0, p = 0;
     size_t autosave_counter = 0;
 
+    // for my purposes:
+    if (argc == 1) buffers[active]->mode = edit_mode;
+    
     while (buffer_count) {
         
         struct file* this = buffers[active];
@@ -995,7 +1072,9 @@ int main(const int argc, const char** argv) {
         c = read_unicode();
         
         if (this->mode == command_mode) {
-            if (is(c, 27)) {}
+            
+            if (bigraph(shell_command_key, p, c)) shell(this);
+            else if (is(c, 27)) {}
             else if (is(c, edit_key)) this->mode = edit_mode;
             else if (is(c, hard_edit_key)) this->mode = hard_edit_mode;
             else if (is(c, select_key)) this->mode = select_mode;
@@ -1029,7 +1108,7 @@ int main(const int argc, const char** argv) {
             else if (is(c, jump_key)) jump(c, this);
             
             else if (is(c, save_key)) save(this);
-            
+                                    
             else if (is(c, rename_key)) rename_file(this->filename, this->message);
             
             else if (is(c, quit_key)) {
@@ -1050,10 +1129,12 @@ int main(const int argc, const char** argv) {
                     sprintf(buffers[active]->message, "set active buffer [%lu]", active);
                 }
                 
-            } else {
-                sprintf(this->message, "error: unknown command %d", (int) c[0]);
-            }
+            } else if (is(c, function_key)) {
+                sprintf(this->message, "{function}");
+        
+            } else sprintf(this->message, "unknown command %c(%d)", *c, (int)*c);
             
+    
         } else if (this->mode == select_mode) {
             sprintf(this->message, "error: select mode not implemented.");
             this->mode = command_mode;
@@ -1122,9 +1203,23 @@ int main(const int argc, const char** argv) {
         }
         p = c;
     }
+    clear_history();
     restore_terminal();
     printf("%s", restore_screen);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 // split / break down option_command by spaces.
@@ -1135,3 +1230,30 @@ int main(const int argc, const char** argv) {
 // just use "fs" for toggle status bar, "fset" for setting an option, "fclear" to clear message,
 // foptions for seeing the current settings   or maybe even fsettings
 
+
+
+
+
+
+/// ### Found a bug to do with the Esc key.
+///
+/// pressing it multiple times with the sb on, causes the
+/// text to render horribly. like really bad. lol.
+
+// i think i fixed it. it was just because i wasnt grabbing the input of the escape key, and before i was, and so was solving the problem. i put the code that grabs it back, and now we are good.
+
+
+
+
+//
+//     code that strips the leading and trailing whitespace of a string.
+//     note: modifies the given string.
+//
+//static inline char* strip(char* str) {
+//    while (isspace(*str)) str++;
+//    if (!*str) return str;
+//    char* end = str + strlen(str) - 1;
+//    while (end > str && isspace(*end)) end--;
+//    end[1] = '\0';
+//    return str;
+//}

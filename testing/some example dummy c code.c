@@ -1,4 +1,3 @@
-
 float x = 0;
 
 float f = 00.0;
@@ -22,23 +21,6 @@ static inline void do_the_thing(void) {
   puts("hello world from space!\n");
   exit(0);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

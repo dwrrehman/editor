@@ -1,0 +1,44 @@
+hello!
+
+
+
+so i just quashed a bug, and also tried to get whitespace trimming to work, only to realize that i actually dont want to trim the white space. 
+
+
+	so yeah
+
+
+
+hmm, okay, so it also seems like wwe have another rendering bug- the cursor gets desynced when wrap text.  yiks..
+
+
+and it only gets worse and worse lol
+
+
+
+
+
+
+
+okay actually i just fixed it. it was a super easy fix. it was just because of line numbers, basically.
+
+
+
+
+	oh but actually, i just found another rendering bug!
+
+
+	it has to do with the cursor desyncing slihglty when we are moving along because of the scrolling feature of this editor. 
+
+
+		gosh, scrolling and wrapping are SUPER hard, for some reason, lol
+
+
+also we still have the cursor dessync from the tabs not being properly done lol
+
+
+
+that will be fixed at some point. lol
+
+
+

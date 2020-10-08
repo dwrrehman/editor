@@ -252,6 +252,7 @@
 					"-L",
 					/usr/local/Cellar/llvm/10.0.1_1/lib,
 					"-lclang",
+					"-lreadline",
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/Cellar/llvm/10.0.1_1/include;
@@ -271,6 +272,7 @@
 					"-L",
 					/usr/local/Cellar/llvm/10.0.1_1/lib,
 					"-lclang",
+					"-lreadline",
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/Cellar/llvm/10.0.1_1/include;
