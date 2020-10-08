@@ -14,13 +14,18 @@
 #include <time.h>
 #include <errno.h>
 #include <unistd.h>
+#include <ftw.h>
 #include <sys/time.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <termios.h>
 #include <errno.h>
 #include <ctype.h>
+#include <pthread.h>
 #include <clang-c/Index.h>
 #include <iso646.h>
+
+const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
 static const long
     rename_color = 214L,
@@ -101,6 +106,9 @@ struct options {
     bool use_txt_extension_when_absent;
     bool use_c_syntax_highlighting;
     bool show_line_numbers;
+    bool preserve_autosave_contents_on_save;
+    unsigned int ms_until_inactive_autosave;
+    unsigned int edits_until_active_autosave;
 };
 
 struct colored_range {
@@ -120,14 +128,16 @@ struct file {
     size_t at;
     size_t line_count;
     bool saved;
+    unsigned int id;
     enum editor_mode mode;
     struct options options;
     struct location origin;
     struct location cursor;
     struct location screen;
     struct location desired;
-    char message[2048];
+    char message[4096];
     char filename[4096];
+    char autosave_name[4096];
 };
 
 struct file file = {
@@ -140,6 +150,7 @@ struct file file = {
     .length = 0,
     .at = 0,
     .line_count = 0,
+    .id = 0,
     .mode = command_mode,
     .saved = true,
     .options = {
@@ -149,6 +160,9 @@ struct file file = {
         .use_txt_extension_when_absent = true,
         .use_c_syntax_highlighting = true,
         .show_line_numbers = true,
+        .preserve_autosave_contents_on_save = false,
+        .ms_until_inactive_autosave = 10 * 1000,
+        .edits_until_active_autosave = 30,
     },
     .origin = {0, 0},
     .cursor = {0, 0},
@@ -156,31 +170,84 @@ struct file file = {
     .desired = {0, 0},
     .message = {0},
     .filename = {0},
-    
+    .autosave_name = {0},
 };
 
 struct termios terminal = {0};
 
-void get_datetime(char buffer[16]) {
+static inline void get_datetime(char buffer[16]) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
     struct tm* tm_info = localtime(&tv.tv_sec);
     strftime(buffer, 15, "%y%m%d%u.%H%M%S", tm_info);
 }
 
-void dump() {
+static inline void dump() {
     char tempname[4096] = {0};
+    
     char datetime[16] = {0};
     get_datetime(datetime);
+    
     strcpy(tempname, "temporary_savefile_");
     strcat(tempname, datetime);
     strcat(tempname, ".txt");
+    
     printf("dump: dumping save file to: %s\n", tempname);
+    
     FILE* tempfile = fopen(tempname, "w");
     if (!tempfile) tempfile = stdout;
+    
     for (size_t i = 0; i < file.length; i++)
         fputs((file.text)[i], tempfile);
+    
     fclose(tempfile);
+}
+
+static inline void autosave(struct file* buffer) {
+            
+    char filename[4096] = {0};
+    
+    char datetime[16] = {0};
+    get_datetime(datetime);
+    
+    strcpy(filename, buffer->autosave_name);
+    strcat(filename, "autosave_");
+    strcat(filename, datetime);
+    strcat(filename, ".txt");
+    
+    mkdir(file.autosave_name, 0777);
+    
+    FILE* savefile = fopen(filename, "w");
+    if (!savefile) {
+        sprintf(buffer->message, "could not autosave: %s", strerror(errno));
+    }
+    for (size_t i = 0; i < buffer->length; i++)
+        fputs(buffer->text[i], savefile);
+    
+    fclose(savefile);
+}
+
+
+void* autosaver(void* unused) {
+    while (file.mode != quit) {
+        
+        for (unsigned int i = 0; i < file.options.ms_until_inactive_autosave; i++) {
+            if (file.mode == quit) return NULL;
+            usleep(1000);
+        }
+        char saved_message[4096] = {0};
+        strcpy(saved_message, file.message);
+        sprintf(file.message, "autosaving..");
+        
+        for (unsigned int i = 0; i < 1000; i++) {
+            if (file.mode == quit) return NULL;
+            usleep(1000);
+        }
+        
+        autosave(&file);
+        strcpy(file.message, saved_message);
+    }
+    return NULL;
 }
 
 static inline void dump_and_panic() {
@@ -232,6 +299,16 @@ static inline char read_byte_from_stdin() {
         dump_and_panic();
     }
     return c;
+}
+
+static inline int traverse_and_remove(const char* file, const struct stat* _0, int _1, struct FTW* _2) {
+    int error = remove(file);
+    if (error) perror(file);
+    return error;
+}
+
+static inline int remove_directory_and_all_contents(const char* path) {
+    return nftw(path, traverse_and_remove, 64, FTW_DEPTH | FTW_PHYS);
 }
 
 static inline bool is(unicode u, char c) {
@@ -729,14 +806,16 @@ static inline void save(struct file* buffer) {
         if (ferror(file)) {
             sprintf(buffer->message, "write unsuccessful: %s", strerror(errno));
             strcpy(buffer->filename, "");
+            fclose(file);
             return;
-        }
-        else {
+        } else {
+            fclose(file);
             sprintf(buffer->message, "saved.");
             buffer->saved = true;
+            if (!buffer->options.preserve_autosave_contents_on_save)
+                remove_directory_and_all_contents(buffer->autosave_name);
         }
     }
-    fclose(file);
 }
 
 static inline void rename_file(char* old, char* message) {
@@ -818,12 +897,8 @@ static inline void backspace(struct file* file) {
     move_left(file, true);
     free(file->lines);
     file->lines = generate_line_view(file);
+    syntax_highlight(file);
 }
-
-
-
-
-
 
 enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
     CXString spelling = clang_getCursorSpelling(cursor);
@@ -848,47 +923,19 @@ enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData c
     return CXChildVisit_Recurse;
 }
            
-           
-        
 int main(const int argc, const char** argv) {
             
-    
-//        CXIndex index = clang_createIndex(0, 0);
-//
-//        CXTranslationUnit unit = clang_parseTranslationUnit
-//        (index, "/Users/deniylreimn/Documents/header.hpp", NULL, 0, NULL, 0, CXTranslationUnit_None);
-//
-//        if (!unit) {
-//            printf("Unable to parse translation unit. Quitting.\n");
-//            exit(1);
-//        }
-//
-//        CXCursor cursor = clang_getTranslationUnitCursor(unit);
-//        clang_visitChildren(cursor, visitor, NULL);
-//        clang_disposeTranslationUnit(unit);
-//        clang_disposeIndex(index);
-//
-//        exit(0);
-//
-//
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     if (argc > 1) {
         strncpy(file.filename, argv[1], 4096);
         open_file(&file);
     }
     
+    srand((unsigned)time(0));
+    file.id = rand();
+    sprintf(file.autosave_name, "%s/%x/", autosave_directory, file.id);
+    
     file.lines = generate_line_view(&file);
+    syntax_highlight(&file);
     
     signal(SIGINT, signal_interrupt);
     printf("%s", save_screen);
@@ -896,14 +943,15 @@ int main(const int argc, const char** argv) {
     
     unicode c = 0, p = 0;
     
+    size_t autosave_counter = 0;
+    
+    pthread_t autosave_thread;
+    pthread_create(&autosave_thread, NULL, autosaver, NULL);
+    
     while (file.mode != quit) {
         
         adjust_window_size(&file);
-        
-        syntax_highlight(&file);
-        
         display(&file);
-        
         fflush(stdout);
         
         c = read_unicode();
@@ -962,18 +1010,15 @@ int main(const int argc, const char** argv) {
             sprintf(file.message, "error: select mode not implemented.");
             file.mode = command_mode;
             
-        } else {
-            if (file.mode == edit_mode and bigraph(edit_exit, p, c)) {
-                
+        } else if (file.mode == edit_mode) {
+            
+            if (bigraph(edit_exit, p, c)) {
                 backspace(&file);
                 file.mode = command_mode;
                 save(&file);
                 if (file.saved) file.mode = quit;
                 
-            } else if (file.mode == edit_mode and
-                       (bigraph(left_exit, p, c) or
-                        bigraph(right_exit, p, c))) {
-                
+            } else if (bigraph(left_exit, p, c) or bigraph(right_exit, p, c)) {
                 backspace(&file);
                 file.mode = command_mode;
                 
@@ -984,11 +1029,9 @@ int main(const int argc, const char** argv) {
                 }
                 
             } else if (is(c, 27)) {
-                
                 unicode c = read_unicode();
                 
                 if (is(c, '[')) {
-                    
                     unicode c = read_unicode();
                     
                     if (is(c, 'A')) move_up(&file);
@@ -1012,12 +1055,23 @@ int main(const int argc, const char** argv) {
                 file.at++;
                 free(file.lines);
                 file.lines = generate_line_view(&file);
+                syntax_highlight(&file);
                 move_right(&file, true);
+                
                 file.saved = false;
+                if (++autosave_counter == file.options.edits_until_active_autosave) {
+                    autosave_counter = 0;
+                    autosave(&file);
+                }
             }
+            
+        } else {
+            sprintf(file.message, "unknown mode: %d", file.mode);
+            file.mode = command_mode;
         }
         p = c;
     }
+    pthread_join(autosave_thread, NULL);
     destroy(&file);
     restore_terminal();
     printf("%s", restore_screen);
@@ -1055,3 +1109,26 @@ int main(const int argc, const char** argv) {
     
 
 // │ unicode box-drawing vertical line.
+
+
+
+
+//        CXIndex index = clang_createIndex(0, 0);
+//
+//        CXTranslationUnit unit = clang_parseTranslationUnit
+//        (index, "/Users/deniylreimn/Documents/header.hpp", NULL, 0, NULL, 0, CXTranslationUnit_None);
+//
+//        if (!unit) {
+//            printf("Unable to parse translation unit. Quitting.\n");
+//            exit(1);
+//        }
+//
+//        CXCursor cursor = clang_getTranslationUnitCursor(unit);
+//        clang_visitChildren(cursor, visitor, NULL);
+//        clang_disposeTranslationUnit(unit);
+//        clang_disposeIndex(index);
+//
+//        exit(0);
+//
+//
+

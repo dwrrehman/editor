@@ -1,4 +1,6 @@
 
+float x = 0;
+
 float f = 00.0;
 
 long long double d = 1000.00;
