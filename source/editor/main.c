@@ -2,12 +2,13 @@
 ///        My Text Editor.
 ///
 ///   Created by: Daniel Rehman
-///
 ///   Created on: 2005122.113101
+///  Modified on: 2010073.182520
 ///
 
-#include <stdio.h>
+#include <iso646.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -23,7 +24,6 @@
 #include <ctype.h>
 #include <pthread.h>
 #include <clang-c/Index.h>
-#include <iso646.h>
 
 const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
@@ -151,17 +151,17 @@ struct file file = {
     .at = 0,
     .line_count = 0,
     .id = 0,
-    .mode = command_mode,
+    .mode = edit_mode,
     .saved = true,
     .options = {
         .wrap_width = 128,
         .tab_width = 8,
-        .show_status = true,
+        .show_status = false,
         .use_txt_extension_when_absent = true,
-        .use_c_syntax_highlighting = true,
-        .show_line_numbers = true,
+        .use_c_syntax_highlighting = false,
+        .show_line_numbers = false,
         .preserve_autosave_contents_on_save = false,
-        .ms_until_inactive_autosave = 10 * 1000,
+        .ms_until_inactive_autosave = 30 * 1000,
         .edits_until_active_autosave = 30,
     },
     .origin = {0, 0},
@@ -239,7 +239,7 @@ void* autosaver(void* unused) {
         strcpy(saved_message, file.message);
         sprintf(file.message, "autosaving..");
         
-        for (unsigned int i = 0; i < 1000; i++) {
+        for (unsigned int i = 0; i < 500; i++) {
             if (file.mode == quit) return NULL;
             usleep(1000);
         }
@@ -276,7 +276,6 @@ static inline void configure_terminal() {
     }
     
     atexit(restore_terminal);
-    
     struct termios raw = terminal;
     raw.c_lflag &= ~(ECHO | ICANON);
     
@@ -288,11 +287,14 @@ static inline void configure_terminal() {
 
 static inline char read_byte_from_stdin() {
     char c = 0;
+    
     const ssize_t n = read(STDIN_FILENO, &c, 1);
+    
     if (n < 0) {
         printf("n < 0 : ");
         perror("read(STDIN_FILENO, &c, 1) syscall");
         dump_and_panic();
+        
     } else if (n == 0) {
         printf("n == 0 : ");
         perror("read(STDIN_FILENO, &c, 1) syscall");
@@ -302,9 +304,7 @@ static inline char read_byte_from_stdin() {
 }
 
 static inline int traverse_and_remove(const char* file, const struct stat* _0, int _1, struct FTW* _2) {
-    int error = remove(file);
-    if (error) perror(file);
-    return error;
+    return remove(file);
 }
 
 static inline int remove_directory_and_all_contents(const char* path) {
@@ -360,8 +360,7 @@ static inline void delete(struct file* file) {
         return;
     }
     
-    if (!file->at or !file->length)
-        return;
+    if (!file->at or !file->length) return;
     
     free(file->text[file->at - 1]);
     
@@ -387,7 +386,6 @@ static inline void print_status_bar(struct file* file) {
     printf(set_color "  %s" reset_color, color, file->message);
 }
 
-
 bool unicode_string_equals_literal(unicode* s1, const char* s2, size_t n) {
     while (n and is(*s1, *s2)) {
         ++s1;
@@ -400,6 +398,8 @@ bool unicode_string_equals_literal(unicode* s1, const char* s2, size_t n) {
 static inline void syntax_highlight(struct file* file) {
     file->coloring_count = 0;
     
+    if (!file->options.use_c_syntax_highlighting) return;
+            
     const int keyword_count = 31;
     
     const char* keywords[] = {
@@ -462,7 +462,9 @@ static inline void display(struct file* file) {
     unsigned int line_number_width = floor(log10(file->line_count)) + 1;
     
     for (size_t line = file->origin.line; line < fmin(file->origin.line + file->window_rows - 1, file->line_count); line++) {
-                        
+        
+        size_t line_length = 0;
+                
         if (file->options.show_line_numbers) {
             if (line <= file->cursor.line)
                 screen_cursor.column += line_number_width + 2;
@@ -481,6 +483,7 @@ static inline void display(struct file* file) {
             unicode g = file->lines[line].line[column];
             
             for (size_t range = 0; range < file->coloring_count; range++) {
+                
                 if (line == file->coloring[range].start.line and
                     column == file->coloring[range].start.column) {
                     char highlight_buffer[128] = {0};
@@ -509,15 +512,19 @@ static inline void display(struct file* file) {
                     screen_cursor.column++;
             }
             
+            size_t space_count_for_tab = 0;
             if (is(g, '\t')) {
-                for (size_t i = 0; i < file->options.tab_width; i++) {
+                do {
                     screen = realloc(screen, sizeof(char) * (screen_length + 1));
                     screen[screen_length++] = ' ';
-                }
+                    line_length++;
+                    space_count_for_tab++;
+                } while (line_length % file->options.tab_width);
             } else {
                 for (size_t i = 0; i < strlen(g); i++) {
                     screen = realloc(screen, sizeof(char) * (screen_length + 1));
                     screen[screen_length++] = g[i];
+                    line_length++;
                 }
             }
         }
@@ -841,38 +848,16 @@ static inline void rename_file(char* old, char* message) {
 static void read_option(struct file* file) {
     unicode c = read_unicode();
     if (is(c, '0')) strcpy(file->message, "");
+    else if (is(c, 'l')) file->options.show_line_numbers = !file->options.show_line_numbers;
     else if (is(c, '[')) file->options.show_status = !file->options.show_status;
-    else if (is(c, 'p')) sprintf(file->message, "options: 0:clear [:togg p:help t:tab w:wrap l:get ");
-    
+    else if (is(c, 'c')) file->options.use_c_syntax_highlighting = !file->options.use_c_syntax_highlighting;
+    else if (is(c, 'p')) sprintf(file->message, "0:sb_clear [:sb_toggle l:numbers c:csyntax o:__ ");
     else if (is(c, 'o')) {
         char option_command[128] = {0};
         prompt("option", option_command, 128, rename_color);
         sprintf(file->message, "error: programmatic options are currently unimplemented.");
-        // split / break down option_command by spaces.
-        // ": set <OPTION_NAME> <OPTION_VALUE>"       // where option value can be a string or an int.
-        // this should really be using our programming language!
-        // this function shouldnt even exist!
-        // this can all be aaccomplished in code! seriously! this entire function! literally!
-        // just use "fs" for toggle status bar, "fset" for setting an option, "fclear" to clear message,
-        // foptions for seeing the current settings   or maybe even fsettings
-    }
-    
-    else if (is(c, 't')) {
-        char tab_width_string[64];
-        prompt("tab width", tab_width_string, 64, rename_color);
-        size_t n = atoi(tab_width_string);
-        file->options.tab_width = n ? n : 8;
-        file->screen = file->cursor = file->origin = (struct location){0, 0}; file->at = 0;
-    } else if (is(c, 'w')) {
-        char wrap_width_string[64];
-        prompt("wrap width", wrap_width_string, 64, rename_color);
-        size_t n = atoi(wrap_width_string);
-        file->options.wrap_width = n ? n : 128;
-        file->screen = file->cursor = file->origin = (struct location){0, 0}; file->at = 0;
-    } else if (is(c, 'l')) {
-        sprintf(file->message, "ww = %lu | tw = %lu | ", file->options.wrap_width, file->options.tab_width);
     } else {
-        sprintf(file->message, "error: unknown option argument. try ? for help.");
+        sprintf(file->message, "error: unknown option argument. try pp for help.");
     }
 }
 
@@ -1085,50 +1070,30 @@ int main(const int argc, const char** argv) {
 
 
 
+// split / break down option_command by spaces.
+// ": set <OPTION_NAME> <OPTION_VALUE>"       // where option value can be a string or an int.
+// this should really be using our programming language!
+// this function shouldnt even exist!
+// this can all be aaccomplished in code! seriously! this entire function! literally!
+// just use "fs" for toggle status bar, "fset" for setting an option, "fclear" to clear message,
+// foptions for seeing the current settings   or maybe even fsettings
 
-
-
-
-//    clang_getExpansionLocation(*begin, NULL, &line, &column, &offset);
-//    printf("LOCATION: (%s): file = %s, line = %u, col = %u, offset = %u\n", name, "", line, column, offset);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
-
-// │ unicode box-drawing vertical line.
-
-
-
-
-//        CXIndex index = clang_createIndex(0, 0);
+//    else if (is(c, 't')) {
+//        char tab_width_string[64];
+//        prompt("tab width", tab_width_string, 64, rename_color);
+//        size_t n = atoi(tab_width_string);
+//        file->options.tab_width = n ? n : 8;
+//        file->screen = file->cursor = file->origin = (struct location){0, 0}; file->at = 0;
 //
-//        CXTranslationUnit unit = clang_parseTranslationUnit
-//        (index, "/Users/deniylreimn/Documents/header.hpp", NULL, 0, NULL, 0, CXTranslationUnit_None);
+//    } else if (is(c, 'w')) {
+//        char wrap_width_string[64];
+//        prompt("wrap width", wrap_width_string, 64, rename_color);
+//        size_t n = atoi(wrap_width_string);
+//        file->options.wrap_width = n ? n : 128;
+//        file->screen = file->cursor = file->origin = (struct location){0, 0}; file->at = 0;
 //
-//        if (!unit) {
-//            printf("Unable to parse translation unit. Quitting.\n");
-//            exit(1);
-//        }
-//
-//        CXCursor cursor = clang_getTranslationUnitCursor(unit);
-//        clang_visitChildren(cursor, visitor, NULL);
-//        clang_disposeTranslationUnit(unit);
-//        clang_disposeIndex(index);
-//
-//        exit(0);
-//
-//
+//    }
 
+
+//    adjust_window_size(&file);
+//    file.options.wrap_width = file.window_columns;

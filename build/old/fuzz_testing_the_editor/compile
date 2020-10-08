@@ -1,0 +1,1 @@
+ clang -g -Wno-nullability-completeness -O1 -fsanitize=fuzzer,address,undefined f.c

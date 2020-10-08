@@ -1,0 +1,1 @@
+./a.out -only_ascii=1 -max_len=50
