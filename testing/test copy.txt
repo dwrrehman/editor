@@ -1,0 +1,12 @@
+okay, i think i just sqaushed another bug in the editor, related to 
+
+	when you save, with a filename that is bad, you cant change that filename-
+
+
+	i fixed that now, now you should be able to.
+
+	
+
+	lets try it out.
+
+

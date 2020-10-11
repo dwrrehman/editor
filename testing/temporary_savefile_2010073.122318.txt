@@ -1,0 +1,43 @@
+okay, so yeah, thiss is pretty okay so far, i think.
+
+
+
+
+	i really need to make undo and redo if i want to make this thing like actually usable as an editor for code, i think.
+
+
+
+	i mean, its pretty good, its just missing some sstuff.
+
+
+
+	its okaty, i guesss. there area just a couple really critical things that i still have to implement.
+
+
+
+ill get there, though.
+
+
+
+okay i get it now
+
+
+	i just figured out how to solve this rendering bug, i think its in the move functuionss, specfically.
+
+
+
+
+	
+		okay now im going to try to break this thing lol
+
+
+			by doing control c.
+
+
+
+	lets do it.
+
+
+
+
+	

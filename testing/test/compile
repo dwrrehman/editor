@@ -1,0 +1,1 @@
+clang -Wno-nullability-completeness -fsanitize=address -fsanitize=undefined csr.c -o out

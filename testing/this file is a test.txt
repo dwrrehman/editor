@@ -1,0 +1,8 @@
+okay, so i made so more revisions. i think i basically got it figured out now. 
+
+
+	i made it so that you cant save a file to an empty filename. for good reason lol.
+
+
+
+	

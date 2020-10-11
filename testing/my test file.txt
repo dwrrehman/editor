@@ -1,0 +1,10 @@
+hello there from space. 
+
+
+	this is my cool test file, that im testing the functionality of the editor
+	being able to add .txt to the end of the filename when you save it, without an extension.
+
+
+	lets try it. 
+
+	
