@@ -3,7 +3,7 @@
 ///
 ///   Created by: Daniel Rehman
 ///   Created on: 2005122.113101
-///  Modified on: 2010073.182520
+///  Modified on: 2010154.220506
 ///
 
 #include <iso646.h>
@@ -29,6 +29,8 @@
 #include <readline/readline.h>
 
 #include <clang-c/Index.h>
+
+#include "libclipboard.h"
 
 static const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
@@ -179,7 +181,7 @@ struct file empty_buffer = {
         .preserve_autosave_contents_on_save = false,
         .ms_until_inactive_autosave = 30 * 1000,
         .edits_until_active_autosave = 30,
-        .pause_on_shell_command_output = false,
+        .pause_on_shell_command_output = true,
     },
     .origin = {0, 0},
     .cursor = {0, 0},
@@ -1051,9 +1053,18 @@ enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData c
     
     return CXChildVisit_Recurse;
 }
-           
+
+/// example code for cliboard stuff:
+
+//    clipboard_c* cb = clipboard_new(NULL);
+//    const char* string = clipboard_text(cb);
+//    puts(string);
+//    clipboard_set_text(cb, "hello world");
+//    clipboard_free(cb);
+//    exit(0);
+
 int main(const int argc, const char** argv) {
-    
+
     srand((unsigned) time(0));
     using_history();
     if (argc <= 1) create_new_buffer();
@@ -1064,11 +1075,9 @@ int main(const int argc, const char** argv) {
     configure_terminal();
     signal(SIGINT, signal_interrupt);
     
-    
     // for my purposes:
     if (argc == 1) buffers[active]->mode = edit_mode;
 
-    
     unicode c = 0, p = 0;
     size_t autosave_counter = 0;
 
@@ -1217,38 +1226,4 @@ int main(const int argc, const char** argv) {
     restore_terminal();
     printf("%s", restore_screen);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// split / break down option_command by spaces.
-// ": set <OPTION_NAME> <OPTION_VALUE>"       // where option value can be a string or an int.
-// this should really be using our programming language!
-// this function shouldnt even exist!
-// this can all be aaccomplished in code! seriously! this entire function! literally!
-// just use "fs" for toggle status bar, "fset" for setting an option, "fclear" to clear message,
-// foptions for seeing the current settings   or maybe even fsettings
-
-
-
-
-
-
-/// ### Found a bug to do with the Esc key.
-///
-/// pressing it multiple times with the sb on, causes the
-/// text to render horribly. like really bad. lol.
-
-// i think i fixed it. it was just because i wasnt grabbing the input of the escape key, and before i was, and so was solving the problem. i put the code that grabs it back, and now we are good.
 
