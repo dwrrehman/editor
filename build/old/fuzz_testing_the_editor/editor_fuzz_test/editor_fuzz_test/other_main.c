@@ -25,12 +25,12 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 
-#include <readline/history.h>
-#include <readline/readline.h>
+//#include <readline/history.h>
+//#include <readline/readline.h>
 
-#include <clang-c/Index.h>
+//#include <clang-c/Index.h>
 
-#include "libclipboard.h"
+//#include "libclipboard.h"
 
 static const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
@@ -102,7 +102,6 @@ struct location {
 struct line {
     unicode* line;
     size_t length;
-    size_t render_length;
     bool continued;
 };
 
@@ -140,16 +139,14 @@ struct file {
     size_t length;
     size_t at;
     size_t line_count;
-    int line_number_width;
     bool saved;
     unsigned int id;
     enum editor_mode mode;
     struct options options;
-    struct location origin; // should be render origin
-    struct location cursor; // should be render cursor
-    struct location render_cursor; // delete me
-    struct location screen; // should be render screen
-    struct location desired; // should be render desired
+    struct location origin;
+    struct location cursor;
+    struct location screen;
+    struct location desired;
     char message[4096];
     char filename[4096];
     char autosave_name[4096];
@@ -183,7 +180,7 @@ struct file empty_buffer = {
         .show_line_numbers = false,
         .preserve_autosave_contents_on_save = false,
         .ms_until_inactive_autosave = 30 * 1000,
-        .edits_until_active_autosave = 20,
+        .edits_until_active_autosave = 30,
         .pause_on_shell_command_output = true,
     },
     .origin = {0, 0},
@@ -335,7 +332,7 @@ static inline int remove_directory_and_all_contents(const char* path) {
 }
 
 static inline bool is(unicode u, char c) {
-    return u and *u == c;
+    return u and !strncmp(u, &c, 1);
 }
 
 static inline bool bigraph(const char* seq, unicode c0, unicode c1) {
@@ -422,59 +419,50 @@ static inline void syntax_highlight(struct file* file) {
     file->coloring_count = 0;
     
     if (!file->options.use_c_syntax_highlighting) return;
-            
-    
-    
-
-    ///TODO: do this only or the screen.
-    ///figure out the size of the screen,
-    ///and do this only for the visible text!
     
     const int keyword_count = 31;
-
+    
     const char* keywords[] = {
         "0", "1",  "(", ")",
         "{", "}", "=", "+",
-
+        
         "exit", "puts", "MACRO",
-
+        
         "void", "int", "static", "inline",
         "struct", "unsigned", "sizeof", "const",
-
+        
         "char", "for", "if", "else",
         "while", "break", "continue", "long",
-
+        
         "float", "double", "short", "type"
     };
-
+    
     const long colors[] = {
         214, 214, 246, 246,
         246, 246, 246, 246,
-
+        
         41, 41, 52,
-
+        
         33, 33, 33, 33,
         33, 33, 33, 33,
-
+        
         33, 33, 33, 33,
         33, 33, 33, 33,
-
+        
         33, 33, 33, 46,
     };
-
-    for (size_t line = file->origin.line; line < fmin(file->origin.line + file->window_rows - 1, file->line_count); line++) {
-
-        for (size_t column = file->origin.column; column < fmin(file->origin.column + file->window_columns - (file->line_number_width + 2), file->lines[line].length); column++) {
-
+    
+    for (size_t line = 0; line < file->line_count; line++) {
+        for (size_t column = 0; column < file->lines[line].length; column++) {
             for (int k = 0; k < keyword_count; k++) {
                 if (file->lines[line].length - column >= strlen(keywords[k]) and
                     unicode_string_equals_literal(file->lines[line].line + column,
                                                   keywords[k], strlen(keywords[k]))) {
-
+                    
                     struct location start = {line, column};
                     struct location end = {line, column + strlen(keywords[k])};
                     struct colored_range node = {colors[k], start, end};
-
+                    
                     file->coloring = realloc(file->coloring, sizeof(struct colored_range)
                                              * (file->coloring_count + 1));
                     file->coloring[file->coloring_count++] = node;
@@ -482,8 +470,6 @@ static inline void syntax_highlight(struct file* file) {
             }
         }
     }
-    
-
 }
 
 static inline void display(struct file* file) {
@@ -493,7 +479,7 @@ static inline void display(struct file* file) {
     size_t screen_length = 0;
     struct location screen_cursor = {1, 1};
     
-    file->line_number_width = floor(log10(file->line_count)) + 1;
+    unsigned int line_number_width = floor(log10(file->line_count)) + 1;
     
     for (size_t line = file->origin.line; line < fmin(file->origin.line + file->window_rows - 1, file->line_count); line++) {
         
@@ -501,10 +487,10 @@ static inline void display(struct file* file) {
         
         if (file->options.show_line_numbers) {
             if (line <= file->cursor.line)
-                screen_cursor.column += file->line_number_width + 2;
+                screen_cursor.column += line_number_width + 2;
             char line_number_buffer[128] = {0};
             sprintf(line_number_buffer, set_color "%*lu" reset_color set_color "  " reset_color,
-                    59UL, file->line_number_width, line + 1, 62L);
+                    59L, line_number_width, line + 1, 62L);
             
             for (int i = 0; i < strlen(line_number_buffer); i++) {
                 screen = realloc(screen, sizeof(char) * (screen_length + 1));
@@ -512,7 +498,7 @@ static inline void display(struct file* file) {
             }
         }
         
-        for (size_t column = file->origin.column; column < fmin(file->origin.column + file->window_columns - (file->line_number_width + 2), file->lines[line].length); column++) {
+        for (size_t column = file->origin.column; column < fmin(file->origin.column + file->window_columns - (line_number_width + 2), file->lines[line].length); column++) {
             
             unicode g = file->lines[line].line[column];
             
@@ -588,28 +574,14 @@ static inline struct line* generate_line_view(struct file* file) {
     lines[0].line = file->text;
     lines[0].continued = 0;
     lines[0].length = 0;
-    lines[0].render_length = 0;
     file->line_count = 1;
-    
-    const size_t start = 0, end = file->length;   ///TODO: determine the right end points for just the screen rendering.
-    
-    for (size_t i = start; i < end; i++) {
-        
+    for (size_t i = 0; i < file->length; i++) {
         if (is(file->text[i], '\n')) {
             lines[file->line_count - 1].continued = false;
             length = 0;
         } else {
-            
-            if (is(file->text[i], '\t')) {
-                length += file->options.tab_width;
-                lines[file->line_count - 1].render_length += file->options.tab_width;
-            } else {
-                length++;
-                lines[file->line_count - 1].render_length++;
-            }
-            
+            if (is(file->text[i], '\t')) length += file->options.tab_width; else length++;
             lines[file->line_count - 1].length++;
-            
             if (file->options.wrap_width and length >= file->options.wrap_width) {
                 lines[file->line_count - 1].continued = true;
                 length = 0;
@@ -619,11 +591,9 @@ static inline struct line* generate_line_view(struct file* file) {
             lines = realloc(lines, sizeof(struct line) * (file->line_count + 1));
             lines[file->line_count].line = file->text + i + 1;
             lines[file->line_count].continued = false;
-            lines[file->line_count].render_length = 0;
             lines[file->line_count++].length = 0;
         }
-    }
-    return lines;
+    } return lines;
 }
 
 static inline void move_left(struct file* file, bool user) {
@@ -772,6 +742,7 @@ static inline struct file* create_new_buffer() {
     syntax_highlight(buffer);
         
     pthread_create(&buffer->autosave_thread, NULL, autosaver, buffer);
+    
     return buffer;
 }
 
@@ -811,31 +782,30 @@ static inline int open_file(const char* given_filename) {
     }
     
     struct file* buffer = create_new_buffer();
-    
-//    fseek(file, 0, SEEK_END);
-//    const size_t file_size = ftell(file);
-//    fseek(file, 0, SEEK_SET);
-    
-//    buffer->text = realloc(buffer->text, sizeof(unicode) * (file_size));
-    
+
     int character = 0;
     while ((character = fgetc(file)) != EOF) {
-        
         unsigned char c = character;
-        size_t length = 0, count = 2;
+        size_t length = 0, count = 0;
+        
+        unicode bytes = malloc(sizeof(char));
+        bytes[length++] = c;
+        
         if ((c >> 3) == 30) count = 3;
         else if ((c >> 4) == 14) count = 2;
         else if ((c >> 5) == 6) count = 1;
         
-        unicode bytes = malloc(sizeof(char) * (count + 2));
-        bytes[length++] = c;
-        for (size_t i = 0; i < count; i++)
+        for (size_t i = 0; i < count; i++) {
+            bytes = realloc(bytes, sizeof(char) * (length + 1));
             bytes[length++] = fgetc(file);
-        bytes[length++] = 0;
+        }
+        
+        bytes = realloc(bytes, sizeof(char) * (length + 1));
+        bytes[length++] = '\0';
+        
         buffer->text = realloc(buffer->text, sizeof(unicode) * (buffer->length + 1));
         buffer->text[buffer->length++] = bytes;
     }
-
     fclose(file);
     strncpy(buffer->filename, given_filename, 4096);
     
@@ -843,6 +813,7 @@ static inline int open_file(const char* given_filename) {
     syntax_highlight(buffer);
     return 0;
 }
+
 
 
 static inline char** segment(char* line) {
@@ -925,8 +896,8 @@ static inline void prompt(const char* message, char* response, int max, long col
     printf(set_color "%s: " reset_color, color, message);
     memset(response, 0, sizeof(char) * (max));
     restore_terminal();
-    char* line = readline("");
-    add_history(line);
+    char* line = 0;// readline("");
+//    add_history(line);
     strncpy(response, line, max - 1);
     free(line);
     configure_terminal();
@@ -940,8 +911,8 @@ static inline void shell(struct file* file) {
     char prompt[128] = {0};
     sprintf(prompt, set_color ": " reset_color, shell_prompt_color);
     restore_terminal();
-    char* line = readline(prompt);
-    add_history(line);
+    char* line = 0;// readline(prompt);
+//    add_history(line);
     execute_shell_command(line, file);
     free(line);
     configure_terminal();
@@ -1092,10 +1063,10 @@ static inline void backspace(struct file* file) {
 //    clipboard_free(cb);
 //    exit(0);
 
-int main(const int argc, const char** argv) {
+int _f_main(const int argc, const char** argv) {
 
     srand((unsigned) time(0));
-    using_history();
+//    using_history();
     if (argc <= 1) create_new_buffer();
     else for (int i = argc - 1; i; i--) open_file(argv[i]);
     if (!buffer_count) exit(1);
@@ -1156,7 +1127,7 @@ int main(const int argc, const char** argv) {
             else if (is(c, jump_key)) jump(c, this);
             
             else if (is(c, save_key)) save(this);
-                                    
+            
             else if (is(c, rename_key)) rename_file(this->filename, this->message);
             
             else if (is(c, quit_key)) {
@@ -1181,8 +1152,7 @@ int main(const int argc, const char** argv) {
                 sprintf(this->message, "{function}");
         
             } else sprintf(this->message, "unknown command %c(%d)", *c, (int)*c);
-            
-    
+                
         } else if (this->mode == select_mode) {
             sprintf(this->message, "error: select mode not implemented.");
             this->mode = command_mode;
@@ -1195,7 +1165,8 @@ int main(const int argc, const char** argv) {
                 this->mode = command_mode;
                 
                 save(this);
-                if (this->saved) close_buffer();
+                if (this->saved)
+                    close_buffer();
                 
             } else if (bigraph(left_exit, p, c) or bigraph(right_exit, p, c)) {
                 backspace(this);
@@ -1250,8 +1221,9 @@ int main(const int argc, const char** argv) {
         }
         p = c;
     }
-    clear_history();
+//    clear_history();
     restore_terminal();
     printf("%s", restore_screen);
+    return 0;
 }
 
