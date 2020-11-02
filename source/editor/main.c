@@ -812,29 +812,31 @@ static inline int open_file(const char* given_filename) {
     
     struct file* buffer = create_new_buffer();
     
-//    fseek(file, 0, SEEK_END);
-//    const size_t file_size = ftell(file);
-//    fseek(file, 0, SEEK_SET);
+    fseek(file, 0, SEEK_END);
+    const size_t file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
     
-//    buffer->text = realloc(buffer->text, sizeof(unicode) * (file_size));
+    buffer->text = realloc(buffer->text, sizeof(unicode) * (file_size));
     
     int character = 0;
     while ((character = fgetc(file)) != EOF) {
         
         unsigned char c = character;
-        size_t length = 0, count = 2;
+        size_t length = 1, count = 0;
         if ((c >> 3) == 30) count = 3;
         else if ((c >> 4) == 14) count = 2;
         else if ((c >> 5) == 6) count = 1;
         
         unicode bytes = malloc(sizeof(char) * (count + 2));
-        bytes[length++] = c;
+        bytes[0] = c;
         for (size_t i = 0; i < count; i++)
             bytes[length++] = fgetc(file);
         bytes[length++] = 0;
-        buffer->text = realloc(buffer->text, sizeof(unicode) * (buffer->length + 1));
+        
         buffer->text[buffer->length++] = bytes;
     }
+    
+//    buffer->text = realloc(buffer->text, sizeof(unicode) * (buffer->length + 1));
 
     fclose(file);
     strncpy(buffer->filename, given_filename, 4096);
