@@ -156,7 +156,6 @@ struct file {
     pthread_t autosave_thread;
 };
 
-
 static volatile size_t active = 0;
 static volatile size_t buffer_count = 0;
 static struct file** buffers = NULL;
@@ -343,21 +342,16 @@ static inline bool bigraph(const char* seq, unicode c0, unicode c1) {
 }
 
 static inline unicode read_unicode() {
-    
     unsigned char c = read_byte_from_stdin();
-    size_t total = 0, count = 0;
-    unicode bytes = malloc(sizeof(char));
-    bytes[total++] = c;
-    
+    size_t length = 1, count = 0;
     if ((c >> 3) == 30) count = 3;
     else if ((c >> 4) == 14) count = 2;
     else if ((c >> 5) == 6) count = 1;
-    for (size_t i = 0; i < count; i++) {
-        bytes = realloc(bytes, sizeof(char) * (total + 1));
-        bytes[total++] = read_byte_from_stdin();
-    }
-    bytes = realloc(bytes, sizeof(char) * (total + 1));
-    bytes[total++] = '\0';
+    unicode bytes = malloc(sizeof(char) * (count + 2));
+    bytes[0] = c;
+    for (size_t i = 0; i < count; i++)
+        bytes[length++] = read_byte_from_stdin();
+    bytes[length++] = 0;    
     return bytes;
 }
 
@@ -422,9 +416,8 @@ static inline void syntax_highlight(struct file* file) {
     file->coloring_count = 0;
     
     if (!file->options.use_c_syntax_highlighting) return;
-            
-    
-    
+                
+    return;
 
     ///TODO: do this only or the screen.
     ///figure out the size of the screen,
@@ -483,7 +476,6 @@ static inline void syntax_highlight(struct file* file) {
         }
     }
     
-
 }
 
 static inline void display(struct file* file) {
