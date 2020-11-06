@@ -4,9 +4,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <termios.h>
-//#include <stdbool.h>
+#include <math.h>
+#include <stdbool.h>
+
 //#include <ctype.h>
-//#include <math.h>
+
 //#include <time.h>
 //#include <ftw.h>
 //#include <errno.h>
@@ -149,13 +151,14 @@ static inline void render_line(struct file* file, size_t logical_line, size_t re
     }
 }
 
-static inline void move_left(struct file* file) {
+static inline void move_left(struct file* file, bool user) {
 
     if (not file->cursor.column) {
         if (not file->cursor.line) return;
         file->cursor.column = file->logical.lines[--file->cursor.line].length;
         file->render_cursor.column = file->render.lines[--file->render_cursor.line].length;
         file->visual_cursor.column = file->render.lines[--file->visual_cursor.line].visual_length;
+        if (user) file->visual_desired = file->visual_cursor;
         return;
     }
 
@@ -171,9 +174,11 @@ static inline void move_left(struct file* file) {
         if ((c >> 6) != 2) file->visual_cursor.column--;
         if ((c >> 6) != 2 and c != 10) break;
     }
+    
+    if (user) file->visual_desired = file->visual_cursor;
 }
 
-static inline void move_right(struct file* file) {
+static inline void move_right(struct file* file, bool user) {
     
     if (file->cursor.line >= file->logical.count) return; // unimpl.
     
@@ -185,6 +190,8 @@ static inline void move_right(struct file* file) {
         file->render_cursor.line++;
         file->visual_cursor.column = 0;
         file->visual_cursor.line++;
+                
+        if (user) file->visual_desired = file->visual_cursor;
         return;
     }
     
@@ -202,7 +209,57 @@ static inline void move_right(struct file* file) {
         uint8_t c = render_line->line[++file->render_cursor.column];
         if ((c >> 6) != 2 and c != 10) break;
     }
+    
+    if (user) file->visual_desired = file->visual_cursor;
 }
+
+
+
+
+
+static inline void move_up(struct file* file) {
+
+    if (not file->visual_cursor.line) {
+        file->visual_cursor = (struct location){0, 0};
+        file->render_cursor = (struct location){0, 0};
+        file->cursor = (struct location){0, 0};
+        return;
+    }
+    
+    const size_t column_target = fmin(file->render.lines[file->visual_cursor.line - 1].visual_length, file->visual_desired.column);
+    const size_t line_target = file->visual_cursor.line - 1;
+    while (file->visual_cursor.column > column_target or file->visual_cursor.line > line_target)
+        move_left(file, false);
+}
+
+static inline void move_down(struct file* file) {
+
+    if (file->visual_cursor.line == file->render.count - 1) {
+        while (file->visual_cursor.column < file->render.lines[file->visual_cursor.line].visual_length)
+            move_right(file, false);
+        return;
+    }
+    
+    const size_t column_target = fmin(file->render.lines[file->visual_cursor.line + 1].visual_length, file->visual_desired.column);
+    const size_t line_target = file->visual_cursor.line + 1;
+    
+    while (file->visual_cursor.column < column_target or file->visual_cursor.line < line_target) {
+        move_right(file, false);
+    }
+    
+//    if (file->cursor.line and file->lines[file->cursor.line - 1].continued and !column_target) {
+//        move_left(file, false);
+//    }
+}
+
+
+
+
+
+
+
+
+
  
 static inline void insert(uint8_t c, struct file* file) {
     
@@ -213,45 +270,42 @@ static inline void insert(uint8_t c, struct file* file) {
         if (current->length == file->cursor.column) {
             
             size_t at = file->cursor.line + 1;
+            size_t render_at = file->render_cursor.line + 1;
+            
             if (file->logical.count + 1 >= file->logical.capacity) file->logical.lines = realloc(file->logical.lines, sizeof(struct logical_line) * (file->logical.capacity = 2 * (file->logical.capacity + 1)));
             memmove(file->logical.lines + at + 1, file->logical.lines + at, sizeof(struct logical_line) * (file->logical.count - at));
             file->logical.lines[at] = (struct logical_line) {0};
             file->logical.count++;
-            
-            ///TODO: BUT WAIT: what if logical line is longer than wrap width!?!
-            size_t render_at = file->render_cursor.line + 1;
+                                    
             if (file->render.count + 1 >= file->render.capacity) file->render.lines = realloc(file->render.lines, sizeof(struct render_line) * (file->render.capacity = 2 * (file->render.capacity + 1)));
-            memmove(file->render.lines + render_at + 1, file->render.lines + render_at, sizeof(struct render_line) * (file->logical.count - render_at));
+            memmove(file->render.lines + render_at + 1, file->render.lines + render_at, sizeof(struct render_line) * (file->render.count - render_at));
             file->render.lines[render_at] = (struct render_line) {0};
             file->render.count++;
             
-            move_right(file);
+            move_right(file, true);
                         
         } else {
-            uint8_t* rest = current->line + file->cursor.column;
             size_t size = current->length - file->cursor.column;
-                                    
             struct logical_line new = {malloc(size), size, size};
             struct render_line render_new = {malloc(size), size, size};
-            memcpy(new.line, rest, size);
+            memcpy(new.line, current->line + file->cursor.column, size);
             
             current->length = file->cursor.column;
             render_line(file, file->cursor.line, file->render_cursor.line);
-                    
             size_t at = file->cursor.line + 1;
+            size_t render_at = file->render_cursor.line + 1;
+            
             if (file->logical.count + 1 >= file->logical.capacity) file->logical.lines = realloc(file->logical.lines, sizeof(struct logical_line) * (file->logical.capacity = 2 * (file->logical.capacity + 1)));
             memmove(file->logical.lines + at + 1, file->logical.lines + at, sizeof(struct logical_line) * (file->logical.count - at));
             file->logical.lines[at] = new;
             file->logical.count++;
-            
-            ///TODO: BUT WAIT: what if logical line is longer than wrap width!?!
-            size_t render_at = file->render_cursor.line + 1;
+                                    
             if (file->render.count + 1 >= file->render.capacity) file->render.lines = realloc(file->render.lines, sizeof(struct render_line) * (file->render.capacity = 2 * (file->render.capacity + 1)));
-            memmove(file->render.lines + render_at + 1, file->render.lines + render_at, sizeof(struct render_line) * (file->logical.count - render_at));
+            memmove(file->render.lines + render_at + 1, file->render.lines + render_at, sizeof(struct render_line) * (file->render.count - render_at));
             file->render.lines[render_at] = render_new;
             file->render.count++;
             
-            move_right(file);
+            move_right(file, true);
             render_line(file, file->cursor.line, file->render_cursor.line);
         }
         return;
@@ -265,7 +319,7 @@ static inline void insert(uint8_t c, struct file* file) {
     line->line[at] = c;
     render_line(file, file->cursor.line, file->render_cursor.line);
     
-    if (c < 128) move_right(file);
+    if (c < 128) move_right(file, true);
     else {
         file->cursor.column++;
         file->render_cursor.column++;
@@ -279,34 +333,23 @@ static inline void delete(struct file* file) {
         
         size_t at = file->cursor.line;
         size_t render_at = file->render_cursor.line;
-    
-        move_left(file);
-
+        move_left(file, true);
         struct logical_line* new = file->logical.lines + at - 1;
         struct logical_line* old = file->logical.lines + at;
-    
-        // concat old onto the end of new:
         if (new->length + old->length >= new->capacity) new->line = realloc(new->line, new->capacity = 2 * (new->capacity + old->length));
         memcpy(new->line + new->length, old->line, old->length);
         new->length += old->length;
-        
-        // re-render the line that was appended to.
         render_line(file, file->cursor.line, file->render_cursor.line);
-                
-        // delete the old line:
         memmove(file->logical.lines + at, file->logical.lines + at + 1, sizeof(struct logical_line) * (file->logical.count - (at + 1)));
         file->logical.count--;
-        
-        // remove the render line too:   ///TODO: BUT WAIT: what if the logical line is longer than wrap width, and we need to remove multiple lines? wait! but we never have to do that, right?
         memmove(file->render.lines + render_at, file->render.lines + render_at + 1, sizeof(struct render_line) * (file->render.count - (render_at + 1)));
         file->render.count--;
-        
         return;
     }
     
     struct logical_line* line = file->logical.lines + file->cursor.line;
     size_t save = file->cursor.column;
-    move_left(file);
+    move_left(file, true);
     memmove(line->line + file->cursor.column, line->line + save, line->length - save);
     line->length -= save - file->cursor.column;
     render_line(file, file->cursor.line, file->render_cursor.line);
@@ -412,21 +455,25 @@ void editor(const uint8_t* input, size_t count) {
                 uint8_t c = read_byte_from_stdin();
                 if (c == '[') {
                     uint8_t c = read_byte_from_stdin();
-                    if (c == 'A') abort();
-                    if (c == 'B') abort();
-                    if (c == 'C') move_right(&file);
-                    if (c == 'D') move_left(&file);
+                    if (c == 'A') move_up(&file);
+                    if (c == 'B') move_down(&file);
+                    if (c == 'C') move_right(&file, true);
+                    if (c == 'D') move_left(&file, true);
                 } else if (c == 27) abort();
             }
             else if (c == 'q') break;
             else if (c == 127) delete(&file);
-            else if (c == '1') move_left(&file);
-            else if (c == '2') move_right(&file);
+            else if (c == '1') move_left(&file, true);
+            else if (c == '2') move_right(&file, true);
+            else if (c == '3') move_down(&file);
+            else if (c == '4') move_up(&file);
             else insert(c, &file);
         } else {
             if (c == 127) delete(&file);
-            else if (c == '1') move_left(&file);
-            else if (c == '2') move_right(&file);
+            else if (c == '1') move_left(&file, true);
+            else if (c == '2') move_right(&file, true);
+            else if (c == '3') move_down(&file);
+            else if (c == '4') move_up(&file);
             else insert(c, &file);
         }
 
