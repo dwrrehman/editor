@@ -19,8 +19,8 @@
 
 const size_t debug = 0;
 const size_t fuzz = 0;
-const size_t tab_width = 8;
 
+const size_t tab_width = 8;
 
 static const char
     *set_cursor = "\033[%lu;%luH",
@@ -43,7 +43,7 @@ struct logical_line {
 struct render_line {
     uint8_t* line;
     size_t capacity;
-    size_t length; 
+    size_t length;
     size_t visual_length;
     size_t continued;
 };
@@ -193,7 +193,8 @@ static inline void move_right(struct file* file) {
         
     while (file->cursor.column < line->length) {
         ++file->cursor.column;
-        if (file->cursor.column >= line->length or (line->line[file->cursor.column] >> 6) != 2) break; //suspcisious code.
+        if (file->cursor.column >= line->length or
+            (line->line[file->cursor.column] >> 6) != 2) break;
     }
     
     while (file->render_cursor.column < render_line->length) {
@@ -206,30 +207,53 @@ static inline void move_right(struct file* file) {
 static inline void insert(uint8_t c, struct file* file) {
     
     if (c == '\n') {
+    
+        struct logical_line* current = file->logical.lines + file->cursor.line;
         
-//        struct logical_line* current = file->logical.lines + file->cursor.line;
-//        uint8_t* rest = current->line + file->cursor.column;
-//        size_t size = current->length - file->cursor.column;
-//        current->length = file->cursor.column;
-//        struct logical_line new = {malloc(size), size, size};
-//        struct render_line render_new = {malloc(size), size, size};
-//        memcpy(new.line, rest, size);
-//
-//        size_t at = file->cursor.line + 1;
-//        if (file->logical.count + 1 >= file->logical.capacity) file->logical.lines = realloc(file->logical.lines, sizeof(struct logical_line) * (file->logical.capacity = 2 * (file->logical.capacity + 1)));
-//        memmove(file->logical.lines + at + 1, file->logical.lines + at, sizeof(struct logical_line) * (file->logical.count - at));
-//        file->logical.lines[at] = new;
-//        file->logical.count++;
-//
-//        size_t render_at = file->render_cursor.line + 1;
-//        if (file->render.count + 1 >= file->render.capacity) file->render.lines = realloc(file->render.lines, sizeof(struct render_line) * (file->render.capacity = 2 * (file->render.capacity + 1)));
-//        memmove(file->render.lines + render_at + 1, file->render.lines + render_at, sizeof(struct render_line) * (file->logical.count - render_at));
-//        file->render.lines[render_at] = render_new;
-//        file->render.count++;
-//
-//        render_line(file);
-//        move_right(file);
-//        render_line(file);
+        if (current->length == file->cursor.column) {
+            
+            size_t at = file->cursor.line + 1;
+            if (file->logical.count + 1 >= file->logical.capacity) file->logical.lines = realloc(file->logical.lines, sizeof(struct logical_line) * (file->logical.capacity = 2 * (file->logical.capacity + 1)));
+            memmove(file->logical.lines + at + 1, file->logical.lines + at, sizeof(struct logical_line) * (file->logical.count - at));
+            file->logical.lines[at] = (struct logical_line) {0};
+            file->logical.count++;
+            
+            ///TODO: BUT WAIT: what if logical line is longer than wrap width!?!
+            size_t render_at = file->render_cursor.line + 1;
+            if (file->render.count + 1 >= file->render.capacity) file->render.lines = realloc(file->render.lines, sizeof(struct render_line) * (file->render.capacity = 2 * (file->render.capacity + 1)));
+            memmove(file->render.lines + render_at + 1, file->render.lines + render_at, sizeof(struct render_line) * (file->logical.count - render_at));
+            file->render.lines[render_at] = (struct render_line) {0};
+            file->render.count++;
+            
+            move_right(file);
+                        
+        } else {
+            uint8_t* rest = current->line + file->cursor.column;
+            size_t size = current->length - file->cursor.column;
+                                    
+            struct logical_line new = {malloc(size), size, size};
+            struct render_line render_new = {malloc(size), size, size};
+            memcpy(new.line, rest, size);
+            
+            current->length = file->cursor.column;
+            render_line(file, file->cursor.line, file->render_cursor.line);
+                    
+            size_t at = file->cursor.line + 1;
+            if (file->logical.count + 1 >= file->logical.capacity) file->logical.lines = realloc(file->logical.lines, sizeof(struct logical_line) * (file->logical.capacity = 2 * (file->logical.capacity + 1)));
+            memmove(file->logical.lines + at + 1, file->logical.lines + at, sizeof(struct logical_line) * (file->logical.count - at));
+            file->logical.lines[at] = new;
+            file->logical.count++;
+            
+            ///TODO: BUT WAIT: what if logical line is longer than wrap width!?!
+            size_t render_at = file->render_cursor.line + 1;
+            if (file->render.count + 1 >= file->render.capacity) file->render.lines = realloc(file->render.lines, sizeof(struct render_line) * (file->render.capacity = 2 * (file->render.capacity + 1)));
+            memmove(file->render.lines + render_at + 1, file->render.lines + render_at, sizeof(struct render_line) * (file->logical.count - render_at));
+            file->render.lines[render_at] = render_new;
+            file->render.count++;
+            
+            move_right(file);
+            render_line(file, file->cursor.line, file->render_cursor.line);
+        }
         return;
     }
     
@@ -253,26 +277,29 @@ static inline void delete(struct file* file) {
     if (not file->cursor.column) {
         if (not file->cursor.line) return;
         
-//        size_t at = file->cursor.line;
-//        size_t render_at = file->render_cursor.line;
-//
-//        move_left(file);
-//
-//        struct logical_line* new = file->logical.lines + file->cursor.line;
-//        struct logical_line* old = file->logical.lines + at;
-//
-//        size_t length = old->length;
-//        if (new->length + length >= new->capacity) new->line = realloc(new->line, new->capacity = 2 * (new->capacity + length));
-//        memcpy(new->line + new->length, old->line, length);
-//        new->length += length;
-//
-//        memmove(file->logical.lines + at, file->logical.lines + at + 1, sizeof(struct logical_line) * (file->logical.count - (at + 1)));
-//        file->logical.count--;
-//
-//        memmove(file->render.lines + render_at, file->render.lines + render_at + 1, sizeof(struct render_line) * (file->render.count - render_at + 1));
-//        file->render.count--;
-//
-//        render_line(file);
+        size_t at = file->cursor.line;
+        size_t render_at = file->render_cursor.line;
+    
+        move_left(file);
+
+        struct logical_line* new = file->logical.lines + at - 1;
+        struct logical_line* old = file->logical.lines + at;
+    
+        // concat old onto the end of new:
+        if (new->length + old->length >= new->capacity) new->line = realloc(new->line, new->capacity = 2 * (new->capacity + old->length));
+        memcpy(new->line + new->length, old->line, old->length);
+        new->length += old->length;
+        
+        // re-render the line that was appended to.
+        render_line(file, file->cursor.line, file->render_cursor.line);
+                
+        // delete the old line:
+        memmove(file->logical.lines + at, file->logical.lines + at + 1, sizeof(struct logical_line) * (file->logical.count - (at + 1)));
+        file->logical.count--;
+        
+        // remove the render line too:   ///TODO: BUT WAIT: what if the logical line is longer than wrap width, and we need to remove multiple lines? wait! but we never have to do that, right?
+        memmove(file->render.lines + render_at, file->render.lines + render_at + 1, sizeof(struct render_line) * (file->render.count - (render_at + 1)));
+        file->render.count--;
         
         return;
     }
@@ -289,18 +316,12 @@ void editor(const uint8_t* input, size_t count) {
     
     if (not fuzz) configure_terminal();
     struct file file = {0};
-    
-    if (file.cursor.line == file.logical.count) {
-        if (file.logical.count + 1 >= file.logical.capacity)
-            file.logical.lines = realloc(file.logical.lines, sizeof(struct logical_line) * (file.logical.capacity = 2 * (file.logical.capacity + 1)));
-        file.logical.lines[file.logical.count++] = (struct logical_line) {0};
-    }
-    
-    if (file.render_cursor.line == file.render.count) {
-        if (file.render.count + 1 >= file.render.capacity)
-            file.render.lines = realloc(file.render.lines, sizeof(struct render_line) * (file.render.capacity = 2 * (file.render.capacity + 1)));
-        file.render.lines[file.render.count++] = (struct render_line) {0};
-    }
+                
+    file.logical.lines = realloc(file.logical.lines, sizeof(struct logical_line) * (file.logical.capacity = 2 * (file.logical.capacity + 1)));
+    file.logical.lines[file.logical.count++] = (struct logical_line) {0};
+                    
+    file.render.lines = realloc(file.render.lines, sizeof(struct render_line) * (file.render.capacity = 2 * (file.render.capacity + 1)));
+    file.render.lines[file.render.count++] = (struct render_line) {0};
     
     size_t i = 0;
     
@@ -431,56 +452,3 @@ int main() { editor(NULL, 0); }
 //    editor(data, size);
 //    return 0;
 //}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// step one: cut all the text from where(cursor) you are on your current line, to the end.
-// and then insert a new line directly below this one,
-// and then paste it on that line directly below this one.
-// then re-render your current line, and the one below!
-// then move right.    (making sure move right handles moving right ont he end of the line to take you to the next line.
-
-
-// step one: first, move left. (save where you were..?)
-
-// then cut all data on the line you are on, (at save...?)
-
-// and paste it on the end of the previous line.
-// then remove the now empty line (what previously was your current line, before you move_left'd).
-// and then rerender your new current line.
-
