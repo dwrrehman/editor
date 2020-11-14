@@ -25,9 +25,6 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 
-#include <readline/history.h>
-#include <readline/readline.h>
-
 #include <clang-c/Index.h>
 
 #include "libclipboard.h"
@@ -910,6 +907,8 @@ static inline bool confirmed(const char* question) {
     }
 }
 
+char* dummy_readline(char* p) {return NULL;}
+
 static inline void prompt(const char* message, char* response, int max, long color) {
     struct winsize window;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
@@ -918,8 +917,8 @@ static inline void prompt(const char* message, char* response, int max, long col
     printf(set_color "%s: " reset_color, color, message);
     memset(response, 0, sizeof(char) * (max));
     restore_terminal();
-    char* line = readline("");
-    add_history(line);
+    char* line = dummy_readline("");
+    // add_history(line);
     strncpy(response, line, max - 1);
     free(line);
     configure_terminal();
@@ -933,8 +932,8 @@ static inline void shell(struct file* file) {
     char prompt[128] = {0};
     sprintf(prompt, set_color ": " reset_color, shell_prompt_color);
     restore_terminal();
-    char* line = readline(prompt);
-    add_history(line);
+    char* line = dummy_readline(prompt);
+//    add_history(line);
     execute_shell_command(line, file);
     free(line);
     configure_terminal();
@@ -1088,7 +1087,7 @@ static inline void backspace(struct file* file) {
 int main(const int argc, const char** argv) {
 
     srand((unsigned) time(0));
-    using_history();
+//    using_history();
     if (argc <= 1) create_new_buffer();
     else for (int i = argc - 1; i; i--) open_file(argv[i]);
     if (!buffer_count) exit(1);
@@ -1174,8 +1173,7 @@ int main(const int argc, const char** argv) {
                 sprintf(this->message, "{function}");
         
             } else sprintf(this->message, "unknown command %c(%d)", *c, (int)*c);
-            
-    
+                
         } else if (this->mode == select_mode) {
             sprintf(this->message, "error: select mode not implemented.");
             this->mode = command_mode;
@@ -1243,7 +1241,7 @@ int main(const int argc, const char** argv) {
         }
         p = c;
     }
-    clear_history();
+//    clear_history();
     restore_terminal();
     printf("%s", restore_screen);
 }
