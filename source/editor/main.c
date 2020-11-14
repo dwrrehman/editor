@@ -454,7 +454,7 @@ static inline void syntax_highlight(struct file* file) {
 
         33, 33, 33, 46,
     };
-
+    
     for (size_t line = file->origin.line; line < fmin(file->origin.line + file->window_rows - 1, file->line_count); line++) {
 
         for (size_t column = file->origin.column; column < fmin(file->origin.column + file->window_columns - (file->line_number_width + 2), file->lines[line].length); column++) {
@@ -475,7 +475,6 @@ static inline void syntax_highlight(struct file* file) {
             }
         }
     }
-    
 }
 
 static inline void display(struct file* file) {
