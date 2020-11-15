@@ -18,7 +18,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <termios.h>
-#include <pthread.h>
 #include <sys/time.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -31,6 +30,7 @@
 
 static const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
+
 static const long
     rename_color = 214L,
     confirm_color = 196L,
@@ -40,36 +40,16 @@ static const long
     shell_prompt_color = 33L;
 
 enum key_bindings {
-    edit_key = 'e',         hard_edit_key = 'E',
-    select_key = 's',
+    insert_key = 'f',         hard_insert_key = 'F',
+    command_key = 'a',
     
     up_key = 'o',           down_key = 'i',
     left_key = 'j',         right_key = ';',
     
-    word_up_key = 'O',      word_down_key = 'I',
     word_left_key = 'J',    word_right_key = ':',
-    
-    jump_key = 'k',         find_key = 'l',
-    cut_key = 'd',          paste_key = 'a',
-    
-    rename_key = 'W',       save_key = 'w',
-    force_quit_key = 'Q',   quit_key = 'q',
-    
-    redo_key = 'r',         undo_key = 'u',
-    function_key = 'f',     option_key = 'p',
-    
-    next_buffer_key = 'n',  previous_buffer_key = 'v',
 };
 
-static const char
-    *left_exit = "wf",
-    *right_exit = "oj",
-    *edit_exit = "wq",
-    *jump_top = "ko",
-    *jump_bottom = "km",
-    *jump_begin = "kj",
-    *jump_end = "kl",
-    *shell_command_key = "fd";
+static const char *left_exit = "wf", *right_exit = "oj";
 
 static const char
     *set_cursor = "\033[%lu;%luH",
@@ -81,14 +61,10 @@ static const char
 #define set_color "\033[38;5;%lum"
 #define reset_color "\033[0m"
 
-typedef char* unicode;
-
 enum editor_mode {
-    quit,
-    command_mode,
+    insert_mode,
     edit_mode,
-    hard_edit_mode,
-    select_mode,
+    command_mode,
 };
 
 struct location {
@@ -96,11 +72,47 @@ struct location {
     size_t column;
 };
 
-struct line {
-    unicode* line;
+struct window {
+    size_t columns;
+    size_t rows;
+};
+
+struct logical_line {
+    uint8_t* line;
+    size_t capacity;
     size_t length;
-    size_t render_length;
-    bool continued;
+};
+
+struct render_line {
+    uint8_t* line;
+    size_t capacity;
+    size_t length;
+    size_t visual_length;
+    size_t continued;
+};
+
+struct logical_lines {
+    struct logical_line* lines;
+    size_t count;
+    size_t capacity;
+};
+
+struct render_lines {
+    struct render_line* lines;
+    size_t count;
+    size_t capacity;
+};
+
+struct colored_range {
+    long color;
+    struct location start;
+    struct location end;
+};
+
+struct coloring {
+    struct colored_range* coloring;
+    size_t coloring_count;
+    size_t coloring_capacity;
 };
 
 struct clipboard {
@@ -111,6 +123,7 @@ struct clipboard {
 struct options {
     size_t wrap_width;
     size_t tab_width;
+    size_t scroll_speed;
     bool show_status;
     bool use_txt_extension_when_absent;
     bool use_c_syntax_highlighting;
@@ -119,60 +132,37 @@ struct options {
     unsigned int ms_until_inactive_autosave;
     unsigned int edits_until_active_autosave;
     bool pause_on_shell_command_output;
-};
-
-struct colored_range {
-    long color;
-    struct location start;
-    struct location end;
+    size_t negative_view_shift_margin;
+    size_t negative_line_view_shift_margin;
+    size_t positive_view_shift_margin;
 };
 
 struct file {
-    struct line* lines;
-    unicode* text;
-    struct colored_range* coloring;
-    size_t coloring_count;
-    size_t window_columns;
-    size_t window_rows;
-    size_t length;
-    size_t at;
-    size_t line_count;
-    int line_number_width;
-    bool saved;
-    unsigned int id;
-    enum editor_mode mode;
     struct options options;
-    struct location origin; // should be render origin
-    struct location cursor; // should be render cursor
-    struct location render_cursor; // delete me
-    struct location screen; // should be render screen
-    struct location desired; // should be render desired
+    struct logical_lines logical;
+    struct render_lines render;
+    struct location cursor;
+    struct location render_cursor;
+    struct location visual_cursor;
+    struct location visual_origin;
+    struct location visual_screen;
+    struct location visual_desired;
+    struct window window;
+    unsigned int line_number_width;
+    unsigned int mode;
+    unsigned int id;
+    bool saved;
     char message[4096];
     char filename[4096];
     char autosave_name[4096];
-    pthread_t autosave_thread;
 };
 
-static volatile size_t active = 0;
-static volatile size_t buffer_count = 0;
-static struct file** buffers = NULL;
-
 struct file empty_buffer = {
-    .lines = NULL,
-    .text = NULL,
-    .coloring = NULL,
-    .coloring_count = 0,
-    .window_columns = 0,
-    .window_rows = 0,
-    .length = 0,
-    .at = 0,
-    .line_count = 0,
-    .id = 0,
-    .mode = command_mode,
     .saved = true,
     .options = {
         .wrap_width = 128,
         .tab_width = 8,
+        .scroll_speed = 4,
         .show_status = false,
         .use_txt_extension_when_absent = true,
         .use_c_syntax_highlighting = false,
@@ -181,18 +171,13 @@ struct file empty_buffer = {
         .ms_until_inactive_autosave = 30 * 1000,
         .edits_until_active_autosave = 20,
         .pause_on_shell_command_output = true,
-    },
-    .origin = {0, 0},
-    .cursor = {0, 0},
-    .screen = {0, 0},
-    .desired = {0, 0},
-    .message = {0},
-    .filename = {0},
-    .autosave_name = {0},
-    .autosave_thread = 0,
+        .negative_view_shift_margin = 5,
+        .negative_line_view_shift_margin = 2,
+        .positive_view_shift_margin = 1,
+    }
 };
 
-struct termios terminal = {0};
+static struct termios terminal = {0};
 
 static inline void get_datetime(char buffer[16]) {
     struct timeval tv;
@@ -246,28 +231,28 @@ static inline void autosave(struct file* buffer) {
     fclose(savefile);
 }
 
-void* autosaver(void* _buffer) {
-    struct file* buffer = _buffer;
-    while (buffer->mode != quit) {
-        
-        for (unsigned int i = 0; i < buffer->options.ms_until_inactive_autosave; i++) {
-            if (buffer->mode == quit) return NULL;
-            usleep(1000);
-        }
-        char saved_message[4096] = {0};
-        strcpy(saved_message, buffer->message);
-        sprintf(buffer->message, "autosaving..");
-        
-        for (unsigned int i = 0; i < 500; i++) {
-            if (buffer->mode == quit) return NULL;
-            usleep(1000);
-        }
-        
-        autosave(buffer);
-        strcpy(buffer->message, saved_message);
-    }
-    return NULL;
-}
+//void* autosaver(void* _buffer) {
+//    struct file* buffer = _buffer;
+//    while (buffer->mode != quit) {
+//
+//        for (unsigned int i = 0; i < buffer->options.ms_until_inactive_autosave; i++) {
+//            if (buffer->mode == quit) return NULL;
+//            usleep(1000);
+//        }
+//        char saved_message[4096] = {0};
+//        strcpy(saved_message, buffer->message);
+//        sprintf(buffer->message, "autosaving..");
+//
+//        for (unsigned int i = 0; i < 500; i++) {
+//            if (buffer->mode == quit) return NULL;
+//            usleep(1000);
+//        }
+//
+//        autosave(buffer);
+//        strcpy(buffer->message, saved_message);
+//    }
+//    return NULL;
+//}
 
 static inline void dump_and_panic() {
     printf("panic: internal error: dump() & abort()'ing...\n");
@@ -330,60 +315,60 @@ static inline int remove_directory_and_all_contents(const char* path) {
     return nftw(path, traverse_and_remove, 64, FTW_DEPTH | FTW_PHYS);
 }
 
-static inline bool is(unicode u, char c) {
-    return u and *u == c;
-}
+//static inline bool bigraph(const char* seq, uint8_t c0, uint8_t c1) {
+//    return c0 == seq[0] and c1 == seq[1];
+//}
 
-static inline bool bigraph(const char* seq, unicode c0, unicode c1) {
-    return is(c0, seq[0]) and is(c1, seq[1]);
-}
+//static inline unicode read_unicode() {
+//    unsigned char c = read_byte_from_stdin();
+//    size_t length = 1, count = 0;
+//    if ((c >> 3) == 30) count = 3;
+//    else if ((c >> 4) == 14) count = 2;
+//    else if ((c >> 5) == 6) count = 1;
+//    unicode bytes = malloc(sizeof(char) * (count + 2));
+//    bytes[0] = c;
+//    for (size_t i = 0; i < count; i++)
+//        bytes[length++] = read_byte_from_stdin();
+//    bytes[length++] = 0;
+//    return bytes;
+//}
 
-static inline unicode read_unicode() {
-    unsigned char c = read_byte_from_stdin();
-    size_t length = 1, count = 0;
-    if ((c >> 3) == 30) count = 3;
-    else if ((c >> 4) == 14) count = 2;
-    else if ((c >> 5) == 6) count = 1;
-    unicode bytes = malloc(sizeof(char) * (count + 2));
-    bytes[0] = c;
-    for (size_t i = 0; i < count; i++)
-        bytes[length++] = read_byte_from_stdin();
-    bytes[length++] = 0;    
-    return bytes;
-}
+//static inline void insert(unicode c, struct file* file) {
+//    if (file->at > file->length) {
+//        dump_and_panic();
+//        return;
+//    }
+//
+//    file->text = realloc(file->text, sizeof(unicode) * (file->length + 1));
+//
+//    memmove(file->text + file->at + 1,
+//            file->text + file->at,
+//            sizeof(unicode) * (file->length - file->at));
+//
+//    file->length++;
+//    file->text[file->at] = c;
+//}
 
-static inline void insert(unicode c, struct file* file) {
-    if (file->at > file->length) {
-        dump_and_panic();
-        return;
-    }
-    
-    file->text = realloc(file->text, sizeof(unicode) * (file->length + 1));
-    
-    memmove(file->text + file->at + 1,
-            file->text + file->at,
-            sizeof(unicode) * (file->length - file->at));
-    
-    file->length++;
-    file->text[file->at] = c;
-}
+//static inline void delete(struct file* file) {
+//    if (file->at > file->length) {
+//        dump_and_panic();
+//        return;
+//    }
+//
+//    if (!file->at or !file->length) return;
+//
+//    free(file->text[file->at - 1]);
+//
+//    memmove(file->text + file->at - 1,
+//            file->text + file->at,
+//            sizeof(unicode) * (file->length - file->at));
+//
+//    file->text = realloc(file->text, sizeof(unicode) * --file->length);
+//}
 
-static inline void delete(struct file* file) {
-    if (file->at > file->length) {
-        dump_and_panic();
-        return;
-    }
-    
-    if (!file->at or !file->length) return;
-    
-    free(file->text[file->at - 1]);
-    
-    memmove(file->text + file->at - 1,
-            file->text + file->at,
-            sizeof(unicode) * (file->length - file->at));
-    
-    file->text = realloc(file->text, sizeof(unicode) * --file->length);
-}
+
+
+
 
 static inline void print_status_bar(struct file* file) {
     
@@ -400,82 +385,88 @@ static inline void print_status_bar(struct file* file) {
     printf(set_color "  %s" reset_color, color, file->message);
 }
 
-static inline bool unicode_string_equals_literal(unicode* s1, const char* s2, size_t n) {
-    while (n and is(*s1, *s2)) {
-        ++s1;
-        ++s2;
-        --n;
-    }
-    return !n;
-}
+//static inline bool unicode_string_equals_literal(unicode* s1, const char* s2, size_t n) {
+//    while (n and is(*s1, *s2)) {
+//        ++s1;
+//        ++s2;
+//        --n;
+//    }
+//    return !n;
+//}
 
-static inline void syntax_highlight(struct file* file) {
-    file->coloring_count = 0;
-    
-    if (!file->options.use_c_syntax_highlighting) return;
-                
-    return;
-
-    ///TODO: do this only or the screen.
-    ///figure out the size of the screen,
-    ///and do this only for the visible text!
-    
-    const int keyword_count = 31;
-
-    const char* keywords[] = {
-        "0", "1",  "(", ")",
-        "{", "}", "=", "+",
-
-        "exit", "puts", "MACRO",
-
-        "void", "int", "static", "inline",
-        "struct", "unsigned", "sizeof", "const",
-
-        "char", "for", "if", "else",
-        "while", "break", "continue", "long",
-
-        "float", "double", "short", "type"
-    };
-
-    const long colors[] = {
-        214, 214, 246, 246,
-        246, 246, 246, 246,
-
-        41, 41, 52,
-
-        33, 33, 33, 33,
-        33, 33, 33, 33,
-
-        33, 33, 33, 33,
-        33, 33, 33, 33,
-
-        33, 33, 33, 46,
-    };
-    
-    for (size_t line = file->origin.line; line < fmin(file->origin.line + file->window_rows - 1, file->line_count); line++) {
-
-        for (size_t column = file->origin.column; column < fmin(file->origin.column + file->window_columns - (file->line_number_width + 2), file->lines[line].length); column++) {
-
-            for (int k = 0; k < keyword_count; k++) {
-                if (file->lines[line].length - column >= strlen(keywords[k]) and
-                    unicode_string_equals_literal(file->lines[line].line + column,
-                                                  keywords[k], strlen(keywords[k]))) {
-
-                    struct location start = {line, column};
-                    struct location end = {line, column + strlen(keywords[k])};
-                    struct colored_range node = {colors[k], start, end};
-
-                    file->coloring = realloc(file->coloring, sizeof(struct colored_range)
-                                             * (file->coloring_count + 1));
-                    file->coloring[file->coloring_count++] = node;
-                }
-            }
-        }
-    }
-}
+//static inline void syntax_highlight(struct file* file) {
+//
+//    if (!file->options.use_c_syntax_highlighting) return;
+//
+//    return;
+//
+//    static size_t active = 0;
+//    static size_t buffer_count = 0;
+//    static struct file** buffers = NULL;
+//
+//
+//
+//    ///TODO: do this only or the screen.
+//    ///figure out the size of the screen,
+//    ///and do this only for the visible text!
+//
+//    const int keyword_count = 31;
+//
+//    const char* keywords[] = {
+//        "0", "1",  "(", ")",
+//        "{", "}", "=", "+",
+//
+//        "exit", "puts", "MACRO",
+//
+//        "void", "int", "static", "inline",
+//        "struct", "unsigned", "sizeof", "const",
+//
+//        "char", "for", "if", "else",
+//        "while", "break", "continue", "long",
+//
+//        "float", "double", "short", "type"
+//    };
+//
+//    const long colors[] = {
+//        214, 214, 246, 246,
+//        246, 246, 246, 246,
+//
+//        41, 41, 52,
+//
+//        33, 33, 33, 33,
+//        33, 33, 33, 33,
+//
+//        33, 33, 33, 33,
+//        33, 33, 33, 33,
+//
+//        33, 33, 33, 46,
+//    };
+//
+////    for (size_t line = file->origin.line; line < fmin(file->origin.line + file->window_rows - 1, file->line_count); line++) {
+////
+////        for (size_t column = file->origin.column; column < fmin(file->origin.column + file->window_columns - (file->line_number_width + 2), file->lines[line].length); column++) {
+////
+////            for (int k = 0; k < keyword_count; k++) {
+////                if (file->lines[line].length - column >= strlen(keywords[k]) and
+////                    unicode_string_equals_literal(file->lines[line].line + column,
+////                                                  keywords[k], strlen(keywords[k]))) {
+////
+////                    struct location start = {line, column};
+////                    struct location end = {line, column + strlen(keywords[k])};
+////                    struct colored_range node = {colors[k], start, end};
+////
+////                    file->coloring = realloc(file->coloring, sizeof(struct colored_range)
+////                                             * (file->coloring_count + 1));
+////                    file->coloring[file->coloring_count++] = node;
+////                }
+////            }
+////        }
+////    }
+//}
 
 static inline void display(struct file* file) {
-    if (!file->window_columns and !file->window_rows) return;
+    if (not file->window.columns and
+        not file->window.rows) return;
     
     char* screen = NULL;
     size_t screen_length = 0;
@@ -570,178 +561,178 @@ static inline void display(struct file* file) {
     printf(set_cursor, screen_cursor.line, screen_cursor.column);
 }
 
-static inline struct line* generate_line_view(struct file* file) {
-    size_t length = 0;
-    struct line* lines = malloc(sizeof(struct line));
-    lines[0].line = file->text;
-    lines[0].continued = 0;
-    lines[0].length = 0;
-    lines[0].render_length = 0;
-    file->line_count = 1;
-    
-    const size_t start = 0, end = file->length;   ///TODO: determine the right end points for just the screen rendering.
-    
-    for (size_t i = start; i < end; i++) {
-        
-        if (is(file->text[i], '\n')) {
-            lines[file->line_count - 1].continued = false;
-            length = 0;
-        } else {
-            
-            if (is(file->text[i], '\t')) {
-                length += file->options.tab_width;
-                lines[file->line_count - 1].render_length += file->options.tab_width;
-            } else {
-                length++;
-                lines[file->line_count - 1].render_length++;
-            }
-            
-            lines[file->line_count - 1].length++;
-            
-            if (file->options.wrap_width and length >= file->options.wrap_width) {
-                lines[file->line_count - 1].continued = true;
-                length = 0;
-            }
-        }
-        if (!length) {
-            lines = realloc(lines, sizeof(struct line) * (file->line_count + 1));
-            lines[file->line_count].line = file->text + i + 1;
-            lines[file->line_count].continued = false;
-            lines[file->line_count].render_length = 0;
-            lines[file->line_count++].length = 0;
-        }
-    }
-    return lines;
-}
+//static inline struct line* generate_line_view(struct file* file) {
+//    size_t length = 0;
+//    struct line* lines = malloc(sizeof(struct line));
+//    lines[0].line = file->text;
+//    lines[0].continued = 0;
+//    lines[0].length = 0;
+//    lines[0].render_length = 0;
+//    file->line_count = 1;
+//
+//    const size_t start = 0, end = file->length;   ///TODO: determine the right end points for just the screen rendering.
+//
+//    for (size_t i = start; i < end; i++) {
+//
+//        if (is(file->text[i], '\n')) {
+//            lines[file->line_count - 1].continued = false;
+//            length = 0;
+//        } else {
+//
+//            if (is(file->text[i], '\t')) {
+//                length += file->options.tab_width;
+//                lines[file->line_count - 1].render_length += file->options.tab_width;
+//            } else {
+//                length++;
+//                lines[file->line_count - 1].render_length++;
+//            }
+//
+//            lines[file->line_count - 1].length++;
+//
+//            if (file->options.wrap_width and length >= file->options.wrap_width) {
+//                lines[file->line_count - 1].continued = true;
+//                length = 0;
+//            }
+//        }
+//        if (!length) {
+//            lines = realloc(lines, sizeof(struct line) * (file->line_count + 1));
+//            lines[file->line_count].line = file->text + i + 1;
+//            lines[file->line_count].continued = false;
+//            lines[file->line_count].render_length = 0;
+//            lines[file->line_count++].length = 0;
+//        }
+//    }
+//    return lines;
+//}
 
-static inline void move_left(struct file* file, bool user) {
-    
-    if (file->cursor.column) {
-        
-        file->cursor.column--;
-        
-        if (file->screen.column > 5)
-            file->screen.column--;
-        else if (file->origin.column)
-            file->origin.column--;
-        else
-            file->screen.column--;
-        
-    } else if (file->cursor.line) {
-        
-        file->cursor.line--;
-        
-        file->cursor.column = file->lines[file->cursor.line].length - file->lines[file->cursor.line].continued;
-        
-        if (file->screen.line > 5)
-            file->screen.line--;
-        else if (file->origin.line)
-            file->origin.line--;
-        else
-            file->screen.line--;
-        
-        if (file->cursor.column > file->window_columns - 5) {
-            file->screen.column = file->window_columns - 5;
-            file->origin.column = file->cursor.column - file->screen.column;
-        } else {
-            file->screen.column = file->cursor.column;
-            file->origin.column = 0;
-        }
-    }
-    if (user)
-        file->desired = file->cursor;
-}
+//static inline void move_left(struct file* file, bool user) {
+//
+//    if (file->cursor.column) {
+//
+//        file->cursor.column--;
+//
+//        if (file->screen.column > 5)
+//            file->screen.column--;
+//        else if (file->origin.column)
+//            file->origin.column--;
+//        else
+//            file->screen.column--;
+//
+//    } else if (file->cursor.line) {
+//
+//        file->cursor.line--;
+//
+//        file->cursor.column = file->lines[file->cursor.line].length - file->lines[file->cursor.line].continued;
+//
+//        if (file->screen.line > 5)
+//            file->screen.line--;
+//        else if (file->origin.line)
+//            file->origin.line--;
+//        else
+//            file->screen.line--;
+//
+//        if (file->cursor.column > file->window_columns - 5) {
+//            file->screen.column = file->window_columns - 5;
+//            file->origin.column = file->cursor.column - file->screen.column;
+//        } else {
+//            file->screen.column = file->cursor.column;
+//            file->origin.column = 0;
+//        }
+//    }
+//    if (user)
+//        file->desired = file->cursor;
+//}
+//
+//static inline void move_right(struct file* file, bool user) {
+//
+//    if (file->cursor.column < file->lines[file->cursor.line].length) {
+//
+//        file->cursor.column++;
+//
+//        if (file->screen.column < file->window_columns - 3)
+//            file->screen.column++;
+//        else
+//            file->origin.column++;
+//
+//    } else if (file->cursor.line < file->line_count - 1) {
+//
+//        file->cursor.column = file->lines[file->cursor.line++].continued;
+//
+//        if (file->screen.line < file->window_rows - 3)
+//            file->screen.line++;
+//        else
+//            file->origin.line++;
+//
+//        if (file->cursor.column > file->window_columns - 3) {
+//            file->screen.column = file->window_columns - 3;
+//            file->origin.column = file->cursor.column - file->screen.column;
+//        } else {
+//            file->screen.column = file->cursor.column;
+//            file->origin.column = 0;
+//        }
+//    }
+//    if (user) file->desired = file->cursor;
+//}
+//
+//static inline void move_up(struct file* file) {
+//
+//     if (!file->cursor.line) {
+//         file->screen = file->cursor = file->origin = (struct location){0, 0};
+//         file->at = 0;
+//         return;
+//     }
+//     const size_t column_target = fmin(file->lines[file->cursor.line - 1].length, file->desired.column);
+//     const size_t line_target = file->cursor.line - 1;
+//     while (file->cursor.column > column_target or file->cursor.line > line_target) {
+//         move_left(file, false);
+//         file->at--;
+//     }
+//     if (file->cursor.column > file->window_columns - 5) {
+//         file->screen.column = file->window_columns - 5;
+//         file->origin.column = file->cursor.column - file->screen.column;
+//     } else {
+//         file->screen.column = file->cursor.column;
+//         file->origin.column = 0;
+//     }
+// }
+//
+//static inline void move_down(struct file* file) {
+//
+//    if (file->cursor.line >= file->line_count - 1) {
+//        while (file->at < file->length) {
+//            move_right(file, false);
+//            file->at++;
+//        }
+//        return;
+//    }
+//
+//    const size_t column_target = fmin(file->lines[file->cursor.line + 1].length, file->desired.column);
+//    const size_t line_target = file->cursor.line + 1;
+//
+//    while (file->cursor.column < column_target or file->cursor.line < line_target) {
+//        move_right(file, false);
+//        file->at++;
+//    }
+//
+//    if (file->cursor.line and file->lines[file->cursor.line - 1].continued and !column_target) {
+//        move_left(file, false);
+//        file->at--;
+//    }
+//}
 
-static inline void move_right(struct file* file, bool user) {
-    
-    if (file->cursor.column < file->lines[file->cursor.line].length) {
-        
-        file->cursor.column++;
-        
-        if (file->screen.column < file->window_columns - 3)
-            file->screen.column++;
-        else
-            file->origin.column++;
-        
-    } else if (file->cursor.line < file->line_count - 1) {
-        
-        file->cursor.column = file->lines[file->cursor.line++].continued;
-        
-        if (file->screen.line < file->window_rows - 3)
-            file->screen.line++;
-        else
-            file->origin.line++;
-        
-        if (file->cursor.column > file->window_columns - 3) {
-            file->screen.column = file->window_columns - 3;
-            file->origin.column = file->cursor.column - file->screen.column;
-        } else {
-            file->screen.column = file->cursor.column;
-            file->origin.column = 0;
-        }
-    }
-    if (user) file->desired = file->cursor;
-}
-
-static inline void move_up(struct file* file) {
-    
-     if (!file->cursor.line) {
-         file->screen = file->cursor = file->origin = (struct location){0, 0};
-         file->at = 0;
-         return;
-     }
-     const size_t column_target = fmin(file->lines[file->cursor.line - 1].length, file->desired.column);
-     const size_t line_target = file->cursor.line - 1;
-     while (file->cursor.column > column_target or file->cursor.line > line_target) {
-         move_left(file, false);
-         file->at--;
-     }
-     if (file->cursor.column > file->window_columns - 5) {
-         file->screen.column = file->window_columns - 5;
-         file->origin.column = file->cursor.column - file->screen.column;
-     } else {
-         file->screen.column = file->cursor.column;
-         file->origin.column = 0;
-     }
- }
-
-static inline void move_down(struct file* file) {
-    
-    if (file->cursor.line >= file->line_count - 1) {
-        while (file->at < file->length) {
-            move_right(file, false);
-            file->at++;
-        }
-        return;
-    }
-    
-    const size_t column_target = fmin(file->lines[file->cursor.line + 1].length, file->desired.column);
-    const size_t line_target = file->cursor.line + 1;
-    
-    while (file->cursor.column < column_target or file->cursor.line < line_target) {
-        move_right(file, false);
-        file->at++;
-    }
-    
-    if (file->cursor.line and file->lines[file->cursor.line - 1].continued and !column_target) {
-        move_left(file, false);
-        file->at--;
-    }
-}
-
-static inline void jump(unicode c0, struct file* file) {
-    unicode c1 = read_unicode();
-    if (bigraph(jump_top, c0, c1)) { file->screen = file->cursor = file->origin = (struct location){0, 0}; file->at = 0; }
-    else if (bigraph(jump_bottom, c0, c1)) while (file->at < file->length) move_down(file);
-    else if (bigraph(jump_begin, c0, c1)) while (file->cursor.column) { (file->at)--; move_left(file, true); }
-    
-    else if (bigraph(jump_end, c0, c1)) {
-        while (file->cursor.column < file->lines[file->cursor.line].length) {
-            file->at++;
-            move_right(file, true);
-        }
-    }
-}
+//static inline void jump(unicode c0, struct file* file) {
+//    unicode c1 = read_unicode();
+//    if (bigraph(jump_top, c0, c1)) { file->screen = file->cursor = file->origin = (struct location){0, 0}; file->at = 0; }
+//    else if (bigraph(jump_bottom, c0, c1)) while (file->at < file->length) move_down(file);
+//    else if (bigraph(jump_begin, c0, c1)) while (file->cursor.column) { (file->at)--; move_left(file, true); }
+//
+//    else if (bigraph(jump_end, c0, c1)) {
+//        while (file->cursor.column < file->lines[file->cursor.line].length) {
+//            file->at++;
+//            move_right(file, true);
+//        }
+//    }
+//}
 
 static inline struct file* create_new_buffer() {
     buffers = realloc(buffers, sizeof(struct file*) * (buffer_count + 1));
@@ -755,11 +746,9 @@ static inline struct file* create_new_buffer() {
     
     buffer->id = rand();
     sprintf(buffer->autosave_name, "%s/%x/", autosave_directory, buffer->id);
-    
-    buffer->lines = generate_line_view(buffer);
-    syntax_highlight(buffer);
         
-    pthread_create(&buffer->autosave_thread, NULL, autosaver, buffer);
+    syntax_highlight(buffer);
+    
     return buffer;
 }
 
@@ -806,31 +795,31 @@ static inline int open_file(const char* given_filename) {
     
     buffer->text = realloc(buffer->text, sizeof(unicode) * (file_size));
     
-    int character = 0;
-    while ((character = fgetc(file)) != EOF) {
-        
-        unsigned char c = character;
-        size_t length = 1, count = 0;
-        if ((c >> 3) == 30) count = 3;
-        else if ((c >> 4) == 14) count = 2;
-        else if ((c >> 5) == 6) count = 1;
-        
-        unicode bytes = malloc(sizeof(char) * (count + 2));
-        bytes[0] = c;
-        for (size_t i = 0; i < count; i++)
-            bytes[length++] = fgetc(file);
-        bytes[length++] = 0;
-        
-        buffer->text[buffer->length++] = bytes;
-    }
+//    int character = 0;
+//    while ((character = fgetc(file)) != EOF) {
+//
+//        unsigned char c = character;
+//        size_t length = 1, count = 0;
+//        if ((c >> 3) == 30) count = 3;
+//        else if ((c >> 4) == 14) count = 2;
+//        else if ((c >> 5) == 6) count = 1;
+//
+//        unicode bytes = malloc(sizeof(char) * (count + 2));
+//        bytes[0] = c;
+//        for (size_t i = 0; i < count; i++)
+//            bytes[length++] = fgetc(file);
+//        bytes[length++] = 0;
+//
+//        buffer->text[buffer->length++] = bytes;
+//    }
     
 //    buffer->text = realloc(buffer->text, sizeof(unicode) * (buffer->length + 1));
 
     fclose(file);
     strncpy(buffer->filename, given_filename, 4096);
     
-    buffer->lines = generate_line_view(buffer);
-    syntax_highlight(buffer);
+//    buffer->lines = generate_line_view(buffer);
+//    syntax_highlight(buffer);
     return 0;
 }
 
@@ -1043,14 +1032,14 @@ static inline void adjust_window_size(struct file* file) {
     file->window_rows = window.ws_row;
 }
 
-static inline void backspace(struct file* file) {
-    delete(file);
-    file->at--;
-    move_left(file, true);
-    free(file->lines);
-    file->lines = generate_line_view(file);
-    syntax_highlight(file);
-}
+//static inline void backspace(struct file* file) {
+//    delete(file);
+//    file->at--;
+//    move_left(file, true);
+//    free(file->lines);
+//    file->lines = generate_line_view(file);
+//    syntax_highlight(file);
+//}
 
 //enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
 //    CXString spelling = clang_getCursorSpelling(cursor);
@@ -1245,4 +1234,554 @@ int main(const int argc, const char** argv) {
     restore_terminal();
     printf("%s", restore_screen);
 }
+
+
+
+
+
+
+
+
+
+static inline void restore_terminal() {
+    
+    write(STDOUT_FILENO, "\033[?1049l", 8);
+        
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) < 0) {
+        perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal))");
+        abort();
+    }
+}
+
+static inline void configure_terminal() {
+    
+    write(STDOUT_FILENO, "\033[?1049h", 8);
+    
+    if (tcgetattr(STDIN_FILENO, &terminal) < 0) {
+        perror("tcgetattr(STDIN_FILENO, &terminal)");
+        abort();
+    }
+    
+    atexit(restore_terminal);
+    struct termios raw = terminal;
+    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | IXON);
+    raw.c_oflag &= ~(OPOST);
+    raw.c_lflag &= ~(ECHO | ICANON | IEXTEN);
+        
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) < 0) {
+        perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)");
+        abort();
+    }
+    
+    write(STDOUT_FILENO, "\033[?1000h", 8);
+}
+
+static inline uint8_t read_byte() {
+    uint8_t c = 0;
+    read(STDIN_FILENO, &c, 1);
+    return c;
+}
+
+static inline void render_line(struct file* file) {
+        
+    size_t line = file->render_cursor.line;
+    
+    file->render.lines[line].length = file->render_cursor.column;
+    file->render.lines[line].visual_length = file->visual_cursor.column;
+    
+    for (size_t i = file->cursor.column; i < file->logical.lines[file->cursor.line].length; i++) {
+        uint8_t c = file->logical.lines[file->cursor.line].line[i];
+        
+        if (file->render.lines[line].visual_length == wrap_width) {
+//            line++;
+//            if (line >= file->render.count or
+//                not file->render.lines[line].continued) {
+//
+//                if (file->render.count + 1 >= file->render.capacity)
+//                    file->render.lines =
+//                    realloc(file->render.lines,
+//                            sizeof(struct render_line) *
+//                            (file->render.capacity = 2 * (file->render.capacity + 1)));
+//
+//                memmove(file->render.lines + line + 1,
+//                        file->render.lines + line,
+//                        sizeof(struct render_line) *
+//                        (file->render.count - line));
+//                file->render.lines[line] = (struct render_line){.continued = true};
+//                file->render.count++;
+//            } else {
+//                file->render.lines[line].length = 0;
+//                file->render.lines[line].visual_length = 0;
+//            }
+        }
+        
+        if (c == '\t') {
+    
+            size_t at = file->render.lines[line].visual_length;
+            size_t count = 0;
+            do {
+                if (at >= wrap_width) break;
+                at++; count++;
+            } while (at % tab_width);
+            if (file->render.lines[line].length + count >= file->render.lines[line].capacity)
+                file->render.lines[line].line =
+                realloc(file->render.lines[line].line,
+                        file->render.lines[line].capacity =
+                        2 * (file->render.lines[line].capacity + count));
+            file->render.lines[line].line[file->render.lines[line].length++] = '\t';
+            file->render.lines[line].visual_length++;
+            for (size_t i = 1; i < count; i++) {
+                file->render.lines[line].line[file->render.lines[line].length++] = '\n';
+                file->render.lines[line].visual_length++;
+            }
+            
+        } else {
+            if (file->render.lines[line].length + 1 >= file->render.lines[line].capacity)
+                file->render.lines[line].line = realloc(file->render.lines[line].line,
+                                                        file->render.lines[line].capacity =
+                                                        2 * (file->render.lines[line].capacity + 1));
+            file->render.lines[line].line[file->render.lines[line].length++] = c;
+            if ((c >> 6) != 2) file->render.lines[line].visual_length++;
+        }
+    }
+    
+//    line++;
+//    size_t delete_to = line;
+//    while (delete_to < file->render.count and file->render.lines[delete_to].continued) delete_to++;
+//
+//    memmove(file->render.lines + line, file->render.lines + delete_to,
+//            sizeof(struct render_line) * (file->render.count - delete_to));
+//    file->render.count -= (delete_to - line);
+}
+
+static inline void move_left(struct file* file, bool user) {
+
+    if (not file->cursor.column) {
+        if (not file->cursor.line) return;
+        
+        file->cursor.column = file->logical.lines[--file->cursor.line].length;
+        file->render_cursor.column = file->render.lines[--file->render_cursor.line].length;
+        file->visual_cursor.column = file->render.lines[--file->visual_cursor.line].visual_length;
+                
+        if (file->visual_screen.line > negative_line_view_shift_margin) file->visual_screen.line--;
+        else if (file->visual_origin.line) file->visual_origin.line--;
+        else file->visual_screen.line--;
+        if (file->visual_cursor.column > file->window_columns - negative_view_shift_margin) {
+            file->visual_screen.column = file->window_columns - negative_view_shift_margin;
+            file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
+        } else {
+            file->visual_screen.column = file->visual_cursor.column;
+            file->visual_origin.column = 0;
+        }
+                        
+        if (user) file->visual_desired = file->visual_cursor;
+        return;
+    }
+
+    struct logical_line* line = file->logical.lines + file->cursor.line;
+    
+    while (file->cursor.column) {
+        if ((line->line[--file->cursor.column] >> 6) != 2) break;
+    }
+    
+    struct render_line* render_line = file->render.lines + file->render_cursor.line;
+    
+    while (file->render_cursor.column) {
+        uint8_t c = render_line->line[--file->render_cursor.column];
+
+        if ((c >> 6) != 2) {
+            file->visual_cursor.column--;
+            if (file->visual_screen.column > negative_view_shift_margin) file->visual_screen.column--;
+            else if (file->visual_origin.column) file->visual_origin.column--;
+            else file->visual_screen.column--;
+        }
+        if ((c >> 6) != 2 and c != 10) break;
+    }
+    
+    if (user) file->visual_desired = file->visual_cursor;
+}
+
+static inline void move_right(struct file* file, bool user) {
+    
+    if (file->cursor.line >= file->logical.count) return;
+    
+    if (file->cursor.line + 1 < file->logical.count and
+        file->cursor.column == file->logical.lines[file->cursor.line].length) {
+        file->cursor.column = 0;
+        file->cursor.line++;
+        file->render_cursor.column = 0;
+        file->render_cursor.line++;
+        file->visual_cursor.column = 0;
+        file->visual_cursor.line++;
+        
+        if (file->visual_screen.line < file->window_rows - positive_view_shift_margin) file->visual_screen.line++;
+        else file->visual_origin.line++;
+        if (file->visual_cursor.column > file->window_columns - positive_view_shift_margin) {
+            file->visual_screen.column = file->window_columns - positive_view_shift_margin;
+            file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
+        } else {
+            file->visual_screen.column = file->visual_cursor.column;
+            file->visual_origin.column = 0;
+        }
+        
+        if (user) file->visual_desired = file->visual_cursor;
+        return;
+    }
+    
+    struct logical_line* line = file->logical.lines + file->cursor.line;
+            
+    while (file->cursor.column < line->length) {
+        ++file->cursor.column;
+        if (file->cursor.column >= line->length or
+            (line->line[file->cursor.column] >> 6) != 2) break;
+    }
+
+    struct render_line* new_render_line = file->render.lines + file->render_cursor.line;
+    
+    while (file->render_cursor.column < new_render_line->length) {
+        if ((new_render_line->line[file->render_cursor.column] >> 6) != 2) {
+            file->visual_cursor.column++;
+            if (file->visual_screen.column < file->window_columns - positive_view_shift_margin) file->visual_screen.column++;
+            else file->visual_origin.column++;
+        }
+        
+        ++file->render_cursor.column;
+        if (file->render_cursor.column == new_render_line->length) break;
+        uint8_t c = new_render_line->line[file->render_cursor.column];
+        if ((c >> 6) != 2 and c != 10) break;
+    }
+
+    if (user) file->visual_desired = file->visual_cursor;
+}
+
+static inline void move_up(struct file* file) {
+
+    if (not file->visual_cursor.line) {
+        file->render_cursor = (struct location){0, 0};
+        file->visual_cursor = (struct location){0, 0};
+        file->visual_screen = (struct location){0, 0};
+        file->visual_origin = (struct location){0, 0};
+        file->cursor = (struct location){0, 0};
+        return;
+    }
+    
+    size_t line_target = file->visual_cursor.line - 1;
+    size_t column_target = fmin(file->render.lines[line_target].visual_length, file->visual_desired.column);
+    
+    while (file->visual_cursor.column > column_target or file->visual_cursor.line > line_target)
+        move_left(file, false);
+    
+    if (file->visual_cursor.column > file->window_columns - negative_view_shift_margin) {
+        file->visual_screen.column = file->window_columns - negative_view_shift_margin;
+        file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
+    } else {
+        file->visual_screen.column = file->visual_cursor.column;
+        file->visual_origin.column = 0;
+    }
+}
+
+static inline void move_down(struct file* file) {
+
+    if (file->visual_cursor.line == file->render.count - 1) {
+        while (file->visual_cursor.column < file->render.lines[file->visual_cursor.line].visual_length)
+            move_right(file, false);
+        return;
+    }
+    
+    size_t line_target = file->visual_cursor.line + 1;
+    size_t column_target = fmin(file->render.lines[line_target].visual_length, file->visual_desired.column);
+    
+    while (file->visual_cursor.column < column_target or file->visual_cursor.line < line_target)
+        move_right(file, false);
+    
+    if (file->render.lines[file->visual_cursor.line].continued and not column_target)
+        move_left(file, false);
+}
+
+/*
+ 
+ how to get a status bar:
+  
+ abAppend(ab, "\x1b[7m", 4);
+   int len = 0;
+   while (len < E.screencols) {
+     abAppend(ab, " ", 1);
+     len++;
+   }
+   abAppend(ab, "\x1b[m", 3);
+ */
+ 
+static inline void insert(uint8_t c, struct file* file) {
+    
+    if (c == '\r') {
+        
+        struct logical_line* current = file->logical.lines + file->cursor.line;
+        
+        if (current->length == file->cursor.column) {
+            
+            size_t at = file->cursor.line + 1;
+            size_t render_at = file->render_cursor.line + 1;
+            
+            if (file->logical.count + 1 >= file->logical.capacity) file->logical.lines = realloc(file->logical.lines, sizeof(struct logical_line) * (file->logical.capacity = 2 * (file->logical.capacity + 1)));
+            memmove(file->logical.lines + at + 1, file->logical.lines + at, sizeof(struct logical_line) * (file->logical.count - at));
+            file->logical.lines[at] = (struct logical_line) {0};
+            file->logical.count++;
+            
+            if (file->render.count + 1 >= file->render.capacity) file->render.lines = realloc(file->render.lines, sizeof(struct render_line) * (file->render.capacity = 2 * (file->render.capacity + 1)));
+            memmove(file->render.lines + render_at + 1, file->render.lines + render_at, sizeof(struct render_line) * (file->render.count - render_at));
+            file->render.lines[render_at] = (struct render_line) {0};
+            file->render.count++;
+            
+            move_right(file, true);
+            
+        } else {
+            
+            size_t size = current->length - file->cursor.column;
+            struct logical_line new = {malloc(size), size, size};
+                        
+            memcpy(new.line, current->line + file->cursor.column, size);
+            current->length = file->cursor.column;
+                 
+            if (file->logical.count + 1 >= file->logical.capacity)
+                file->logical.lines =
+                realloc(file->logical.lines, sizeof(struct logical_line)
+                        * (file->logical.capacity = 2 * (file->logical.capacity + 1)));
+            size_t at = file->cursor.line + 1;
+            memmove(file->logical.lines + at + 1, file->logical.lines + at, sizeof(struct logical_line) * (file->logical.count - at));
+            file->logical.lines[at] = new;
+            file->logical.count++;
+                        
+            if (file->render.count + 1 >= file->render.capacity)
+                file->render.lines =
+                realloc(file->render.lines, sizeof(struct render_line)
+                        * (file->render.capacity = 2 * (file->render.capacity + 1)));
+            
+            size_t render_at = file->render_cursor.line + 1;
+            memmove(file->render.lines + render_at + 1, file->render.lines + render_at, sizeof(struct render_line) * (file->render.count - render_at));
+            file->render.lines[render_at] = (struct render_line) {0};
+            file->render.count++;
+            
+            render_line(file);
+            move_right(file, true);
+            render_line(file);
+        }
+        return;
+    }
+    
+    struct logical_line* line = file->logical.lines + file->cursor.line;
+    
+    size_t at = file->cursor.column;
+    if (line->length + 1 >= line->capacity) line->line = realloc(line->line, line->capacity = 2 * (line->capacity + 1));
+    memmove(line->line + at + 1, line->line + at, line->length - at);
+    ++line->length;
+    line->line[at] = c;
+    
+    render_line(file);
+    
+    if (c < 128) move_right(file, true);
+    else {
+        file->cursor.column++;
+        file->render_cursor.column++;
+        
+        if ((c >> 6) != 2) {
+            file->visual_cursor.column++;
+            if (file->visual_screen.column < file->window_columns - positive_view_shift_margin) file->visual_screen.column++;
+            else file->visual_origin.column++;
+        }
+    }
+}
+
+static inline void delete(struct file* file) {
+    if (not file->cursor.column) {
+        if (not file->cursor.line) return;
+        
+        size_t at = file->cursor.line;
+        size_t render_at = file->render_cursor.line;
+        
+        move_left(file, true);
+        
+//        size_t old_render_at = render_at;
+//        size_t new_render_at = render_at;
+//
+//        do new_render_at++;
+//        while (new_render_at < file->render.count and
+//               file->render.lines[new_render_at].continued);
+        
+        struct logical_line* new = file->logical.lines + at - 1;
+        struct logical_line* old = file->logical.lines + at;
+        
+        if (new->length + old->length >= new->capacity)
+            new->line = realloc(new->line, new->capacity = 2 * (new->capacity + old->length));
+        
+        if (old->length) {
+            memcpy(new->line + new->length, old->line, old->length);
+            new->length += old->length;
+        }
+        
+        memmove(file->logical.lines + at,
+                file->logical.lines + at + 1,
+                sizeof(struct logical_line)
+                * (file->logical.count - (at + 1)));
+        file->logical.count--;
+        
+//        memmove(file->render.lines + old_render_at, file->render.lines + new_render_at,
+//                sizeof(struct render_line) * (file->render.count - new_render_at));
+//        file->render.count -= (new_render_at - old_render_at);
+        
+        memmove(file->render.lines + render_at,
+                file->render.lines + render_at + 1,
+                sizeof(struct render_line)
+                * (file->render.count - (render_at + 1)));
+        file->render.count--;
+        
+        render_line(file);
+        return;
+    }
+    
+    struct logical_line* line = file->logical.lines + file->cursor.line;
+    size_t save = file->cursor.column;
+    move_left(file, true);
+    memmove(line->line + file->cursor.column, line->line + save, line->length - save);
+    line->length -= save - file->cursor.column;
+    render_line(file);
+}
+
+static inline void destroy_file(struct file* file) {
+    for (size_t i = 0; i < file->logical.count; i++) free(file->logical.lines[i].line);
+    free(file->logical.lines);
+    for (size_t i = 0; i < file->render.count; i++) free(file->render.lines[i].line);
+    free(file->render.lines);
+}
+
+static inline void create_file(struct file* file) {
+    file->logical.lines = realloc(file->logical.lines, sizeof(struct logical_line) * (file->logical.capacity = 2 * (file->logical.capacity + 1)));
+    file->logical.lines[file->logical.count++] = (struct logical_line) {0};
+    file->render.lines = realloc(file->render.lines, sizeof(struct render_line) * (file->render.capacity = 2 * (file->render.capacity + 1)));
+    file->render.lines[file->render.count++] = (struct render_line) {0};
+}
+
+static inline void adjust_window_size(struct file* file, char** screen) {
+    struct winsize window;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+    file->window_columns = window.ws_col;
+    file->window_rows = window.ws_row;
+    *screen = realloc(*screen, file->window_columns * file->window_rows * 4);
+}
+
+static void display(struct file* file, char* screen) {
+    
+    size_t length = 7, screen_line = 1;
+    memcpy(screen, "\033[H\033[2J", 7);
+    
+    size_t limit = fmin(file->visual_origin.line + file->window_rows, file->render.count);
+    
+    for (size_t line = file->visual_origin.line; line < limit; line++) {
+        for (size_t column = 0, visual_column = 0; column < file->render.lines[line].length; column++) {
+            uint8_t c = file->render.lines[line].line[column];
+            if (visual_column >= file->visual_origin.column and
+                visual_column < file->visual_origin.column + file->window_columns) {
+                if (c == '\t' or c == '\n') screen[length++] = ' ';
+                else screen[length++] = c;
+            }
+            if ((c >> 6) != 2) visual_column++;
+        }
+        length += sprintf(screen + length, "\033[%lu;1H", ++screen_line);
+    }
+    length += sprintf(screen + length, "\033[%lu;%luH", file->visual_screen.line + 1, file->visual_screen.column + 1);
+    if (not fuzz) write(STDOUT_FILENO, screen, length);
+}
+
+static void interpret_escape_code(struct file *file, char** screen, size_t* scroll_step, bool* quit) {
+    uint8_t c = read_byte();
+    if (c == '[') {
+        uint8_t c = read_byte();
+        if (c == 'A') move_up(file);
+        else if (c == 'B') move_down(file);
+        else if (c == 'C') move_right(file, true);
+        else if (c == 'D') move_left(file, true);
+        else if (c == 32) printf("clicking not implemented.\n");
+        else if (c == 77) {
+            uint8_t c = read_byte();
+            if (c == 97) {
+                read_byte();
+                read_byte();
+                
+                ++*scroll_step;
+                if (*scroll_step == scroll_speed) {
+                    move_down(file);
+                    *scroll_step = 0;
+                }
+            } else if (c == 96) {
+                read_byte();
+                read_byte();
+                
+                ++*scroll_step;
+                if (*scroll_step == scroll_speed) {
+                    move_up(file);
+                    *scroll_step = 0;
+                }
+                
+            } else { printf("c = %lu\n", (size_t) c); abort(); }
+        } else { printf("c = %lu\n", (size_t) c); abort(); }
+    }
+    else if (c == 27) *quit = true;
+    else if (c == '1') adjust_window_size(file, screen);
+    else { printf("c = %lu\n", (size_t) c); abort(); }
+}
+
+void editor(const uint8_t* input, size_t input_count) {
+        
+    if (not fuzz) configure_terminal();
+    
+    struct file file = {0};
+    create_file(&file);
+    
+    char* screen = malloc(file.window_columns * file.window_rows * 4);
+    if (not fuzz)
+        adjust_window_size(&file, &screen);
+    else {
+        file.window_columns = 80;
+        file.window_rows = 40;
+        screen = realloc(screen, file.window_columns * file.window_rows * 4);
+    }
+    
+    bool quit = false;
+    size_t scroll_step = 0, input_index = 0;
+    
+    while ((fuzz and input_index < input_count) or not quit) {
+        display(&file, screen);
+        if (not fuzz) {
+            uint8_t c = read_byte();
+            if (c == 27) interpret_escape_code(&file, &screen, &scroll_step, &quit);
+            else if (c == 127) delete(&file);
+            else insert(c, &file);
+        } else {
+            uint8_t c = input[input_index++];
+            if (c == 127) delete(&file);
+            else if (c == '1') move_left(&file, true);
+            else if (c == '2') move_right(&file, true);
+            else if (c == '3') move_down(&file);
+            else if (c == '4') move_up(&file);
+            else insert(c, &file);
+        }
+    }
+    destroy_file(&file);
+    if (not fuzz) restore_terminal();
+}
+
+int main() { editor(0,0); }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
