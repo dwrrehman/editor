@@ -1,0 +1,7 @@
+known bugs in the better editor code:
+-------------------------------------
+
+
+	- its possible to go into an infinite loop, if the editor is fed only unicode characters which arent well formed, i think.
+
+	- there is a rendering bug where a unicode character will get cut off, specfcially shifting the view. there will be some question marks, which will get printed because of the leading head of the unicode chracter not being displayed. hard to fix.

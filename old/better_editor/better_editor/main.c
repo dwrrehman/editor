@@ -13,7 +13,7 @@
 const static size_t fuzz = 0;
 const static size_t debug = 1;
 
-const static size_t wrap_width = 20; 
+const static size_t wrap_width = 10;
 const static size_t tab_width = 8;
 const static size_t scroll_speed = 4;
 
@@ -90,8 +90,8 @@ static inline void configure_terminal() {
     
     atexit(restore_terminal);
     struct termios raw = terminal;
-    raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | IXON);
-    raw.c_oflag &= ~(OPOST);
+    if (not debug) raw.c_iflag &= ~(BRKINT | ICRNL | INPCK | IXON);
+    if (not debug) raw.c_oflag &= ~(OPOST);
     raw.c_lflag &= ~(ECHO | ICANON | IEXTEN);
         
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) < 0) {
@@ -117,7 +117,26 @@ static inline void render_line(struct file* file) {
     
     for (size_t i = file->cursor.column; i < file->logical.lines[file->cursor.line].length; i++) {
         uint8_t c = file->logical.lines[file->cursor.line].line[i];
-        
+                        
+//        size_t breakpoint = i;
+//        for (size_t b = file->cursor.column; b < file->logical.lines[file->cursor.line].length; b++) {
+//
+//            if (b < wrap_width) break;
+//
+//            uint8_t c = file->logical.lines[file->cursor.line].line[b];
+//
+//            if (c == ' ') {
+//
+//            }
+//        }
+                
+//        size_t subtract = 0;
+//        for (size_t II = i; II < file->logical.lines[file->cursor.line].length; II++) {
+//            uint8_t CC = file->logical.lines[file->cursor.line].line[II];
+//            if (CC == ' ' or CC == '\t' or (CC >> 6) != 2) break;
+//            subtract++;
+//        }
+                // - subtract
         if (file->render.lines[line].visual_length == wrap_width) {
             
             line++;
@@ -170,7 +189,17 @@ static inline void render_line(struct file* file) {
             file->render.lines[line].line[file->render.lines[line].length++] = c;
             if ((c >> 6) != 2) file->render.lines[line].visual_length++;
         }
+                
+        
+        
+        for (size_t i = 0; i < file->render.lines[line].length; i++) {
+            uint8_t c = file->render.lines[line].line[i];
+            if (c == 190) abort();
+        }
     }
+    
+    
+    
     
     line++;
     size_t delete_to = line;
@@ -211,8 +240,8 @@ static inline void move_left(struct file* file, bool user) {
         if ((line->line[--file->cursor.column] >> 6) != 2) break;
     }
     
-    if (not file->render_cursor.column) {
-        if (file->render_cursor.line) {
+    if (not file->visual_cursor.column) {
+        if (file->visual_cursor.line) {
         
             file->render_cursor.column = file->render.lines[--file->render_cursor.line].length;
             file->visual_cursor.column = file->render.lines[--file->visual_cursor.line].visual_length;
@@ -282,8 +311,9 @@ static inline void move_right(struct file* file, bool user) {
             (line->line[file->cursor.column] >> 6) != 2) break;
     }
     
-    if (file->render_cursor.line + 1 < file->render.count and
-        file->render_cursor.column == file->render.lines[file->render_cursor.line].length) {
+    if (file->visual_cursor.line + 1 < file->render.count and
+        file->visual_cursor.column == file->render.lines[file->visual_cursor.line].visual_length) {
+        
         file->render_cursor.column = 0;
         file->render_cursor.line++;
         file->visual_cursor.column = 0;
@@ -607,88 +637,85 @@ void editor(const uint8_t* input, size_t input_count) {
     size_t scroll_step = 0, input_index = 0;
     
     while ((fuzz and input_index < input_count) or (not quit and not fuzz)) {
+                
+//        display(&file, screen);
         
-        
-        display(&file, screen);
-        
-        
-//        if (not fuzz) printf("\033[H\033[2J");
-//
-//        size_t count = 0;
-//        char buffer[8192] = {0};
-//
-//
-//        if (debug and not fuzz) {
-//
-//            for (size_t line = 0; line < file.logical.count; line++) {
-//
-//                char string[4096] = {0};
-//                sprintf(string, "[#%-5lu:(l=%-5lu,c=%-5lu,_=%-5lu,_=%-5lu)] ", line, file.logical.lines[line].length, file.logical.lines[line].capacity, 0L, 0L);
-//
-//                for (size_t i = 0; i < strlen(string); i++) {
-//                    buffer[count++] = string[i];
-//                }
-//
-//                for (size_t column = 0; column < file.logical.lines[line].length; column++) {
-//                    if (column == file.cursor.column and line == file.cursor.line) {
-//                        buffer[count++] = '_';
-//                    } else {
+        if (not fuzz) printf("\033[H\033[2J");
+
+        size_t count = 0;
+        char buffer[8192] = {0};
+
+
+        if (debug and not fuzz) {
+
+            for (size_t line = 0; line < file.logical.count; line++) {
+
+                char string[4096] = {0};
+                sprintf(string, "[#%-5lu:(l=%-5lu,c=%-5lu,_=%-5lu,_=%-5lu)] ", line, file.logical.lines[line].length, file.logical.lines[line].capacity, 0L, 0L);
+
+                for (size_t i = 0; i < strlen(string); i++) {
+                    buffer[count++] = string[i];
+                }
+
+                for (size_t column = 0; column < file.logical.lines[line].length; column++) {
+                    if (column == file.cursor.column and line == file.cursor.line) {
+                        buffer[count++] = '_';
+                    } else {
 //                        buffer[count++] = file.logical.lines[line].line[column];
-//                    }
-//                }
-//                buffer[count++] = '\n';
-//            }
-//            buffer[count++] = 0;
-//
-//            printf("%s", buffer);
-//            printf("\n:::\n");
-//        }
-//
-//        if (not fuzz) {
-//            count = 0;
-//            memset(buffer, 0, sizeof buffer);
-//
-//            for (size_t line = 0; line < file.render.count; line++) {
-//
-//                if (debug) {
-//                    char string[4096] = {0};
-//                    sprintf(string, "[#%-5lu:(V=%-5lu,l=%-5lu,c=%-5lu,C=%-5lu)] ", line, file.render.lines[line].visual_length, file.render.lines[line].length, file.render.lines[line].capacity, file.render.lines[line].continued);
-//
-//                    for (size_t i = 0; i < strlen(string); i++) {
-//                        buffer[count++] = string[i];
-//                    }
-//                }
-//
-//                for (size_t column = 0; column < file.render.lines[line].length; column++) {
-//                    if (debug and column == file.render_cursor.column and line == file.render_cursor.line) {
-//                        buffer[count++] = '_';
-//                    } else {
-//                        uint8_t c = file.render.lines[line].line[column];
-//                        if (c == '\t' or c == 10)
-//                            buffer[count++] = ' ';
-//                        else
-//                            buffer[count++] = c;
-//                    }
-//                }
-//                buffer[count++] = '\n';
-//            }
-//            buffer[count++] = 0;
-//
-//            printf("%s", buffer);
-//
-//            if (debug) printf("\n\n\n:::[v=(%lu,%lu),r=(%lu,%lu),c=(%lu,%lu)]\n",
-//                   file.visual_cursor.line,
-//                   file.visual_cursor.column,
-//                   file.render_cursor.line,
-//                   file.render_cursor.column,
-//                   file.cursor.line,
-//                   file.cursor.column);
-//
-////            if (not debug)
-////                printf(set_cursor, file.visual_cursor.line + 1, file.visual_cursor.column + 1);
-//
-//            fflush(stdout);
-//        }
+                        count += sprintf(buffer + count, "%u ", (uint)file.logical.lines[line].line[column]);
+                    }
+                }
+                buffer[count++] = '\n';
+            }
+            buffer[count++] = 0;
+
+            printf("%s", buffer);
+            printf("\n:::\n");
+        }
+
+        if (not fuzz) {
+            count = 0;
+            memset(buffer, 0, sizeof buffer);
+
+            for (size_t line = 0; line < file.render.count; line++) {
+
+                if (debug) {
+                    char string[4096] = {0};
+                    sprintf(string, "[#%-5lu:(V=%-5lu,l=%-5lu,c=%-5lu,C=%-5lu)] ", line, file.render.lines[line].visual_length, file.render.lines[line].length, file.render.lines[line].capacity, file.render.lines[line].continued);
+
+                    for (size_t i = 0; i < strlen(string); i++) {
+                        buffer[count++] = string[i];
+                    }
+                }
+
+                for (size_t column = 0; column < file.render.lines[line].length; column++) {
+                    if (debug and column == file.render_cursor.column and line == file.render_cursor.line) {
+                        buffer[count++] = '_';
+                    } else {
+                        uint8_t c = file.render.lines[line].line[column];
+                        count += sprintf(buffer + count, "%u ", (uint)c);
+//                        if (c == '\t' or c == 10)   buffer[count++] = ' ';  else  buffer[count++] = c;
+                    }
+                }
+                buffer[count++] = '\n';
+            }
+            buffer[count++] = 0;
+
+            printf("%s", buffer);
+
+            if (debug) printf("\n\n\n:::[v=(%lu,%lu),r=(%lu,%lu),c=(%lu,%lu)]\n",
+                   file.visual_cursor.line,
+                   file.visual_cursor.column,
+                   file.render_cursor.line,
+                   file.render_cursor.column,
+                   file.cursor.line,
+                   file.cursor.column);
+
+//            if (not debug)
+//                printf(set_cursor, file.visual_cursor.line + 1, file.visual_cursor.column + 1);
+
+            fflush(stdout);
+        }
         
         if (not fuzz) {
             uint8_t c = read_byte();
