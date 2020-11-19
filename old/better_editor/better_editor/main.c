@@ -11,15 +11,18 @@
 #include <assert.h>
 
 const static size_t fuzz = 0;
-const static size_t debug = 1;
+const static size_t debug = 0;
+const static size_t numeric = 0;
 
-const static size_t wrap_width = 10;
+const static size_t wrap_width = 80;
 const static size_t tab_width = 8;
 const static size_t scroll_speed = 4;
 
 const static size_t negative_view_shift_margin = 5;
-const static size_t negative_line_view_shift_margin = 2;
 const static size_t positive_view_shift_margin = 1;
+const static size_t negative_line_view_shift_margin = 2;
+
+static char message[10000000] = {0};
 
 struct location {
     size_t line;
@@ -111,22 +114,66 @@ static inline uint8_t read_byte() {
 static inline void render_line(struct file* file) {
         
     size_t line = file->render_cursor.line;
+//    while (line and file->render.lines[line].continued) line--;
     
     file->render.lines[line].length = file->render_cursor.column;
     file->render.lines[line].visual_length = file->visual_cursor.column;
+        
+//    size_t space_left = wrap_width - file->render.lines[line].visual_length;
+//    size_t word_length = 0;
     
-    for (size_t i = file->cursor.column; i < file->logical.lines[file->cursor.line].length; i++) {
+    size_t i = file->cursor.column;
+    
+//    for (size_t v = 0; v < wrap_width; v++) {
+//        uint8_t c = file->logical.lines[file->cursor.line].line[i];
+//        if (c == ' ') break;
+//        if (i == 0) break;
+//        i--;
+//    }
+    
+    for (; i < file->logical.lines[file->cursor.line].length; i++) {
         uint8_t c = file->logical.lines[file->cursor.line].line[i];
-                        
-//        size_t breakpoint = i;
-//        for (size_t b = file->cursor.column; b < file->logical.lines[file->cursor.line].length; b++) {
+        
+  
 //
-//            if (b < wrap_width) break;
+//        if (c == ' ') {
+//
+//            if (word_length + 1 > space_left) {
+//                should_break = true;
+//                space_left = line_width - word_length;
+//            } else {
+//                  space_left -= (width_word + 1)
+//            }
+//
+//            word_length = 0;
+//
+//        } else {
+//            word_length++;
+//        }
+//
+        
+//        bool should_break = false;
+//
+//        for (size_t b = i; b < file->logical.lines[file->cursor.line].length; b++) {
 //
 //            uint8_t c = file->logical.lines[file->cursor.line].line[b];
 //
 //            if (c == ' ') {
 //
+////                sprintf(message + strlen(message), "word_length = %lu, space_left = %lu\n", word_length, space_left);
+//
+//                if (word_length + 1 > space_left)  {
+//                    should_break = true;
+//                    space_left = wrap_width;
+//                } else {
+//                    space_left -= (word_length + 1);
+//                }
+//
+//                word_length = 0;
+//                break;
+//
+//            } else {
+//                word_length++;
 //            }
 //        }
                 
@@ -137,7 +184,12 @@ static inline void render_line(struct file* file) {
 //            subtract++;
 //        }
                 // - subtract
-        if (file->render.lines[line].visual_length == wrap_width) {
+                
+        if (
+            file->render.lines[line].visual_length == wrap_width
+//            or
+//            should_break
+            ) {
             
             line++;
             if (line >= file->render.count or
@@ -189,8 +241,6 @@ static inline void render_line(struct file* file) {
             file->render.lines[line].line[file->render.lines[line].length++] = c;
             if ((c >> 6) != 2) file->render.lines[line].visual_length++;
         }
-                
-        
         
         for (size_t i = 0; i < file->render.lines[line].length; i++) {
             uint8_t c = file->render.lines[line].line[i];
@@ -222,8 +272,8 @@ static inline void move_left(struct file* file, bool user) {
         if (file->visual_screen.line > negative_line_view_shift_margin) file->visual_screen.line--;
         else if (file->visual_origin.line) file->visual_origin.line--;
         else file->visual_screen.line--;
-        if (file->visual_cursor.column > file->window_columns - negative_view_shift_margin) {
-            file->visual_screen.column = file->window_columns - negative_view_shift_margin;
+        if (file->visual_cursor.column > file->window_columns) {
+            file->visual_screen.column = file->window_columns;
             file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
         } else {
             file->visual_screen.column = file->visual_cursor.column;
@@ -249,8 +299,8 @@ static inline void move_left(struct file* file, bool user) {
             if (file->visual_screen.line > negative_line_view_shift_margin) file->visual_screen.line--;
             else if (file->visual_origin.line) file->visual_origin.line--;
             else file->visual_screen.line--;
-            if (file->visual_cursor.column > file->window_columns - negative_view_shift_margin) {
-                file->visual_screen.column = file->window_columns - negative_view_shift_margin;
+            if (file->visual_cursor.column > file->window_columns) {
+                file->visual_screen.column = file->window_columns;
                 file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
             } else {
                 file->visual_screen.column = file->visual_cursor.column;
@@ -365,8 +415,8 @@ static inline void move_up(struct file* file) {
     while (file->visual_cursor.column > column_target or file->visual_cursor.line > line_target)
         move_left(file, false);
     
-    if (file->visual_cursor.column > file->window_columns - negative_view_shift_margin) {
-        file->visual_screen.column = file->window_columns - negative_view_shift_margin;
+    if (file->visual_cursor.column > file->window_columns) {
+        file->visual_screen.column = file->window_columns;
         file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
     } else {
         file->visual_screen.column = file->visual_cursor.column;
@@ -638,8 +688,16 @@ void editor(const uint8_t* input, size_t input_count) {
     
     while ((fuzz and input_index < input_count) or (not quit and not fuzz)) {
                 
-//        display(&file, screen);
         
+        if (not debug)
+            display(&file, screen);
+        
+        
+        if (debug) {
+            
+            
+            
+            
         if (not fuzz) printf("\033[H\033[2J");
 
         size_t count = 0;
@@ -661,8 +719,10 @@ void editor(const uint8_t* input, size_t input_count) {
                     if (column == file.cursor.column and line == file.cursor.line) {
                         buffer[count++] = '_';
                     } else {
-//                        buffer[count++] = file.logical.lines[line].line[column];
-                        count += sprintf(buffer + count, "%u ", (uint)file.logical.lines[line].line[column]);
+                        
+                        
+                        if (numeric) count += sprintf(buffer + count, "%u ", (uint)file.logical.lines[line].line[column]);
+                        else buffer[count++] = file.logical.lines[line].line[column];
                     }
                 }
                 buffer[count++] = '\n';
@@ -693,8 +753,13 @@ void editor(const uint8_t* input, size_t input_count) {
                         buffer[count++] = '_';
                     } else {
                         uint8_t c = file.render.lines[line].line[column];
-                        count += sprintf(buffer + count, "%u ", (uint)c);
-//                        if (c == '\t' or c == 10)   buffer[count++] = ' ';  else  buffer[count++] = c;
+                        
+                        if (numeric)
+                            count += sprintf(buffer + count, "%u ", (uint)c);
+                        
+                        if (not numeric) {
+                            if (c == '\t' or c == 10)   buffer[count++] = ' ';  else  buffer[count++] = c;
+                        }
                     }
                 }
                 buffer[count++] = '\n';
@@ -703,19 +768,24 @@ void editor(const uint8_t* input, size_t input_count) {
 
             printf("%s", buffer);
 
-            if (debug) printf("\n\n\n:::[v=(%lu,%lu),r=(%lu,%lu),c=(%lu,%lu)]\n",
+            if (debug) printf("\n\n\n:::[v=(%lu,%lu),r=(%lu,%lu),c=(%lu,%lu)]\n<%s>\n",
                    file.visual_cursor.line,
                    file.visual_cursor.column,
                    file.render_cursor.line,
                    file.render_cursor.column,
                    file.cursor.line,
-                   file.cursor.column);
+                   file.cursor.column,
+                              message);
+            
+            memset(message, 0, sizeof message);
 
 //            if (not debug)
 //                printf(set_cursor, file.visual_cursor.line + 1, file.visual_cursor.column + 1);
 
             fflush(stdout);
         }
+            
+            }
         
         if (not fuzz) {
             uint8_t c = read_byte();
