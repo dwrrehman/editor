@@ -11,7 +11,7 @@
 #include <assert.h>
 
 const static size_t fuzz = 0;
-//const static size_t debug = 1;
+const static size_t debug = 1;
 
 const static size_t wrap_width = 20; 
 const static size_t tab_width = 8;
@@ -212,18 +212,21 @@ static inline void move_left(struct file* file, bool user) {
     }
     
     if (not file->render_cursor.column) {
-        file->render_cursor.column = file->render.lines[--file->render_cursor.line].length;
-        file->visual_cursor.column = file->render.lines[--file->visual_cursor.line].visual_length;
+        if (file->render_cursor.line) {
         
-        if (file->visual_screen.line > negative_line_view_shift_margin) file->visual_screen.line--;
-        else if (file->visual_origin.line) file->visual_origin.line--;
-        else file->visual_screen.line--;
-        if (file->visual_cursor.column > file->window_columns - negative_view_shift_margin) {
-            file->visual_screen.column = file->window_columns - negative_view_shift_margin;
-            file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
-        } else {
-            file->visual_screen.column = file->visual_cursor.column;
-            file->visual_origin.column = 0;
+            file->render_cursor.column = file->render.lines[--file->render_cursor.line].length;
+            file->visual_cursor.column = file->render.lines[--file->visual_cursor.line].visual_length;
+            
+            if (file->visual_screen.line > negative_line_view_shift_margin) file->visual_screen.line--;
+            else if (file->visual_origin.line) file->visual_origin.line--;
+            else file->visual_screen.line--;
+            if (file->visual_cursor.column > file->window_columns - negative_view_shift_margin) {
+                file->visual_screen.column = file->window_columns - negative_view_shift_margin;
+                file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
+            } else {
+                file->visual_screen.column = file->visual_cursor.column;
+                file->visual_origin.column = 0;
+            }
         }
     }
     
@@ -540,6 +543,7 @@ static void display(struct file* file, char* screen) {
         length += sprintf(screen + length, "\033[%lu;1H", ++screen_line);
     }
     length += sprintf(screen + length, "\033[%lu;%luH", file->visual_screen.line + 1, file->visual_screen.column + 1);
+    
     if (not fuzz) write(STDOUT_FILENO, screen, length);
 }
 
@@ -602,8 +606,7 @@ void editor(const uint8_t* input, size_t input_count) {
     bool quit = false;
     size_t scroll_step = 0, input_index = 0;
     
-    while ((fuzz and input_index < input_count) or not quit) {
-        
+    while ((fuzz and input_index < input_count) or (not quit and not fuzz)) {
         
         
         display(&file, screen);
@@ -686,7 +689,6 @@ void editor(const uint8_t* input, size_t input_count) {
 //
 //            fflush(stdout);
 //        }
-
         
         if (not fuzz) {
             uint8_t c = read_byte();
