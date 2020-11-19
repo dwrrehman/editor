@@ -1,0 +1,102 @@
+
+currrent outstanding issues in the editor:
+===========================================
+
+
+
+
+	------------ bugs ---------------
+
+		when we are displaying the cursor,
+
+			we arent handling the case of a moving origin, 
+
+			as well as the case of continued wrapped lines.
+
+
+			this is actually bug. not a big one, but one.
+
+
+		- the following command line command bunch doesnt work:
+
+
+			wef todos\ for\ new\ editors\ design.txt 
+
+
+		- - ie, maybe we arent handling spaces in our thingy as good... or maybe its just an argc and argv thing
+
+
+
+
+	--------- features ---------------
+
+
+		- we need to some how display line numners, or make them toggleable.
+
+
+		- we also need to figure out how to allow more togglable features or options. 
+
+
+
+
+
+
+------------------------------ old -----------------------------------
+
+
+
+
+
+
+
+
+
+
+
+BUGS:
+=============
+
+
+we accidenitly put a null character at the end of the text. we need to stop before that in order to write the file.
+
+i think we are simply writing source_length, instead of the crrect source_length minus one.
+
+we dont deal with tabs correctly.
+we dont deal with unicode correctly.
+
+
+FEATURES:
+=============
+
+
+- we arent displaying line numbers. 
+	---> make this an option, or function. (line numbers)
+
+
+
+
+
+
+
+
+
+
+
+
+note:
+
+
+    once we deal with unicode characters,
+    and once we get tabs to display properly,
+    and once we fix the jump_bottom and max-downarrow functionality,
+    
+    
+    
+    
+    
+                        i think our editor is ready to use, for real.
+                        
+                        
+                        
+                        
+                        

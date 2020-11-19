@@ -1,0 +1,24 @@
+
+//static inline struct location get_cursor_from_point(nat point, char* source, nat length) {
+//    struct location result = {.line = 0, .column = 0};
+//    for (nat i = 0; i < length; i++) {
+//        if (i == point) return result;
+//        if (source[i] == '\n') {
+//            result.line++;
+//            result.column = 0;
+//        } else result.column++;
+//    }
+//    return result;
+//}
+
+//static inline nat get_insertion_point(struct location cursor, char* source, nat length) {
+//    nat line = 0, column = 0;
+//    for (nat i = 0; i < length; i++) {
+//        if (source[i] == '\n') {
+//            line++;
+//            column = 0;
+//        } else column++;
+//        if (line == cursor.line and column == cursor.column) return i;
+//    }
+//    return 0;
+//}

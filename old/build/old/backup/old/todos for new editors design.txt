@@ -1,0 +1,46 @@
+todo: editor:
+
+
+
+x	- atexit(ask_if_should_save)           /* very important */
+
+
+x	- make alll arrow keys work as in text edit.
+
+
+
+
+
+
+
+	- what else?
+
+
+	
+	- progrmming capability?
+
+
+	- YES...     but how?
+
+
+	
+	- does the user have the ability to run a code file at start up to control the editor?
+
+		 - from n3zqx2l, of course
+
+	
+	-
+
+
+
+
+
+
+
+all of these are basically done.
+
+
+
+we need more substnaital ones.
+
+

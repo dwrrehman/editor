@@ -1,0 +1,100 @@
+hello there from space. 
+this is my really good file, with lots of good stuff.
+
+im trying to figure out the best way to implement some stuff.. its still a work in progress, but im making really good progress... hello there from space!
+
+
+
+
+
+ok i think our up and down work perfectly, now!
+
+
+yay.
+
+
+im really happy with everything.
+
+
+
+it would be nice to have a custimizable background color and font color for this editor..
+
+
+i dont think it woul dbe that hard...
+
+
+
+but anyways, lets save that for another time.
+
+
+
+i kinda like how this turnign now, now!
+
+
+everything fits together really well,
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+hello, i am really happy with my editor.
+
+
+
+      this is litearlly an editor that i made myself, and im testing it by typing in this document!
+
+
+      its reallly cool.
+
+                  i think that i like spaces alot more than tabs,
+
+
+
+                 but none the less, i want to be able to cope with tabs, well.
+
+
+
+                and even display them properly.
+
+
+
+                           
+
+
+
+
+                i think that its possible.         i just need to work at it.
+
+                all the code seems to work flawlessly so far....            i think that we are almost ready for prime time.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+i really like this text editor. it is just as minimalist as i wanted it to be.
+im really happy with it.
+
+
+
+
