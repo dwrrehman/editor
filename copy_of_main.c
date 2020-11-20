@@ -1,3 +1,4 @@
+///    i am legit so happy with my editor right now, its not even funny. i love this so much. i mean, there still are like a ton of little things that i have to fix, but honestly, this is working so well, its crazy. i am just so happy wih how far i have come, and how amazingly the editor actually works... its phenomeonal.... i love it... yayyy!!!
 ///
 ///        My Text Editor.
 ///
@@ -527,8 +528,6 @@ static inline void move_left(bool user) {
     
     if (user) file->visual_desired = file->visual_cursor;
 }
-
-
 
 
 static inline void move_right(bool user) {

@@ -31,15 +31,16 @@
 static const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
 static const long
-    rename_color = 214L,
-    confirm_color = 196L,
+//    rename_color = 214L,
+//    good_color = 73L,
+//    confirm_color = 196L,
+//    edited_flag_color = 130L,
+//    shell_prompt_color = 33L,
 
-    insert_status_color = 214L,
-    edit_status_color = 234L,
-    command_status_color = 239L,
-
-    edited_flag_color = 130L,
-    shell_prompt_color = 33L;
+    insert_status_color = 240L,
+    edit_status_color = 252L,
+    command_status_color = 245L;
+    
 
 enum key_bindings {
     insert_key = 'f',       hard_insert_key = 'F',
@@ -52,8 +53,6 @@ enum key_bindings {
     
     escape_key = 27,        backspace_key = 127,
 };
-
-static const char *left_exit = "wf", *right_exit = "oj";
 
 
 enum editor_mode {
@@ -264,18 +263,11 @@ static inline void autosave() {
     }
 }
 
-static inline void dump_and_panic() {
-    printf("panic: internal error: dump() & abort()'ing...\n");
-    dump();
-    abort();
-}
-
 static inline void signal_interrupt(int unused) {
     printf("error: process interrupted, dump() & exit()'ing...\n");
     dump();
     exit(1);
 }
-
 
 static inline void restore_terminal() {
     
@@ -429,11 +421,17 @@ static void display() {
     
     size_t limit = fmin(file->visual_origin.line + window.rows - file->options.show_status, file->render.count);
     
+    size_t line_number = 0;
+    for (size_t i = 0; i < file->visual_origin.line; i++) {
+        if (not file->render.lines[i].continued) line_number++;
+    }
+    
     for (size_t line = file->visual_origin.line; line < limit; line++) {
-        
-        ///TODO: PRINT LOGICAL LINE NUMBERS: only if "!line.continued".
-        if (file->options.show_line_numbers)
-            length += sprintf(window.screen + length, "\033[38;5;%lum" "%*lu" "\033[0m"  "  " , 59UL, file->line_number_width, line + 1);
+                
+        if (file->options.show_line_numbers) {
+            if (not file->render.lines[line].continued) length += sprintf(window.screen + length, "\033[38;5;%lum" "%*lu" "\033[0m"  "  " , 59UL, file->line_number_width, ++line_number);
+            else length += sprintf(window.screen + length, "%*s  " , file->line_number_width, " ");
+        }
         
         for (size_t column = 0, visual_column = 0; column < file->render.lines[line].length; column++) {
             uint8_t c = file->render.lines[line].line[column];
@@ -448,24 +446,19 @@ static void display() {
     }
     
     if (file->options.show_status) {
-        //    printf(set_cursor, file->window.rows, 1);
-        //    printf("%s", clear_line);
-            
+                    
         const long color =
             file->mode == insert_mode ? insert_status_color :
             file->mode == edit_mode ? edit_status_color :
-            file->mode == edit_mode ? command_status_color : 73;
-                    
-        /// "\033[38;5;%lum" : "\033[0m"
-        
+            file->mode == command_mode ? command_status_color : 160L;
         
         size_t status_length = 0;
         char* status = malloc(window.columns * 4);
     
         status_length += sprintf(status,  "(%3lu,%3lu) %s%s  %s" ,
-                file->cursor.line, file->cursor.column,
+                file->cursor.line + 1, file->cursor.column + 1,
                 file->filename,
-                file->saved ? " saved" : " *",
+                file->saved ? " saved" : " edited",
                 file->message);
     
         for (size_t i = status_length; i < window.columns; i++) status[i] = ' ';
@@ -551,8 +544,6 @@ static inline void move_left(bool user) {
     
     if (user) file->visual_desired = file->visual_cursor;
 }
-
-
 
 
 static inline void move_right(bool user) {
@@ -679,11 +670,10 @@ static inline void move_down() {
         move_left(false);
 }
 
-
-
 static inline void insert(uint8_t c) {
     
     struct file* file = buffers[active];
+    file->saved = false;
     
     if (c == '\r') {
         
@@ -766,7 +756,8 @@ static inline void insert(uint8_t c) {
 static inline void delete() {
     
     struct file* file = buffers[active];
-        
+    file->saved = false;
+    
     if (not file->cursor.column) {
         if (not file->cursor.line) return;
                 
@@ -806,7 +797,6 @@ static inline void delete() {
     line->length -= save - file->cursor.column;
     render_line();
 }
-
 
 static inline void destroy_buffer(struct file* file) {
     for (size_t i = 0; i < file->logical.count; i++)
@@ -862,6 +852,7 @@ static inline void open_buffer(const char* given_filename) {
 
     struct file* buffer = calloc(1, sizeof(struct file));
     buffer->id = rand();
+    buffer->mode = edit_mode;
     buffer->saved = true;
     buffer->options = default_options;
     strncpy(buffer->filename, given_filename, sizeof buffer->filename);
@@ -934,7 +925,6 @@ static inline void open_buffer(const char* given_filename) {
         }
     }
     free(line);
-        
     active = buffer_count;
     buffers = realloc(buffers, sizeof(struct file*) * (buffer_count + 1));
     buffers[buffer_count++] = buffer;
@@ -1207,8 +1197,7 @@ int main(const int argc, const char** argv) {
     if (not buffer_count) exit(1);
     
     signal(SIGINT, signal_interrupt);
-    
-    configure_terminal();    
+    configure_terminal();
     
     uint8_t p = 0;
     
@@ -1230,7 +1219,7 @@ int main(const int argc, const char** argv) {
             else if (c == right_key) move_right(true);
             else if (c == left_key) move_left(true);
             else {
-                sprintf(buffers[active]->message, "unknown command: %d", c);
+                sprintf(buffers[active]->message, "edit mode: unknown command: %d", c);
             }
             
         } else if (mode == insert_mode) {
@@ -1248,7 +1237,7 @@ int main(const int argc, const char** argv) {
             else if (c == 'W') save();
             else if (c == 'q') close_buffer();
             else {
-                sprintf(buffers[active]->message, "unknown command: %d", c);
+                sprintf(buffers[active]->message, "command mode: unknown command: %d", c);
             }
             
         } else {
