@@ -137,7 +137,7 @@ struct options {
 };
 
 static const struct options default_options = {
-    .wrap_width = 128,
+    .wrap_width = 80,
     .tab_width = 8,
     .scroll_speed = 4,
     .show_status = true,
@@ -388,33 +388,11 @@ static inline void render_line() {
 
 
 static inline void adjust_window_size() {
-            
     struct winsize win;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &win);
-        
-    if (win.ws_col != window.columns or win.ws_row != window.rows) {
-        window.columns = win.ws_col;
-        window.rows = win.ws_row;
-        window.screen = realloc(window.screen, window.columns * window.rows * 4);
-        
-        struct file* file = buffers[active];
-        
-        if (file->visual_cursor.line >= window.rows - 1 - file->options.show_status - file->options.positive_line_view_shift_margin) {
-            file->visual_screen.line = window.rows - 1 - file->options.show_status - file->options.positive_line_view_shift_margin;
-            file->visual_origin.line = file->visual_cursor.line - file->visual_screen.line;
-        } else {
-            file->visual_screen.line = file->visual_cursor.line;
-            file->visual_origin.line = 0;
-        }
-        
-        if (file->visual_cursor.column >= window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin) {
-            file->visual_screen.column = window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin;
-            file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
-        } else {
-            file->visual_screen.column = file->visual_cursor.column;
-            file->visual_origin.column = 0;
-        }
-    }
+    window.columns = win.ws_col;
+    window.rows = win.ws_row;
+    window.screen = realloc(window.screen, window.columns * window.rows * 4);
 }
 
 static void display() {
@@ -496,9 +474,8 @@ static inline void move_left(bool user) {
         if (file->visual_screen.line > file->options.negative_line_view_shift_margin) file->visual_screen.line--;
         else if (file->visual_origin.line) file->visual_origin.line--;
         else file->visual_screen.line--;
-        
-        if (file->visual_cursor.column >= window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin) {
-            file->visual_screen.column = window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin;
+        if (file->visual_cursor.column >= window.columns - file->line_number_cursor_offset) {
+            file->visual_screen.column = window.columns - file->line_number_cursor_offset;
             file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
         } else {
             file->visual_screen.column = file->visual_cursor.column;
@@ -524,9 +501,8 @@ static inline void move_left(bool user) {
             if (file->visual_screen.line > file->options.negative_line_view_shift_margin) file->visual_screen.line--;
             else if (file->visual_origin.line) file->visual_origin.line--;
             else file->visual_screen.line--;
-            
-            if (file->visual_cursor.column >= window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin) {
-                file->visual_screen.column = window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin;
+            if (file->visual_cursor.column >= window.columns - file->line_number_cursor_offset) {
+                file->visual_screen.column = window.columns - file->line_number_cursor_offset;
                 file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
             } else {
                 file->visual_screen.column = file->visual_cursor.column;
@@ -572,9 +548,8 @@ static inline void move_right(bool user) {
         
         if (file->visual_screen.line < window.rows - 1 - file->options.show_status - file->options.positive_line_view_shift_margin) file->visual_screen.line++;
         else file->visual_origin.line++;
-        
-        if (file->visual_cursor.column >= window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin) {
-            file->visual_screen.column = window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin;
+        if (file->visual_cursor.column >= window.columns - file->line_number_cursor_offset) {
+            file->visual_screen.column = window.columns - file->line_number_cursor_offset;
             file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
         } else {
             file->visual_screen.column = file->visual_cursor.column;
@@ -603,7 +578,6 @@ static inline void move_right(bool user) {
         
         if (file->visual_screen.line < window.rows - 1 - file->options.show_status - file->options.positive_line_view_shift_margin) file->visual_screen.line++;
         else file->visual_origin.line++;
-        
         if (file->visual_cursor.column >= window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin) {
             file->visual_screen.column = window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin;
             file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
@@ -650,8 +624,8 @@ static inline void move_up() {
     while (file->visual_cursor.column > column_target or file->visual_cursor.line > line_target)
         move_left(false);
     
-    if (file->visual_cursor.column >= window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin) {
-        file->visual_screen.column = window.columns - 1 - file->line_number_cursor_offset - file->options.positive_view_shift_margin;
+    if (file->visual_cursor.column >= window.columns - file->line_number_cursor_offset) {
+        file->visual_screen.column = window.columns - file->line_number_cursor_offset;
         file->visual_origin.column = file->visual_cursor.column - file->visual_screen.column;
     } else {
         file->visual_screen.column = file->visual_cursor.column;
@@ -1172,7 +1146,7 @@ static void interpret_escape_code() {
         else if (c == 'D') move_left(true);
         else if (c == 32) {
             read_byte(); read_byte();
-            sprintf(file->message, "error: clicking not implemented.");
+            sprintf(file->message, "error: clicking not implemented.");            
         }
         else if (c == 77) {
             uint8_t c = read_byte();
@@ -1208,17 +1182,15 @@ int main(const int argc, const char** argv) {
     
     signal(SIGINT, signal_interrupt);
     
-    configure_terminal();    
+    configure_terminal();
+    adjust_window_size();
     
     uint8_t p = 0;
     
     while (buffer_count) {
         
         unsigned int mode = buffers[active]->mode;
-        
-        adjust_window_size();
         display();
-        
         uint8_t c = read_byte();
         
         if (mode == edit_mode) {

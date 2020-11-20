@@ -5,7 +5,9 @@ im editing this file.
 okay. 
 
 
-ok, this is my new file, with lots of gooies and good stuff in it.
+ok, this is my new 
+
+	file, with lots of gooies and good stuff in it.
 
 
 it has many hello there from space. lines!
