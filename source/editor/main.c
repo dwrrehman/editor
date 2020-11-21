@@ -30,27 +30,20 @@
 
 static const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
-static const long
+//static const long
 //    rename_color = 214L,
 //    good_color = 73L,
 //    confirm_color = 196L,
 //    edited_flag_color = 130L,
 //    shell_prompt_color = 33L,
-
-    insert_status_color = 240L,
-    edit_status_color = 252L,
-    command_status_color = 245L;
-    
+//    insert_status_color = 240L,
+//    edit_status_color = 252L,
+//    command_status_color = 245L;
 
 enum key_bindings {
-    insert_key = 'f',       hard_insert_key = 'F',
-    command_key = 'a',
-    
+    insert_key = 'f',       hard_insert_key = 'F',     command_key = 'a',
     up_key = 'o',           down_key = 'i',
     left_key = 'j',         right_key = ';',
-    
-    word_left_key = 'J',    word_right_key = ':',
-    
     escape_key = 27,        backspace_key = 127,
 };
 
@@ -124,13 +117,10 @@ struct options {
     bool use_c_syntax_highlighting;
     bool show_line_numbers;
     bool preserve_autosave_contents_on_save;
-    unsigned int movements_until_inactive_autosave;
-    unsigned int edits_until_active_autosave;
+    unsigned int presses_until_autosave;
     bool pause_on_shell_command_output;
-    
     size_t negative_view_shift_margin;
     size_t negative_line_view_shift_margin;
-    
     size_t positive_view_shift_margin;
     size_t positive_line_view_shift_margin;
 };
@@ -144,8 +134,7 @@ static const struct options default_options = {
     .use_c_syntax_highlighting = false,
     .show_line_numbers = true,
     .preserve_autosave_contents_on_save = true,
-    .movements_until_inactive_autosave = 30 * 1000,
-    .edits_until_active_autosave = 20,
+    .presses_until_autosave = 20,
     .pause_on_shell_command_output = true,
     .negative_view_shift_margin = 5,
     .negative_line_view_shift_margin = 2,
@@ -153,10 +142,27 @@ static const struct options default_options = {
     .positive_line_view_shift_margin = 0,
 };
 
+struct textbox {
+    uint8_t* logical_line;
+    uint8_t* render_line;
+    size_t logical_capacity;
+    size_t render_capacity;
+    size_t logical_length;
+    size_t render_length;
+    size_t visual_length;
+    size_t cursor;
+    size_t render_cursor;
+    size_t visual_cursor;
+    size_t visual_origin;
+    size_t visual_screen;
+    size_t prompt_length;
+};
+
 struct file {
+    struct textbox* textbox;
+    struct options options;
     struct logical_lines logical;
     struct render_lines render;
-    struct options options;
     struct location cursor;
     struct location render_cursor;
     struct location visual_cursor;
@@ -229,12 +235,12 @@ static inline void dump() {
 }
 
 static inline void autosave() {
-    if (++buffers[active]->autosave_counter == buffers[active]->options.edits_until_active_autosave) {
+    if (++buffers[active]->autosave_counter == buffers[active]->options.presses_until_autosave) {
 
         for (size_t b = 0; b < buffer_count; b++) {
 
             char filename[4096] = {0};
-
+            
             char datetime[16] = {0};
             get_datetime(datetime);
 
@@ -271,19 +277,19 @@ static inline void signal_interrupt(int unused) {
 
 static inline void restore_terminal() {
     
-    write(STDOUT_FILENO, "\033[?1049l", 8); // restore screen.
+    write(STDOUT_FILENO, "\033[?1049l", 8);
         
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) < 0) {
         perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal))");
         abort();
     }
     
-    write(STDOUT_FILENO, "\033[?1000l", 8); // disable terminal mouse reporting.
+    write(STDOUT_FILENO, "\033[?1000l", 8);
 }
 
 static inline void configure_terminal() {
     
-    write(STDOUT_FILENO, "\033[?1049h", 8); // save screen.
+    write(STDOUT_FILENO, "\033[?1049h", 8);
     
     if (tcgetattr(STDIN_FILENO, &terminal) < 0) {
         perror("tcgetattr(STDIN_FILENO, &terminal)");
@@ -301,7 +307,7 @@ static inline void configure_terminal() {
         abort();
     }
     
-    write(STDOUT_FILENO, "\033[?1000h", 8); // enable terminal mouse reporting.
+    write(STDOUT_FILENO, "\033[?1000h", 8);
 }
 
 static inline void render_line() {
@@ -379,7 +385,7 @@ static inline void render_line() {
 }
 
 
-static inline void adjust_window_size() {
+static inline void resize_window() {
             
     struct winsize win;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &win);
@@ -446,26 +452,26 @@ static void display() {
     }
     
     if (file->options.show_status) {
-                    
-        const long color =
-            file->mode == insert_mode ? insert_status_color :
-            file->mode == edit_mode ? edit_status_color :
-            file->mode == command_mode ? command_status_color : 160L;
+        
+        char datetime[16] = {0};
+        get_datetime(datetime);
         
         size_t status_length = 0;
         char* status = malloc(window.columns * 4);
-    
-        status_length += sprintf(status,  "(%3lu,%3lu) %s%s  %s" ,
-                file->cursor.line + 1, file->cursor.column + 1,
-                file->filename,
-                file->saved ? " saved" : " edited",
-                file->message);
-    
+        
+        status_length += sprintf(status,  "%u[%s](%lu,%lu) %s%s - %s" ,
+                                 file->mode,
+                                 datetime,
+                                 file->cursor.line + 1, file->cursor.column + 1,                                 
+                                 file->filename,
+                                 file->saved ? " saved" : " edited",
+                                 file->message);
+        
         for (size_t i = status_length; i < window.columns; i++) status[i] = ' ';
         status[window.columns - 1] = '\0';
         
         length += sprintf(window.screen + length, "\033[%lu;1H", window.rows + 1);
-        length += sprintf(window.screen + length, "\033[7m"  "\033[38;5;%lum" "%s" "\033[m", color, status);
+        length += sprintf(window.screen + length, "\033[7m"  "\033[38;5;%lum" "%s" "\033[m", 252L, status);
     }
             
     length += sprintf(window.screen + length, "\033[%lu;%luH",
@@ -924,13 +930,240 @@ static inline void open_buffer(const char* given_filename) {
             }
         }
     }
+    fclose(file);
     free(line);
     active = buffer_count;
     buffers = realloc(buffers, sizeof(struct file*) * (buffer_count + 1));
     buffers[buffer_count++] = buffer;
 }
-        
+
+static inline void textbox_render() {
+
+    struct file* file = buffers[active];
+    struct textbox* box = file->textbox;
     
+    box->render_length = 0;
+    box->visual_length = 0;
+    
+    for (size_t i = 0; i < box->logical_length; i++) {
+        uint8_t c = box->logical_line[i];
+                
+        if (c == '\t') {
+    
+            size_t at = box->visual_length;
+            size_t count = 0;
+            do {
+                at++; count++;
+            } while (at % file->options.tab_width);
+            if (box->render_length + count >= box->render_capacity)
+                box->render_line =
+                realloc(box->render_line,
+                        box->render_capacity = 2 * (box->render_capacity + count));
+            box->render_line[box->render_length++] = '\t';
+            box->visual_length++;
+            for (size_t i = 1; i < count; i++) {
+                box->render_line[box->render_length++] = '\n';
+                box->visual_length++;
+            }
+            
+        } else {
+            if (box->render_length + 1 >= box->render_capacity)
+                box->render_line =
+                realloc(box->render_line,
+                        box->render_capacity = 2 * (box->render_capacity + 1));
+            box->render_line[box->render_length++] = c;
+            if ((c >> 6) != 2) box->visual_length++;
+        }
+    }
+}
+
+static inline void textbox_resize_window() {
+
+    struct file* file = buffers[active];
+    struct textbox* box = file->textbox;
+    
+    struct winsize win;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &win);
+        
+    if (win.ws_col != window.columns or win.ws_row != window.rows) {
+        window.columns = win.ws_col;
+        window.rows = win.ws_row;
+        window.screen = realloc(window.screen, window.columns * 4);
+        
+        if (box->visual_cursor >= window.columns - 1 - box->prompt_length - 4) {
+            box->visual_screen = window.columns - 1 - box->prompt_length - 4;
+            box->visual_origin = box->visual_cursor - box->visual_screen;
+        } else {
+            box->visual_screen = box->visual_cursor;
+            box->visual_origin = 0;
+        }
+    }
+}
+
+static void textbox_display(const char* prompt, long color) {
+    
+    struct file* file = buffers[active];
+    struct textbox* box = file->textbox;
+    
+    size_t length = sprintf(window.screen, "\033[%lu;1H" "\033[38;5;%lum"  "%s" "\033[m", window.rows, color, prompt);
+    size_t column = 0, visual_column = 0, characters = box->prompt_length;
+    for (; column < box->render_length; column++) {
+        uint8_t c = box->render_line[column];
+        if (visual_column >= box->visual_origin and
+            visual_column < box->visual_origin + window.columns - 4 - box->prompt_length) {
+            if (c == '\t' or c == '\n') window.screen[length++] = ' ';
+            else window.screen[length++] = c;
+            characters++;
+        }
+        if ((c >> 6) != 2) visual_column++;
+    }
+    for (size_t i = characters; i < window.columns; i++) window.screen[length++] = ' ';
+    length += sprintf(window.screen + length, "\033[%lu;%luH", window.rows, box->visual_screen + 1 + box->prompt_length);
+    write(STDOUT_FILENO, window.screen, length);
+}
+
+static inline void textbox_move_left() {
+    
+    struct file* file = buffers[active];
+    struct textbox* box = file->textbox;
+    
+    if (not box->cursor) return;
+        
+    while (box->cursor) {
+        if ((box->logical_line[--box->cursor] >> 6) != 2) break;
+    }
+    while (box->render_cursor) {
+        uint8_t c = box->render_line[--box->render_cursor];
+        
+        if ((c >> 6) != 2) {
+            box->visual_cursor--;
+            if (box->visual_screen > file->options.negative_view_shift_margin) box->visual_screen--;
+            else if (box->visual_origin) box->visual_origin--;
+            else box->visual_screen--;
+        }
+        if ((c >> 6) != 2 and c != 10) break;
+    }
+}
+
+static inline void textbox_move_right() {
+            
+    struct file* file = buffers[active];
+    struct textbox* box = file->textbox;
+    
+    if (box->cursor >= box->logical_length) return;
+        
+    while (box->cursor < box->logical_length) {
+        ++box->cursor;
+        if (box->cursor >= box->logical_length or (box->logical_line[box->cursor] >> 6) != 2) break;
+    }
+    while (box->render_cursor < box->render_length) {
+        if ((box->render_line[box->render_cursor] >> 6) != 2) {
+            box->visual_cursor++;
+            if (box->visual_screen < window.columns - 1 - box->prompt_length - 4)
+                box->visual_screen++;
+            else box->visual_origin++;
+        }
+        ++box->render_cursor;
+        if (box->render_cursor == box->render_length) break;
+        uint8_t c = box->render_line[box->render_cursor];
+        if ((c >> 6) != 2 and c != 10) break;
+    }
+}
+
+static inline void textbox_insert(uint8_t c) {
+    
+    struct file* file = buffers[active];
+    struct textbox* box = file->textbox;
+    
+    const size_t at = box->cursor;
+    if (box->logical_length + 1 >= box->logical_capacity)
+        box->logical_line = realloc(box->logical_line, box->logical_capacity = 2 * (box->logical_capacity + 1));
+    memmove(box->logical_line + at + 1, box->logical_line + at, box->logical_length - at);
+    ++box->logical_length;
+    box->logical_line[at] = c;
+    textbox_render();
+    if (c < 128) textbox_move_right();
+    else {
+        box->cursor++;
+        box->render_cursor++;
+        if ((c >> 6) != 2) {
+            box->visual_cursor++;
+            if (box->visual_screen < window.columns - 1 - box->prompt_length - 4) box->visual_screen++;
+            else box->visual_origin++;
+        }
+    }
+}
+
+static inline void textbox_delete() {
+    
+    struct file* file = buffers[active];
+    struct textbox* box = file->textbox;
+    
+    const size_t save = box->cursor;
+    if (not save) return;
+    textbox_move_left();
+    memmove(box->logical_line + box->cursor, box->logical_line + save, box->logical_length - save);
+    box->logical_length -= save - box->cursor;
+    textbox_render();
+}
+
+static inline void prompt(const char* message, long color, char* out, size_t max_out_length) {
+    struct file* file = buffers[active];
+    struct textbox* box = calloc(1, sizeof(struct textbox));
+    file->textbox = box;
+    box->prompt_length = strlen(message);
+    while (true) {
+        textbox_resize_window();
+        textbox_display(message, color);
+        uint8_t c = read_byte();
+        if (c == '\r') break;
+        else if (c == backspace_key) textbox_delete();
+        else if (c == escape_key) {
+            uint8_t c = read_byte();
+            if (c == '[') {
+                uint8_t c = read_byte();
+                if (c == 'A') {}
+                else if (c == 'B') {}
+                else if (c == 'C') textbox_move_right();
+                else if (c == 'D') textbox_move_left();
+            } else if (c == escape_key) { box->logical_length = 0; break; }
+        } else textbox_insert(c);
+    }
+    
+    size_t index = 0;
+    for (size_t i = 0; i < box->logical_length; i++) {
+        if (index< max_out_length) {
+            out[index++] = box->logical_line[i];
+        } else break;
+    }
+    
+    free(box->logical_line);
+    free(box->render_line);
+    free(box);
+    return;
+}
+
+static void print_above_textbox(char *message, long color) {
+    size_t length = sprintf(window.screen, "\033[%lu;1H" "\033[38;5;%lum"  "%s" "\033[m", window.rows - 1, color, message);
+    write(STDOUT_FILENO, window.screen, length);
+}
+
+static inline bool confirmed(const char* question) {
+    const long confirm_color = 196L;
+    char message[4096] = {0};
+    sprintf(message, "%s? (yes/no): ", question);
+    
+    while (true) {
+        char response[10] = {0};
+        prompt(message, confirm_color, response, sizeof response);
+            
+        if (!strncmp(response, "yes", 4)) return true;
+        else if (!strncmp(response, "no", 3)) return false;
+        else print_above_textbox("please type \"yes\" or \"no\".", 214L);
+    }
+}
+
+
 //static inline char** segment(char* line) {
 //    char** argv = NULL;
 //    size_t argc = 0;
@@ -976,52 +1209,6 @@ static inline void open_buffer(const char* given_filename) {
 //    free(argv);
 //}
 
-//static inline char* strip(char* str) {
-//    while (isspace(*str)) str++;
-//    if (!*str) return str;
-//    char* end = str + strlen(str) - 1;
-//    while (end > str && isspace(*end)) end--;
-//    end[1] = '\0';
-//    return str;
-//}
-
-//static inline bool confirmed(const char* question) {
-//    ///TODO: make this use the text box that we made.
-//    while (true) {
-//        struct winsize window;
-//        ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-////        printf(set_cursor, window.ws_row, 1);
-////        printf("%s", clear_line);
-//        printf(set_color "%s? (yes/no): " reset_color, confirm_color, question);
-//        fflush(stdout);
-//        char response[8] = {0};
-//        restore_terminal();
-//        fgets(response, 8, stdin);
-//        configure_terminal();
-//        if (!strncmp(response, "yes\n", 4)) return true;
-//        else if (!strncmp(response, "no\n", 3)) return false;
-//        else printf("please type \"yes\" or \"no\".\n");
-//    }
-    
-//    return false;
-//}
-
-
-//static inline void prompt(const char* message, char* response, int max, long color) {
-//    ///TODO: make this use the text box that we made.
-//    struct winsize window;
-//    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-////    printf(set_cursor, window.ws_row, 0);
-////    printf("%s", clear_line);
-//    printf(set_color "%s: " reset_color, color, message);
-//    memset(response, 0, sizeof(char) * (max));
-//    restore_terminal();
-//    char* line = dummy_readline("");
-//    // add_history(line);
-//    strncpy(response, line, max - 1);
-//    free(line);
-//    configure_terminal();
-//}
 
 //static inline void shell() {
 //    ///TODO: make this use the text box that we made.
@@ -1040,14 +1227,14 @@ static inline void open_buffer(const char* given_filename) {
 ////    if (file->options.pause_on_shell_command_output) read_unicode();
 //}
 
+
 static inline void save() {
 
     struct file* buffer = buffers[active];
-
     bool prompted = false;
 
     if (not strlen(buffer->filename)) {
-//        prompt("filename", buffer->filename, 4096, rename_color);
+        prompt("save as: ", 214L, buffer->filename, sizeof buffer->filename);
 
         if (not strlen(buffer->filename)) {
             sprintf(buffer->message, "aborted save.");
@@ -1058,12 +1245,11 @@ static inline void save() {
             buffer->options.use_txt_extension_when_absent) {
             strcat(buffer->filename, ".txt");
         }
-
         prompted = true;
     }
 
     if (prompted and file_exists(buffer->filename)
-//        and not confirmed("file already exists, overwrite")
+        and not confirmed("file already exists, overwrite")
         ) {
         strcpy(buffer->filename, "");
         sprintf(buffer->message, "aborted save.");
@@ -1077,13 +1263,10 @@ static inline void save() {
         return;
 
     } else {
-        
         for (size_t i = 0; i < buffer->logical.count; i++) {
             fwrite(buffer->logical.lines[i].line, 1, buffer->logical.lines[i].length, file);
             if (i < buffer->logical.count - 1) fputc('\n', file);
         }
-        
-        
         if (ferror(file)) {
             sprintf(buffer->message, "write unsuccessful: %s", strerror(errno));
             strcpy(buffer->filename, "");
@@ -1098,63 +1281,38 @@ static inline void save() {
     }
 }
 
-static inline void rename_file(char* old, char* message) {
-    char new[4096];
-//    prompt("filename", new, sizeof new, rename_color);
-
-    if (!strlen(new))
-        sprintf(message, "aborted rename.");
-
-    else if (file_exists(new)
-//             and not confirmed("file already exists, overwrite")
-             )
-        sprintf(message, "aborted rename.");
-
-    else if (rename(old, new))
-        sprintf(message, "rename unsuccessful: %s", strerror(errno));
-
+static inline void rename_file() {
+    
+    struct file* file = buffers[active];
+    char new[4096] = {0};
+    prompt("rename to: ", 214L, new, sizeof new);
+    if (!strlen(new)) sprintf(file->message, "aborted rename.");
+    else if (file_exists(new) and not confirmed("file already exists, overwrite"))
+        sprintf(file->message, "aborted rename.");
+    else if (rename(file->filename, new))
+        sprintf(file->message, "rename unsuccessful: %s", strerror(errno));
     else {
-        strncpy(old, new, sizeof new);
-        sprintf(message, "renamed.");
+        strncpy(file->filename, new, sizeof new);
+        sprintf(file->message, "renamed to \"%s\"", file->filename);
     }
 }
 
-//static inline void read_option() {
-//
-//    struct file* file = buffers[active];
-//
-//    uint8_t c = read_byte();
-//    if (c == '0') strcpy(file->message, "");
-//    else if (c == 'l') file->options.show_line_numbers = !file->options.show_line_numbers;
-//    else if (c == '[') file->options.show_status = !file->options.show_status;
-//    else if (c == 'c') file->options.use_c_syntax_highlighting = !file->options.use_c_syntax_highlighting;
-//    else if (c == 'p') sprintf(file->message, "0:sb_clear [:sb_toggle l:numbers c:csyntax o:open_buf f:func ");
-//    else if (c == 'i') {
-////        create_new_buffer();
-//    }
-//    else if (c == 'o') {
-//            char new[4096];
-//            prompt("open", new, 4096, rename_color);
-////            open_file(strip(new), );
-//
-//    } else if (c == 'f') {
-//        char option_command[128] = {0};
-//        prompt("option", option_command, sizeof option_command, rename_color);
-//        sprintf(file->message, "error: programmatic options are currently unimplemented.");
-//    } else {
-//        sprintf(file->message, "error: unknown option argument. try pp for help.");
-//    }
-//}
-
-
+static inline void open_using_prompt() {
+    struct file* file = buffers[active];
+    char to_open[4096];
+    prompt("open: ", 214L, to_open, sizeof to_open);
+    if (not strlen(to_open)) {
+        sprintf(file->message, "aborted open.");
+        return;
+    } else open_buffer(to_open);
+}
 
 static void interpret_escape_code() {
     
     struct file* file = buffers[active];
 
     uint8_t c = read_byte();
-    if (c == '0') adjust_window_size();
-    else if (c == '[') {
+    if (c == '[') {
         uint8_t c = read_byte();
         if (c == 'A') move_up();
         else if (c == 'B') move_down();
@@ -1193,58 +1351,63 @@ int main(const int argc, const char** argv) {
     
     if (argc <= 1) create_empty_buffer();
     else for (int i = argc; i-- > 1;) open_buffer(argv[i]);
-    
-    if (not buffer_count) exit(1);
-    
     signal(SIGINT, signal_interrupt);
     configure_terminal();
-    
     uint8_t p = 0;
-    
     while (buffer_count) {
         
-        unsigned int mode = buffers[active]->mode;
-        
-        adjust_window_size();
-        display();
-        
+        struct file* file = buffers[active];
+        resize_window(); display(); autosave();
         uint8_t c = read_byte();
         
-        if (mode == edit_mode) {
+        if (file->mode == insert_mode) {
             
-            if (c == insert_key) buffers[active]->mode = insert_mode;
-            if (c == command_key) buffers[active]->mode = command_mode;
+            if (c == 'f' and p == 'w' or c == 'j' and p == 'o') { delete(); file->mode = edit_mode; }
+            else if (c == escape_key) interpret_escape_code();
+            else if (c == backspace_key) delete();
+            else insert(c);
+        
+        } else if (file->mode == edit_mode) {
+            
+            if (c == insert_key) file->mode = insert_mode;
+            if (c == command_key) file->mode = command_mode;
+            else if (c == escape_key) interpret_escape_code();
             else if (c == up_key) move_up();
             else if (c == down_key) move_down();
             else if (c == right_key) move_right(true);
             else if (c == left_key) move_left(true);
-            else {
-                sprintf(buffers[active]->message, "edit mode: unknown command: %d", c);
-            }
-            
-        } else if (mode == insert_mode) {
-            if (c == 'f' and p == 'w' or c == 'j' and p == 'o') {
-                delete(); buffers[active]->mode = edit_mode;
-            }
-            else if (c == escape_key) interpret_escape_code();
-            else if (c == backspace_key) delete();
-            else insert(c);
-            autosave();
-            
-        } else if (mode == command_mode) {
-            if (c == insert_key) buffers[active]->mode = insert_mode;
-            if (c == command_key) buffers[active]->mode = edit_mode;
-            else if (c == 'W') save();
-            else if (c == 'q') close_buffer();
-            else {
-                sprintf(buffers[active]->message, "command mode: unknown command: %d", c);
-            }
+            else sprintf(file->message, "edit mode: unknown command: %d", c);
+        
+        } else if (file->mode == command_mode) {
+            if (c == 'e') file->mode = edit_mode;
+            else if (c == 'w') save();
+            else if (c == 'W') rename_file();
+            else if (c == 'q') { if (file->saved) close_buffer(); else sprintf(file->message, "buffer has unsaved changes."); }
+            else if (c == 'Q') { if (file->saved or confirmed("discard unsaved changes?")) close_buffer(); }
+            else if (c == 'o') open_using_prompt();
+            else if (c == 'i') create_empty_buffer();
+            else if (c == 'j') { if (active) active--; }
+            else if (c == ';') { if (active < buffer_count - 1) active++; }
+            else if (c == '0') strcpy(file->message, "");
+            else if (c == 'l') file->options.show_line_numbers = !file->options.show_line_numbers;
+            else if (c == 's') file->options.show_status = !file->options.show_status;
+            else if (c == 'c') file->options.use_c_syntax_highlighting = !file->options.use_c_syntax_highlighting;
+            else sprintf(file->message, "command mode: unknown command: %d", c);
             
         } else {
-            sprintf(buffers[active]->message, "unknown mode: %d", mode);
-            buffers[active]->mode = command_mode;
+            sprintf(file->message, "unknown mode: %d", file->mode);
+            file->mode = edit_mode;
         }
         p = c;
     }
     restore_terminal();
 }
+
+/// example code for cliboard stuff:
+
+//    clipboard_c* cb = clipboard_new(NULL);
+//    const char* string = clipboard_text(cb);
+//    puts(string);
+//    clipboard_set_text(cb, "hello world");
+//    clipboard_free(cb);
+//    exit(0);
