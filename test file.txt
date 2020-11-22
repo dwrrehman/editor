@@ -1,0 +1,20 @@
+hello there from space. i am basically testing out my
+new editor features, such as set, copy, paste, and delete.
+they seem to be working pretty well... although i dont reallyyyy know..
+quite yet whether they are working yet... i dont know... we'll see.
+
+	
+	now, lets actually paste what we just copied: working pretty well
+
+		yes!! that actually worked. holy cow. lets now go bigger. multiline.
+
+i am basically testing out my
+new editor features, such as set, copy, paste, and delete.
+they seem to be working pretty well...
+
+	
+
+		now lets do a backwards multiline copy paste:
+
+			
+

@@ -44,7 +44,11 @@ enum key_bindings {
     insert_key = 'f',       hard_insert_key = 'F',     command_key = 'a',
     up_key = 'o',           down_key = 'i',
     left_key = 'j',         right_key = ';',
-    escape_key = 27,        backspace_key = 127,
+    
+        
+    return_key = 13,
+    escape_key = 27,
+    backspace_key = 127,
 };
 
 
@@ -163,12 +167,16 @@ struct file {
     struct options options;
     struct logical_lines logical;
     struct render_lines render;
+    
+    struct location begin;
     struct location cursor;
+    
     struct location render_cursor;
     struct location visual_cursor;
     struct location visual_origin;
     struct location visual_screen;
     struct location visual_desired;
+    
     unsigned int autosave_counter;
     unsigned int scroll_step;
     unsigned int line_number_width;
@@ -459,10 +467,10 @@ static void display() {
         size_t status_length = 0;
         char* status = malloc(window.columns * 4);
         
-        status_length += sprintf(status,  "%u[%s](%lu,%lu) %s%s - %s" ,
+        status_length += sprintf(status,  " %u %s (%lu,%lu) %s%s - %s" ,
                                  file->mode,
                                  datetime,
-                                 file->cursor.line + 1, file->cursor.column + 1,                                 
+                                 file->cursor.line + 1, file->cursor.column + 1,
                                  file->filename,
                                  file->saved ? " saved" : " edited",
                                  file->message);
@@ -681,7 +689,7 @@ static inline void insert(uint8_t c) {
     struct file* file = buffers[active];
     file->saved = false;
     
-    if (c == '\r') {
+    if (c == '\n') {
         
         struct logical_line* current = file->logical.lines + file->cursor.line;
         
@@ -759,7 +767,7 @@ static inline void insert(uint8_t c) {
     }
 }
 
-static inline void delete() {
+static inline void backspace() {
     
     struct file* file = buffers[active];
     file->saved = false;
@@ -1307,6 +1315,86 @@ static inline void open_using_prompt() {
     } else open_buffer(to_open);
 }
 
+static inline bool behind(struct location a, struct location b) {
+    if (a.line < b.line) return true;
+    if (a.line > b.line) return false;
+    if (a.column < b.column) return true;
+    else return false;
+}
+
+static inline void copy_selection_to_clipboard(clipboard_c* cb) {
+    struct file* file = buffers[active];
+    
+    char* buffer = malloc(1024);
+    size_t buffer_length = 0, buffer_capacity = 1024;
+    
+    struct location begin = file->begin;
+    struct location cursor = file->cursor;
+    
+    if (behind(file->cursor, file->begin)) {
+        begin = file->cursor;
+        cursor = file->begin;
+    }
+    
+    for (size_t line = begin.line; line <= cursor.line; line++) {
+        
+        size_t
+            begin_column = line == begin.line ? begin.column : 0,
+            end_column = line == cursor.line ? cursor.column : file->logical.lines[line].length;
+        
+        if (buffer_length + (end_column - begin_column) > buffer_capacity)
+            buffer = realloc(buffer, buffer_capacity = 2 * (buffer_capacity + (end_column - begin_column)));
+        
+        memcpy(buffer + buffer_length,
+               file->logical.lines[line].line + begin_column,
+               end_column - begin_column);
+        buffer_length += end_column - begin_column;
+        
+        if (line != cursor.line) {
+            
+            if (buffer_length + 1 > buffer_capacity)
+                buffer = realloc(buffer, buffer_capacity = 2 * (buffer_capacity + 1));
+            buffer[buffer_length++] = '\n';
+            
+        }
+    }
+    
+    if (buffer_length + 1 > buffer_capacity)
+        buffer = realloc(buffer, buffer_capacity = 2 * (buffer_capacity + 1));
+    
+    buffer[buffer_length] = '\0';
+        
+    sprintf(file->message, "copied %lu bytes", buffer_length);
+    
+    clipboard_set_text(cb, buffer);
+    free(buffer);
+}
+
+
+static inline void delete_selection() {
+    struct file* file = buffers[active];
+    
+    if (behind(file->cursor, file->begin)) {
+        struct location temp = file->cursor;
+        file->cursor = file->begin;
+        file->begin = temp;
+    }
+    
+    while (file->begin.line < file->cursor.line or
+           file->begin.column < file->cursor.column) backspace();
+}
+
+
+static inline void set_begin() {
+    struct file* file = buffers[active];
+    file->begin = file->cursor;
+    sprintf(file->message, "set begin to (%lu,%lu)", file->begin.line, file->begin.column);
+}
+
+static inline void insert_text(const char* string) {
+    for (size_t i = 0; string[i]; i++) insert(string[i]);
+}
+
 static void interpret_escape_code() {
     
     struct file* file = buffers[active];
@@ -1342,18 +1430,20 @@ static void interpret_escape_code() {
                 }
             }
         }
-    }
+    } else if (c == escape_key) file->mode = edit_mode;
 }
+
 
 int main(const int argc, const char** argv) {
     
-    srand((unsigned) time(0));
-    
+    srand((unsigned) time(NULL));
     if (argc <= 1) create_empty_buffer();
     else for (int i = argc; i-- > 1;) open_buffer(argv[i]);
     signal(SIGINT, signal_interrupt);
     configure_terminal();
+    clipboard_c* cb = clipboard_new(NULL);
     uint8_t p = 0;
+    
     while (buffer_count) {
         
         struct file* file = buffers[active];
@@ -1362,11 +1452,12 @@ int main(const int argc, const char** argv) {
         
         if (file->mode == insert_mode) {
             
-            if (c == 'f' and p == 'w' or c == 'j' and p == 'o') { delete(); file->mode = edit_mode; }
+            if (c == 'f' and p == 'w' or c == 'j' and p == 'o') { backspace(); file->mode = edit_mode; }
             else if (c == escape_key) interpret_escape_code();
-            else if (c == backspace_key) delete();
+            else if (c == backspace_key) backspace();
+            else if (c == return_key) insert('\n');
             else insert(c);
-        
+            
         } else if (file->mode == edit_mode) {
             
             if (c == insert_key) file->mode = insert_mode;
@@ -1376,23 +1467,26 @@ int main(const int argc, const char** argv) {
             else if (c == down_key) move_down();
             else if (c == right_key) move_right(true);
             else if (c == left_key) move_left(true);
-            else sprintf(file->message, "edit mode: unknown command: %d", c);
+            else if (c == 'w') set_begin();
+            else if (c == 'c') copy_selection_to_clipboard(cb);
+            else if (c == 'v') insert_text(clipboard_text(cb));
+            else if (c == 'd') delete_selection();
         
         } else if (file->mode == command_mode) {
             if (c == 'e') file->mode = edit_mode;
             else if (c == 'w') save();
             else if (c == 'W') rename_file();
-            else if (c == 'q') { if (file->saved) close_buffer(); else sprintf(file->message, "buffer has unsaved changes."); }
-            else if (c == 'Q') { if (file->saved or confirmed("discard unsaved changes?")) close_buffer(); }
             else if (c == 'o') open_using_prompt();
             else if (c == 'i') create_empty_buffer();
+            else if (c == 'I') sprintf(file->message, "buffer id = %x : \"%s\"", file->id, file->filename);
+            else if (c == 'q') { if (file->saved) close_buffer(); else sprintf(file->message, "buffer has unsaved changes."); }
+            else if (c == 'Q') { if (file->saved or confirmed("discard unsaved changes")) close_buffer(); }
             else if (c == 'j') { if (active) active--; }
             else if (c == ';') { if (active < buffer_count - 1) active++; }
             else if (c == '0') strcpy(file->message, "");
             else if (c == 'l') file->options.show_line_numbers = !file->options.show_line_numbers;
             else if (c == 's') file->options.show_status = !file->options.show_status;
             else if (c == 'c') file->options.use_c_syntax_highlighting = !file->options.use_c_syntax_highlighting;
-            else sprintf(file->message, "command mode: unknown command: %d", c);
             
         } else {
             sprintf(file->message, "unknown mode: %d", file->mode);
@@ -1400,14 +1494,13 @@ int main(const int argc, const char** argv) {
         }
         p = c;
     }
+    clipboard_free(cb);
     restore_terminal();
 }
 
-/// example code for cliboard stuff:
 
-//    clipboard_c* cb = clipboard_new(NULL);
 //    const char* string = clipboard_text(cb);
 //    puts(string);
 //    clipboard_set_text(cb, "hello world");
-//    clipboard_free(cb);
+
 //    exit(0);

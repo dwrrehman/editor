@@ -8,7 +8,7 @@ include_flags = -I /usr/local/Cellar/llvm/10.0.1_1/include -I lib/libclipboard/i
 
 linker_flags = -L /usr/local/Cellar/llvm/10.0.1_1/lib -L lib/libclipboard/lib
 
-libraries = -lclang -lreadline -lclipboard
+libraries = -lclang -lclipboard
 
 editor: source/editor/main.c 
 	gcc -g -O1 $(warning_flags) $(debug_flags) $(include_flags) $(linker_flags) -o editor source/editor/main.c $(libraries)
