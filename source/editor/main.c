@@ -29,11 +29,11 @@
 
 static const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
-enum keys {
-    return_key = 13,
-    escape_key = 27,
-    backspace_key = 127,
-};
+//enum keys {
+//    return_key = 13,
+//    escape_key = 27,
+//    backspace_key = 127,
+//};
 
 enum editor_mode {
     insert_mode,
@@ -1070,8 +1070,8 @@ static inline void prompt(const char* message, long color, char* out, size_t max
         textbox_resize_window(box);
         textbox_display(box, message, color);
         uint8_t c = read_byte();
-        if (c == return_key) break;
-        else if (c == escape_key) {
+        if (c == 13) break;
+        else if (c == 27) {
             uint8_t c = read_byte();
             if (c == '[') {
                 uint8_t c = read_byte();
@@ -1079,8 +1079,8 @@ static inline void prompt(const char* message, long color, char* out, size_t max
                 else if (c == 'B') {}
                 else if (c == 'C') textbox_move_right(box);
                 else if (c == 'D') textbox_move_left(box);
-            } else if (c == escape_key) { box->logical_length = 0; break; }
-        } else if (c == backspace_key) textbox_backspace(box);
+            } else if (c == 27) { box->logical_length = 0; break; }
+        } else if (c == 127) textbox_backspace(box);
         else textbox_insert(c, box);
     }
     
@@ -1315,13 +1315,24 @@ static inline void delete_selection() {
     struct file* file = buffers[active];
     
     if (behind(file->cursor, file->begin)) {
-        struct location temp = file->cursor;
-        file->cursor = file->begin;
-        file->begin = temp;
+        
+        struct location save = file->cursor;
+        
+        while (file->cursor.line < file->begin.line or
+               file->cursor.column < file->begin.column)
+            move_right(true);
+        
+        while (save.line < file->cursor.line or
+               save.column < file->cursor.column)
+            backspace();
+        
+        return;
     }
     
     while (file->begin.line < file->cursor.line or
-           file->begin.column < file->cursor.column) backspace();
+           file->begin.column < file->cursor.column)
+        backspace();
+    
 }
 
 static inline void set_begin() {
@@ -1369,23 +1380,11 @@ static inline void move_word_left() {
     
     do move_left(true);
     
-    while (
-           (file->cursor.line or file->cursor.column)
-           and
-           (
-            (
-             file->cursor.column == file->logical.lines[file->cursor.line].length
-             or
-             not isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column])
-             )
-            or
-            (
-             not file->cursor.column
-             or
-             isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column - 1])
-             )
-            )
-           );
+    while ((file->cursor.line or file->cursor.column) and
+           ((file->cursor.column == file->logical.lines[file->cursor.line].length or
+             not isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column])) or
+            (not file->cursor.column or
+             isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column - 1]))));
 }
 
 static inline void move_word_right() {
@@ -1394,23 +1393,12 @@ static inline void move_word_right() {
     
     do move_right(true);
     
-    while (
-           (file->cursor.line != file->logical.count - 1 or file->cursor.column != file->logical.lines[file->cursor.line].length)
-           and
-           (
-            (
-             file->cursor.column == file->logical.lines[file->cursor.line].length
-             or
-             isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column])
-             )
-            or
-            (
-             not file->cursor.column
-             or
-             not isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column - 1])
-             )
-            )
-           );
+    while ((file->cursor.line != file->logical.count - 1 or
+            file->cursor.column != file->logical.lines[file->cursor.line].length) and
+           ((file->cursor.column == file->logical.lines[file->cursor.line].length or
+             isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column])) or
+            (not file->cursor.column or
+             not isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column - 1]))));
 }
 
 
@@ -1450,7 +1438,7 @@ static void interpret_escape_code() {
                 }
             }
         }
-    } else if (c == escape_key) file->mode = edit_mode;
+    } else if (c == 27) file->mode = edit_mode;
 }
 
 
@@ -1472,28 +1460,26 @@ int main(const int argc, const char** argv) {
         if (file->mode == insert_mode) {
             
             if (c == 'f' and p == 'w' or c == 'j' and p == 'o') { backspace(); file->mode = edit_mode; }
-            else if (c == escape_key) interpret_escape_code();
-            else if (c == backspace_key) backspace();
-            else if (c == return_key) insert('\n');
+            else if (c == 27) interpret_escape_code();
+            else if (c == 127) backspace();
+            else if (c == 13) insert('\n');
             else insert(c);
             
         } else if (file->mode == edit_mode) {
             
             if (c == 'f') file->mode = insert_mode;
             if (c == 'a') file->mode = command_mode;
-            else if (c == escape_key) interpret_escape_code();
-            
+            else if (c == 27) interpret_escape_code();
             else if (c == 'o') move_up();
             else if (c == 'i') move_down();
             else if (c == 'j') move_left(true);
-            else if (c == ';') move_right(true);            
+            else if (c == ';') move_right(true);
             else if (c == 'O') move_top_file();
             else if (c == 'I') move_bottom_file();
             else if (c == 'J') move_begin_line();
             else if (c == ':') move_end_line();
             else if (c == 'k') move_word_left();
             else if (c == 'l') move_word_right();
-        
             else if (c == 'w') set_begin();
             else if (c == 'c') copy_selection_to_clipboard(system_clipboard);
             else if (c == 'v') insert_text(clipboard_text(system_clipboard));
