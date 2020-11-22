@@ -1,9 +1,22 @@
-hello there from space. i am basically testing out my
+hello       there       from      space.       i        am       basically      testing       out        my hello there my minions yes, indeed, this does work across wrap lines. i love this
+hello there from space. yes        this is actually p        retty        good,        i th         ink. we basically have everything we /need/ except for undo noww.
+cool.
+
+
 new editor features, such as set, copy, paste, and delete.
 they seem to be working pretty well... although i dont reallyyyy know..
 quite yet whether they are working yet... i dont know... we'll see.
 
-	
+
+
+
+
+
+
+
+		00910940134  2904 kfjwkjelfkj2l3kj4lkj425lkj234lkjj4j4j4jj34j433434434jl24kjlkjljlkj23423423423l4kjlkj234j 23l4k 3 l2jk3423jj42 4 2340239i40293423r3/2.4/23/4234//242ml3k4/.,/../24/2,3/4,.234,234lkjwekj23lhj234klj23l4kj2lk2lk4l2k3j4
+
+
 	now, lets actually paste what we just copied: working pretty well
 
 		yes!! that actually worked. holy cow. lets now go bigger. multiline.
@@ -17,4 +30,41 @@ they seem to be working pretty well...
 		now lets do a backwards multiline copy paste:
 
 			
+hello there from space, this is the end of the file. hello there from space. 
+
+
+
+
+		so yeah, i i think my editor has amazing controls now: 
+
+
+
+	i  gave it the following controls:
+
+		jio;      movement by one character
+		
+		JIO:	  jump movement:  begin, bottom, top, end,  respectively,
+
+		kl	  word movement:   word left, and word right.    
+
+
+
+
+	i think thats the correct placing, honestly.
+
+
+		i really like it actually. now just to get used to it, lol.
+		thats the hard part.  it makes alot of sense, though. lauren will find it intuitive. 
+
+
+		whenever i show her my editor, that is, lol
+
+
+	i dont know when that will be... 
+
+
+
+but owell
+
+
 

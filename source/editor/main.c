@@ -1334,6 +1334,87 @@ static inline void insert_text(const char* string) {
     for (size_t i = 0; string[i]; i++) insert(string[i]);
 }
 
+static inline void move_begin_line() {
+    struct file* file = buffers[active];
+    
+    while (file->cursor.column)
+        move_left(true);
+}
+
+static inline void move_end_line() {
+    struct file* file = buffers[active];
+    
+    while (file->cursor.column < file->logical.lines[file->cursor.line].length)
+        move_right(true);
+}
+
+static inline void move_top_file() {
+    struct file* file = buffers[active];
+    file->render_cursor = (struct location){0, 0};
+    file->visual_cursor = (struct location){0, 0};
+    file->visual_screen = (struct location){0, 0};
+    file->visual_origin = (struct location){0, 0};
+    file->cursor = (struct location){0, 0};
+}
+
+static inline void move_bottom_file() {
+    struct file* file = buffers[active];
+    while (file->cursor.line < file->logical.count - 1)
+        move_down();
+    move_down();
+}
+
+static inline void move_word_left() {
+    struct file* file = buffers[active];
+    
+    do move_left(true);
+    
+    while (
+           (file->cursor.line or file->cursor.column)
+           and
+           (
+            (
+             file->cursor.column == file->logical.lines[file->cursor.line].length
+             or
+             not isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column])
+             )
+            or
+            (
+             not file->cursor.column
+             or
+             isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column - 1])
+             )
+            )
+           );
+}
+
+static inline void move_word_right() {
+    
+    struct file* file = buffers[active];
+    
+    do move_right(true);
+    
+    while (
+           (file->cursor.line != file->logical.count - 1 or file->cursor.column != file->logical.lines[file->cursor.line].length)
+           and
+           (
+            (
+             file->cursor.column == file->logical.lines[file->cursor.line].length
+             or
+             isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column])
+             )
+            or
+            (
+             not file->cursor.column
+             or
+             not isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column - 1])
+             )
+            )
+           );
+}
+
+
+
 static void interpret_escape_code() {
     
     struct file* file = buffers[active];
@@ -1401,10 +1482,18 @@ int main(const int argc, const char** argv) {
             if (c == 'f') file->mode = insert_mode;
             if (c == 'a') file->mode = command_mode;
             else if (c == escape_key) interpret_escape_code();
+            
             else if (c == 'o') move_up();
             else if (c == 'i') move_down();
-            else if (c == ';') move_right(true);
             else if (c == 'j') move_left(true);
+            else if (c == ';') move_right(true);            
+            else if (c == 'O') move_top_file();
+            else if (c == 'I') move_bottom_file();
+            else if (c == 'J') move_begin_line();
+            else if (c == ':') move_end_line();
+            else if (c == 'k') move_word_left();
+            else if (c == 'l') move_word_right();
+        
             else if (c == 'w') set_begin();
             else if (c == 'c') copy_selection_to_clipboard(system_clipboard);
             else if (c == 'v') insert_text(clipboard_text(system_clipboard));
@@ -1437,4 +1526,28 @@ int main(const int argc, const char** argv) {
     }
     clipboard_free(system_clipboard);
     restore_terminal();
+}
+
+
+enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
+    CXString spelling = clang_getCursorSpelling(cursor);
+    CXString kind = clang_getCursorKindSpelling(clang_getCursorKind(cursor));
+
+    printf("Cursor '%s' of kind '%s'.\n", clang_getCString(spelling), clang_getCString(kind));
+
+    CXSourceRange range = clang_getCursorExtent(cursor);
+    CXSourceLocation begin = clang_getRangeStart(range);
+    CXSourceLocation end = clang_getRangeEnd(range);
+
+    unsigned int line, column, offset;
+    clang_getSpellingLocation(begin, NULL, &line, &column, &offset);
+    printf("begin: (%u,%u) : %u \n", line, column, offset);
+
+    clang_getSpellingLocation(end, NULL, &line, &column, &offset);
+    printf("end: (%u,%u) : %u \n", line, column, offset);
+
+    clang_disposeString(spelling);
+    clang_disposeString(kind);
+
+    return CXChildVisit_Recurse;
 }
