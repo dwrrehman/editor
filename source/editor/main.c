@@ -25,32 +25,15 @@
 #include <sys/types.h>
 
 #include <clang-c/Index.h>
-
 #include "libclipboard.h"
 
 static const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
-//static const long
-//    rename_color = 214L,
-//    good_color = 73L,
-//    confirm_color = 196L,
-//    edited_flag_color = 130L,
-//    shell_prompt_color = 33L,
-//    insert_status_color = 240L,
-//    edit_status_color = 252L,
-//    command_status_color = 245L;
-
-enum key_bindings {
-    insert_key = 'f',       hard_insert_key = 'F',     command_key = 'a',
-    up_key = 'o',           down_key = 'i',
-    left_key = 'j',         right_key = ';',
-    
-        
+enum keys {
     return_key = 13,
     escape_key = 27,
     backspace_key = 127,
 };
-
 
 enum editor_mode {
     insert_mode,
@@ -107,11 +90,6 @@ struct coloring {
     size_t coloring_capacity;
 };
 
-struct clipboard {
-    char* text;
-    size_t length;
-};
-
 struct options {
     size_t wrap_width;
     size_t tab_width;
@@ -160,17 +138,19 @@ struct textbox {
     size_t visual_origin;
     size_t visual_screen;
     size_t prompt_length;
+    
+    size_t tab_width;
+    size_t negative_view_shift_margin;
 };
 
 struct file {
-    struct textbox* textbox;
+    
     struct options options;
     struct logical_lines logical;
     struct render_lines render;
     
     struct location begin;
     struct location cursor;
-    
     struct location render_cursor;
     struct location visual_cursor;
     struct location visual_origin;
@@ -184,7 +164,7 @@ struct file {
     unsigned int mode;
     unsigned int id;
     bool saved;
-    bool quit;    
+    bool quit;
     char message[4096];
     char filename[4096];
     char autosave_name[4096];
@@ -816,19 +796,17 @@ static inline void destroy_buffer(struct file* file) {
     for (size_t i = 0; i < file->logical.count; i++)
         free(file->logical.lines[i].line);
     free(file->logical.lines);
-    
     for (size_t i = 0; i < file->render.count; i++)
         free(file->render.lines[i].line);
     free(file->render.lines);
-    
     free(file);
 }
 
 static inline void close_buffer() {
-    struct file* swap = buffers[buffer_count - 1];
-    buffers[buffer_count - 1] = buffers[active];
+    struct file* swap = buffers[--buffer_count];
+    buffers[buffer_count] = buffers[active];
     buffers[active] = swap;
-    destroy_buffer(buffers[--buffer_count]);
+    destroy_buffer(buffers[buffer_count]);
     active = buffer_count - 1;
 }
 
@@ -839,7 +817,6 @@ static inline struct file* create_empty_buffer() {
     file->logical.lines[file->logical.count++] = (struct logical_line) {0};
     file->render.lines = realloc(file->render.lines, sizeof(struct render_line) * (file->render.capacity = 2 * (file->render.capacity + 1)));
     file->render.lines[file->render.count++] = (struct render_line) {0};
-    
     file->options = default_options;
     file->saved = true;
     file->id = rand();
@@ -909,7 +886,7 @@ static inline void open_buffer(const char* given_filename) {
                 buffer->render.lines[buffer->render.count++] = (struct render_line){.continued = true};
                 line++;
             }
-                        
+            
             if (c == '\t') {
                 size_t at = buffer->render.lines[line].visual_length;
                 size_t count = 0;
@@ -945,13 +922,8 @@ static inline void open_buffer(const char* given_filename) {
     buffers[buffer_count++] = buffer;
 }
 
-static inline void textbox_render() {
-
-    struct file* file = buffers[active];
-    struct textbox* box = file->textbox;
-    
-    box->render_length = 0;
-    box->visual_length = 0;
+static inline void textbox_render(struct textbox* box) {
+    box->render_length = 0; box->visual_length = 0;
     
     for (size_t i = 0; i < box->logical_length; i++) {
         uint8_t c = box->logical_line[i];
@@ -962,7 +934,7 @@ static inline void textbox_render() {
             size_t count = 0;
             do {
                 at++; count++;
-            } while (at % file->options.tab_width);
+            } while (at % box->tab_width);
             if (box->render_length + count >= box->render_capacity)
                 box->render_line =
                 realloc(box->render_line,
@@ -985,11 +957,7 @@ static inline void textbox_render() {
     }
 }
 
-static inline void textbox_resize_window() {
-
-    struct file* file = buffers[active];
-    struct textbox* box = file->textbox;
-    
+static inline void textbox_resize_window(struct textbox* box) {
     struct winsize win;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &win);
         
@@ -1008,11 +976,7 @@ static inline void textbox_resize_window() {
     }
 }
 
-static void textbox_display(const char* prompt, long color) {
-    
-    struct file* file = buffers[active];
-    struct textbox* box = file->textbox;
-    
+static void textbox_display(struct textbox* box, const char* prompt, long color) {
     size_t length = sprintf(window.screen, "\033[%lu;1H" "\033[38;5;%lum"  "%s" "\033[m", window.rows, color, prompt);
     size_t column = 0, visual_column = 0, characters = box->prompt_length;
     for (; column < box->render_length; column++) {
@@ -1030,13 +994,8 @@ static void textbox_display(const char* prompt, long color) {
     write(STDOUT_FILENO, window.screen, length);
 }
 
-static inline void textbox_move_left() {
-    
-    struct file* file = buffers[active];
-    struct textbox* box = file->textbox;
-    
+static inline void textbox_move_left(struct textbox* box) {
     if (not box->cursor) return;
-        
     while (box->cursor) {
         if ((box->logical_line[--box->cursor] >> 6) != 2) break;
     }
@@ -1045,7 +1004,7 @@ static inline void textbox_move_left() {
         
         if ((c >> 6) != 2) {
             box->visual_cursor--;
-            if (box->visual_screen > file->options.negative_view_shift_margin) box->visual_screen--;
+            if (box->visual_screen > box->negative_view_shift_margin) box->visual_screen--;
             else if (box->visual_origin) box->visual_origin--;
             else box->visual_screen--;
         }
@@ -1053,13 +1012,8 @@ static inline void textbox_move_left() {
     }
 }
 
-static inline void textbox_move_right() {
-            
-    struct file* file = buffers[active];
-    struct textbox* box = file->textbox;
-    
+static inline void textbox_move_right(struct textbox* box) {
     if (box->cursor >= box->logical_length) return;
-        
     while (box->cursor < box->logical_length) {
         ++box->cursor;
         if (box->cursor >= box->logical_length or (box->logical_line[box->cursor] >> 6) != 2) break;
@@ -1078,19 +1032,15 @@ static inline void textbox_move_right() {
     }
 }
 
-static inline void textbox_insert(uint8_t c) {
-    
-    struct file* file = buffers[active];
-    struct textbox* box = file->textbox;
-    
+static inline void textbox_insert(uint8_t c, struct textbox* box) {
     const size_t at = box->cursor;
     if (box->logical_length + 1 >= box->logical_capacity)
         box->logical_line = realloc(box->logical_line, box->logical_capacity = 2 * (box->logical_capacity + 1));
     memmove(box->logical_line + at + 1, box->logical_line + at, box->logical_length - at);
     ++box->logical_length;
     box->logical_line[at] = c;
-    textbox_render();
-    if (c < 128) textbox_move_right();
+    textbox_render(box);
+    if (c < 128) textbox_move_right(box);
     else {
         box->cursor++;
         box->render_cursor++;
@@ -1102,40 +1052,36 @@ static inline void textbox_insert(uint8_t c) {
     }
 }
 
-static inline void textbox_delete() {
-    
-    struct file* file = buffers[active];
-    struct textbox* box = file->textbox;
-    
+static inline void textbox_backspace(struct textbox* box) {
     const size_t save = box->cursor;
     if (not save) return;
-    textbox_move_left();
+    textbox_move_left(box);
     memmove(box->logical_line + box->cursor, box->logical_line + save, box->logical_length - save);
     box->logical_length -= save - box->cursor;
-    textbox_render();
+    textbox_render(box);
 }
 
 static inline void prompt(const char* message, long color, char* out, size_t max_out_length) {
-    struct file* file = buffers[active];
     struct textbox* box = calloc(1, sizeof(struct textbox));
-    file->textbox = box;
+    box->tab_width = buffers[active]->options.tab_width;
+    box->negative_view_shift_margin = buffers[active]->options.negative_view_shift_margin;
     box->prompt_length = strlen(message);
     while (true) {
-        textbox_resize_window();
-        textbox_display(message, color);
+        textbox_resize_window(box);
+        textbox_display(box, message, color);
         uint8_t c = read_byte();
-        if (c == '\r') break;
-        else if (c == backspace_key) textbox_delete();
+        if (c == return_key) break;
         else if (c == escape_key) {
             uint8_t c = read_byte();
             if (c == '[') {
                 uint8_t c = read_byte();
                 if (c == 'A') {}
                 else if (c == 'B') {}
-                else if (c == 'C') textbox_move_right();
-                else if (c == 'D') textbox_move_left();
+                else if (c == 'C') textbox_move_right(box);
+                else if (c == 'D') textbox_move_left(box);
             } else if (c == escape_key) { box->logical_length = 0; break; }
-        } else textbox_insert(c);
+        } else if (c == backspace_key) textbox_backspace(box);
+        else textbox_insert(c, box);
     }
     
     size_t index = 0;
@@ -1280,17 +1226,16 @@ static inline void save() {
             strcpy(buffer->filename, "");
             fclose(file);
             return;
+            
         } else {
             fclose(file);
             sprintf(buffer->message, "saved.");
             buffer->saved = true;
-
         }
     }
 }
 
 static inline void rename_file() {
-    
     struct file* file = buffers[active];
     char new[4096] = {0};
     prompt("rename to: ", 214L, new, sizeof new);
@@ -1328,13 +1273,8 @@ static inline void copy_selection_to_clipboard(clipboard_c* cb) {
     char* buffer = malloc(1024);
     size_t buffer_length = 0, buffer_capacity = 1024;
     
-    struct location begin = file->begin;
-    struct location cursor = file->cursor;
-    
-    if (behind(file->cursor, file->begin)) {
-        begin = file->cursor;
-        cursor = file->begin;
-    }
+    struct location begin = file->begin, cursor = file->cursor;
+    if (behind(file->cursor, file->begin)) { begin = file->cursor; cursor = file->begin; }
     
     for (size_t line = begin.line; line <= cursor.line; line++) {
         
@@ -1383,7 +1323,6 @@ static inline void delete_selection() {
     while (file->begin.line < file->cursor.line or
            file->begin.column < file->cursor.column) backspace();
 }
-
 
 static inline void set_begin() {
     struct file* file = buffers[active];
@@ -1435,13 +1374,12 @@ static void interpret_escape_code() {
 
 
 int main(const int argc, const char** argv) {
-    
     srand((unsigned) time(NULL));
+    signal(SIGINT, signal_interrupt);
     if (argc <= 1) create_empty_buffer();
     else for (int i = argc; i-- > 1;) open_buffer(argv[i]);
-    signal(SIGINT, signal_interrupt);
     configure_terminal();
-    clipboard_c* cb = clipboard_new(NULL);
+    clipboard_c* system_clipboard = clipboard_new(NULL);
     uint8_t p = 0;
     
     while (buffer_count) {
@@ -1460,17 +1398,20 @@ int main(const int argc, const char** argv) {
             
         } else if (file->mode == edit_mode) {
             
-            if (c == insert_key) file->mode = insert_mode;
-            if (c == command_key) file->mode = command_mode;
+            if (c == 'f') file->mode = insert_mode;
+            if (c == 'a') file->mode = command_mode;
             else if (c == escape_key) interpret_escape_code();
-            else if (c == up_key) move_up();
-            else if (c == down_key) move_down();
-            else if (c == right_key) move_right(true);
-            else if (c == left_key) move_left(true);
+            else if (c == 'o') move_up();
+            else if (c == 'i') move_down();
+            else if (c == ';') move_right(true);
+            else if (c == 'j') move_left(true);
             else if (c == 'w') set_begin();
-            else if (c == 'c') copy_selection_to_clipboard(cb);
-            else if (c == 'v') insert_text(clipboard_text(cb));
+            else if (c == 'c') copy_selection_to_clipboard(system_clipboard);
+            else if (c == 'v') insert_text(clipboard_text(system_clipboard));
             else if (c == 'd') delete_selection();
+            
+            // else if (c == 'u') undo();
+            // else if (c == 'r') redo();
         
         } else if (file->mode == command_mode) {
             if (c == 'e') file->mode = edit_mode;
@@ -1478,7 +1419,7 @@ int main(const int argc, const char** argv) {
             else if (c == 'W') rename_file();
             else if (c == 'o') open_using_prompt();
             else if (c == 'i') create_empty_buffer();
-            else if (c == 'I') sprintf(file->message, "buffer id = %x : \"%s\"", file->id, file->filename);
+            else if (c == '{') sprintf(file->message, "buffer id = %x : \"%s\"", file->id, file->filename);
             else if (c == 'q') { if (file->saved) close_buffer(); else sprintf(file->message, "buffer has unsaved changes."); }
             else if (c == 'Q') { if (file->saved or confirmed("discard unsaved changes")) close_buffer(); }
             else if (c == 'j') { if (active) active--; }
@@ -1487,20 +1428,13 @@ int main(const int argc, const char** argv) {
             else if (c == 'l') file->options.show_line_numbers = !file->options.show_line_numbers;
             else if (c == 's') file->options.show_status = !file->options.show_status;
             else if (c == 'c') file->options.use_c_syntax_highlighting = !file->options.use_c_syntax_highlighting;
-            
+                    
         } else {
             sprintf(file->message, "unknown mode: %d", file->mode);
             file->mode = edit_mode;
         }
         p = c;
     }
-    clipboard_free(cb);
+    clipboard_free(system_clipboard);
     restore_terminal();
 }
-
-
-//    const char* string = clipboard_text(cb);
-//    puts(string);
-//    clipboard_set_text(cb, "hello world");
-
-//    exit(0);
