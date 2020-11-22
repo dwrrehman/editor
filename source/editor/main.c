@@ -247,7 +247,7 @@ static inline void dump() {
 }
 
 static inline void autosave() {
-    if (++buffers[active]->autosave_counter == buffers[active]->options.presses_until_autosave) {
+    if (buffers[active]->autosave_counter++ == buffers[active]->options.presses_until_autosave) {
 
         for (size_t b = 0; b < buffer_count; b++) {
 
@@ -688,7 +688,7 @@ static inline void move_down() {
         move_left(false);
 }
 
-static inline void insert(uint8_t c, bool user) {
+static inline void insert(uint8_t c, bool record) {
     
     struct file* file = buffers[active];
     
@@ -770,7 +770,7 @@ static inline void insert(uint8_t c, bool user) {
     }
     
 final:
-    if (user) {
+    if (record) {
         struct action* new = calloc(1, sizeof(struct action));
         new->type = insert_action;
         new->parent = file->head;
@@ -796,11 +796,9 @@ final:
     file->saved = false;
 }
 
-static inline void backspace(bool user) {
+static inline void backspace(bool record) {
     
     struct file* file = buffers[active];
-    
-    
     
     if (not file->cursor.column) {
         if (not file->cursor.line) return;
@@ -832,7 +830,7 @@ static inline void backspace(bool user) {
         file->render.count--;
         render_line();
         
-        if (user) {
+        if (record) {
             struct action* new = calloc(1, sizeof(struct action));
             new->type = delete_action;
             new->parent = file->head;
@@ -870,7 +868,7 @@ static inline void backspace(bool user) {
     line->length -= save - file->cursor.column;
     render_line();
     
-    if (user) {
+    if (record) {
         struct action* new = calloc(1, sizeof(struct action));
         new->type = delete_action;
         new->parent = file->head;
@@ -1373,7 +1371,6 @@ static inline bool behind(struct location a, struct location b) {
     else return false;
 }
 
-
 static inline uint8_t* get_selection_as_string(size_t* out_buffer_length) {
     struct file* file = buffers[active];
     
@@ -1435,7 +1432,7 @@ static inline void delete_selection() {
                file->begin.column < file->cursor.column)
             backspace(false);
     }
-        
+    
     struct action* new = calloc(1, sizeof(struct action));
     new->type = delete_action;
     new->parent = file->head;
@@ -1630,11 +1627,97 @@ enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData c
 
 
 
+static inline void perform_action() {
+    
+    struct file* file = buffers[active];
+    
+    if (file->head->type == no_action) {
+        return;
+    } else if (file->head->type == delete_action) {
+//        *length -= action->length;
+    }
+    else if (file->head->type == insert_action) {
+//        for (size_t i = 0; i < action->length; i++)
+//            text[(*length)++] = action->text[i];
+    } else abort();
+}
 
+static inline void reverse_action() {
+    struct file* file = buffers[active];
+    
+    if (file->head->type == no_action) {
+        return;
+    } else if (file->head->type == delete_action) {
+//        for (size_t i = 0; i < file->head->length; i++)
+//            text[(*length)++] = file->head->text[i];
+    } else if (file->head->type == insert_action) {
+        //        *length -= file->head->length;
+    }
 
+    else abort();
+}
+    
+static inline void undo() {
+    
+    struct file* file = buffers[active];
+    
+    if (not file->head->parent) return;
+    
+    reverse_action();
+    
+    if (file->head->parent->count == 1) {
+        sprintf(file->message, "undoing %lu\n", file->head->type);
+    
+    } else {
+        sprintf(file->message, "selected #%lu from %lu histories: undoing %lu",
+                file->head->parent->choice, file->head->parent->count,
+                file->head->type);
+    }
+    
+    file->head = file->head->parent;
+}
 
+static inline void redo() {
+    
+    struct file* file = buffers[active];
+        
+    if (not file->head->count) return;
+    
+    file->head = file->head->children[file->head->choice];
+    
+    if (file->head->parent->count == 1) {
+        sprintf(file->message, "redoing %lu", file->head->type);
+        
+    } else {
+        sprintf(file->message, "selected #%lu from %lu histories: redoing %lu",
+                file->head->parent->choice, file->head->parent->count,
+                file->head->type);
+    }
+    
+    perform_action();
+}
 
+static inline void alternate_up() {
+    struct file* file = buffers[active];
+    
+    if (file->head->parent &&
+        file->head->parent->choice + 1 < file->head->parent->count) {
+        undo();
+        file->head->choice++;
+        redo();
+    }
+}
 
+static inline void alternate_down() {
+    struct file* file = buffers[active];
+    
+    if (file->head->parent &&
+        file->head->parent->choice) {
+        undo();
+        file->head->choice--;
+        redo();
+    }
+}
 
 
 
@@ -1697,9 +1780,10 @@ int main(const int argc, const char** argv) {
             else if (c == 'c') copy_selection_to_clipboard(system_clipboard);
             else if (c == 'v') insert_text(clipboard_text(system_clipboard));
             else if (c == 'd') delete_selection();
-            
-            // else if (c == 'u') undo();
-            // else if (c == 'r') redo();
+            else if (c == 'u') undo();
+            else if (c == 'r') redo();
+            else if (c == 't') alternate_up();
+            else if (c == 'y') alternate_down();
         
         } else if (file->mode == command_mode) {
             if (c == 'e') file->mode = edit_mode;
