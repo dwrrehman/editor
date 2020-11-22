@@ -29,11 +29,14 @@
 
 static const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
-//enum keys {
-//    return_key = 13,
-//    escape_key = 27,
-//    backspace_key = 127,
-//};
+
+enum action_type {
+    no_action,
+    insert_action,
+    delete_action,
+    set_anchor_action,
+    action_count
+};
 
 enum editor_mode {
     insert_mode,
@@ -90,38 +93,57 @@ struct coloring {
     size_t coloring_capacity;
 };
 
+struct action {
+    size_t type;
+    
+    size_t choice;
+    
+    size_t count;
+    struct action** children;
+    struct action* parent;
+    
+    uint8_t* text;
+    size_t length;
+    
+    struct location begin;
+    struct location cursor;
+    struct location render_cursor;
+    struct location visual_cursor;
+    struct location visual_origin;
+    struct location visual_screen;
+    struct location visual_desired;
+    
+    bool saved;
+};
+
 struct options {
     size_t wrap_width;
     size_t tab_width;
     size_t scroll_speed;
-    bool show_status;
-    bool use_txt_extension_when_absent;
-    bool use_c_syntax_highlighting;
-    bool show_line_numbers;
-    bool preserve_autosave_contents_on_save;
-    unsigned int presses_until_autosave;
-    bool pause_on_shell_command_output;
     size_t negative_view_shift_margin;
     size_t negative_line_view_shift_margin;
     size_t positive_view_shift_margin;
     size_t positive_line_view_shift_margin;
+    unsigned int presses_until_autosave;
+    bool show_status;
+    bool show_line_numbers;
+    bool use_txt_extension_when_absent;
+    bool use_c_syntax_highlighting;
 };
 
 static const struct options default_options = {
     .wrap_width = 128,
     .tab_width = 8,
     .scroll_speed = 4,
-    .show_status = true,
-    .use_txt_extension_when_absent = true,
-    .use_c_syntax_highlighting = false,
-    .show_line_numbers = true,
-    .preserve_autosave_contents_on_save = true,
-    .presses_until_autosave = 20,
-    .pause_on_shell_command_output = true,
     .negative_view_shift_margin = 5,
     .negative_line_view_shift_margin = 2,
     .positive_view_shift_margin = 0,
     .positive_line_view_shift_margin = 0,
+    .presses_until_autosave = 30,
+    .show_status = true,
+    .show_line_numbers = true,
+    .use_txt_extension_when_absent = true,
+    .use_c_syntax_highlighting = true,
 };
 
 struct textbox {
@@ -138,9 +160,8 @@ struct textbox {
     size_t visual_origin;
     size_t visual_screen;
     size_t prompt_length;
-    
-    size_t tab_width;
     size_t negative_view_shift_margin;
+    size_t tab_width;
 };
 
 struct file {
@@ -157,8 +178,11 @@ struct file {
     struct location visual_screen;
     struct location visual_desired;
     
+    struct action* tree;
+    struct action* head;
+    
     unsigned int autosave_counter;
-    unsigned int scroll_step;
+    unsigned int scroll_counter;
     unsigned int line_number_width;
     unsigned int line_number_cursor_offset;
     unsigned int mode;
@@ -403,7 +427,7 @@ static inline void resize_window() {
     }
 }
 
-static void display() {
+static inline void display() {
     
     struct file* file = buffers[active];
     
@@ -664,10 +688,9 @@ static inline void move_down() {
         move_left(false);
 }
 
-static inline void insert(uint8_t c) {
+static inline void insert(uint8_t c, bool user) {
     
     struct file* file = buffers[active];
-    file->saved = false;
     
     if (c == '\n') {
         
@@ -721,7 +744,7 @@ static inline void insert(uint8_t c) {
             move_right(true);
             render_line();
         }
-        return;
+        goto final;
     }
     
     struct logical_line* line = file->logical.lines + file->cursor.line;
@@ -745,12 +768,39 @@ static inline void insert(uint8_t c) {
             else file->visual_origin.column++;
         }
     }
+    
+final:
+    if (user) {
+        struct action* new = calloc(1, sizeof(struct action));
+        new->type = insert_action;
+        new->parent = file->head;
+        
+        new->length = 1;
+        new->text = malloc(1);
+        new->text[0] = c;
+        
+        new->begin = file->begin;
+        new->cursor = file->cursor;
+        new->render_cursor = file->render_cursor;
+        new->visual_cursor = file->visual_cursor;
+        new->visual_screen = file->visual_screen;
+        new->visual_origin = file->visual_origin;
+        new->visual_desired = file->visual_desired;
+        new->saved = file->saved;
+        
+        file->head->children = realloc(file->head->children, sizeof(struct action*) * (file->head->count + 1));
+        file->head->choice = file->head->count;
+        file->head->children[file->head->count++] = new;
+        file->head = new;
+    }
+    file->saved = false;
 }
 
-static inline void backspace() {
+static inline void backspace(bool user) {
     
     struct file* file = buffers[active];
-    file->saved = false;
+    
+    
     
     if (not file->cursor.column) {
         if (not file->cursor.line) return;
@@ -780,16 +830,68 @@ static inline void backspace() {
         memmove(file->render.lines + render_at, file->render.lines + render_at + 1,
                 sizeof(struct render_line) * (file->render.count - (render_at + 1)));
         file->render.count--;
-        
         render_line();
+        
+        if (user) {
+            struct action* new = calloc(1, sizeof(struct action));
+            new->type = delete_action;
+            new->parent = file->head;
+            new->length = 2;
+            new->text = malloc(1);
+            new->text[0] = '\n';
+            
+            new->begin = file->begin;
+            new->cursor = file->cursor;
+            new->render_cursor = file->render_cursor;
+            new->visual_cursor = file->visual_cursor;
+            new->visual_screen = file->visual_screen;
+            new->visual_origin = file->visual_origin;
+            new->visual_desired = file->visual_desired;
+            new->saved = file->saved;
+            
+            file->head->children = realloc(file->head->children, sizeof(struct action*) * (file->head->count + 1));
+            file->head->choice = file->head->count;
+            file->head->children[file->head->count++] = new;
+            file->head = new;
+        }
+        file->saved = false;
         return;
     }
+    
     struct logical_line* line = file->logical.lines + file->cursor.line;
     size_t save = file->cursor.column;
     move_left(true);
+        
+    size_t copy_deleted_length = save - file->cursor.column;
+    uint8_t* copy_deleted = malloc(copy_deleted_length);
+    memcpy(copy_deleted, line->line + file->cursor.column, copy_deleted_length);
+
     memmove(line->line + file->cursor.column, line->line + save, line->length - save);
     line->length -= save - file->cursor.column;
     render_line();
+    
+    if (user) {
+        struct action* new = calloc(1, sizeof(struct action));
+        new->type = delete_action;
+        new->parent = file->head;
+        new->length = copy_deleted_length;
+        new->text = copy_deleted;
+        
+        new->begin = file->begin;
+        new->cursor = file->cursor;
+        new->render_cursor = file->render_cursor;
+        new->visual_cursor = file->visual_cursor;
+        new->visual_screen = file->visual_screen;
+        new->visual_origin = file->visual_origin;
+        new->visual_desired = file->visual_desired;
+        new->saved = file->saved;
+        
+        file->head->children = realloc(file->head->children, sizeof(struct action*) * (file->head->count + 1));
+        file->head->choice = file->head->count;
+        file->head->children[file->head->count++] = new;
+        file->head = new;
+    }
+    file->saved = false;
 }
 
 static inline void destroy_buffer(struct file* file) {
@@ -817,6 +919,10 @@ static inline struct file* create_empty_buffer() {
     file->logical.lines[file->logical.count++] = (struct logical_line) {0};
     file->render.lines = realloc(file->render.lines, sizeof(struct render_line) * (file->render.capacity = 2 * (file->render.capacity + 1)));
     file->render.lines[file->render.count++] = (struct render_line) {0};
+    
+    file->tree = calloc(1, sizeof(struct action));
+    file->head = file->tree;
+    
     file->options = default_options;
     file->saved = true;
     file->id = rand();
@@ -976,7 +1082,7 @@ static inline void textbox_resize_window(struct textbox* box) {
     }
 }
 
-static void textbox_display(struct textbox* box, const char* prompt, long color) {
+static inline void textbox_display(struct textbox* box, const char* prompt, long color) {
     size_t length = sprintf(window.screen, "\033[%lu;1H" "\033[38;5;%lum"  "%s" "\033[m", window.rows, color, prompt);
     size_t column = 0, visual_column = 0, characters = box->prompt_length;
     for (; column < box->render_length; column++) {
@@ -1097,7 +1203,7 @@ static inline void prompt(const char* message, long color, char* out, size_t max
     return;
 }
 
-static void print_above_textbox(char *message, long color) {
+static inline void print_above_textbox(char *message, long color) {
     size_t length = sprintf(window.screen, "\033[%lu;1H" "\033[38;5;%lum"  "%s" "\033[m", window.rows - 1, color, message);
     write(STDOUT_FILENO, window.screen, length);
 }
@@ -1267,10 +1373,11 @@ static inline bool behind(struct location a, struct location b) {
     else return false;
 }
 
-static inline void copy_selection_to_clipboard(clipboard_c* cb) {
+
+static inline uint8_t* get_selection_as_string(size_t* out_buffer_length) {
     struct file* file = buffers[active];
     
-    char* buffer = malloc(1024);
+    uint8_t* buffer = malloc(1024);
     size_t buffer_length = 0, buffer_capacity = 1024;
     
     struct location begin = file->begin, cursor = file->cursor;
@@ -1289,72 +1396,127 @@ static inline void copy_selection_to_clipboard(clipboard_c* cb) {
                file->logical.lines[line].line + begin_column,
                end_column - begin_column);
         buffer_length += end_column - begin_column;
-        
-        if (line != cursor.line) {
-            
-            if (buffer_length + 1 > buffer_capacity)
-                buffer = realloc(buffer, buffer_capacity = 2 * (buffer_capacity + 1));
-            buffer[buffer_length++] = '\n';
-            
-        }
+                    
+        if (buffer_length + 1 > buffer_capacity)
+            buffer = realloc(buffer, buffer_capacity = 2 * (buffer_capacity + 1));
+        buffer[buffer_length] = line != cursor.line ? '\n' : '\0';
+        if (line != cursor.line) buffer_length++;
     }
-    
-    if (buffer_length + 1 > buffer_capacity)
-        buffer = realloc(buffer, buffer_capacity = 2 * (buffer_capacity + 1));
-    
-    buffer[buffer_length] = '\0';
-        
-    sprintf(file->message, "copied %lu bytes", buffer_length);
-    
-    clipboard_set_text(cb, buffer);
-    free(buffer);
+    *out_buffer_length = buffer_length;
+    return buffer;
 }
 
+static inline void copy_selection_to_clipboard(clipboard_c* cb) {
+    struct file* file = buffers[active];
+    size_t buffer_length = 0;
+    uint8_t* buffer = get_selection_as_string(&buffer_length);
+    sprintf(file->message, "copied %lu bytes", buffer_length);
+    clipboard_set_text(cb, (char*) buffer);
+    free(buffer);
+}
 
 static inline void delete_selection() {
     struct file* file = buffers[active];
     
+    size_t buffer_length = 0;
+    uint8_t* buffer = get_selection_as_string(&buffer_length);
+    bool saved = file->saved;
+    
     if (behind(file->cursor, file->begin)) {
-        
         struct location save = file->cursor;
-        
         while (file->cursor.line < file->begin.line or
                file->cursor.column < file->begin.column)
             move_right(true);
-        
         while (save.line < file->cursor.line or
                save.column < file->cursor.column)
-            backspace();
-        
-        return;
+            backspace(false);
+    } else {
+        while (file->begin.line < file->cursor.line or
+               file->begin.column < file->cursor.column)
+            backspace(false);
     }
+        
+    struct action* new = calloc(1, sizeof(struct action));
+    new->type = delete_action;
+    new->parent = file->head;
+    new->length = buffer_length;
+    new->text = buffer;
     
-    while (file->begin.line < file->cursor.line or
-           file->begin.column < file->cursor.column)
-        backspace();
+    new->begin = file->begin;
+    new->cursor = file->cursor;
+    new->render_cursor = file->render_cursor;
+    new->visual_cursor = file->visual_cursor;
+    new->visual_screen = file->visual_screen;
+    new->visual_origin = file->visual_origin;
+    new->visual_desired = file->visual_desired;
+    new->saved = saved;
     
+    file->head->children = realloc(file->head->children, sizeof(struct action*) * (file->head->count + 1));
+    file->head->choice = file->head->count;
+    file->head->children[file->head->count++] = new;
+    file->head = new;
 }
 
 static inline void set_begin() {
     struct file* file = buffers[active];
+    
+    struct action* new = calloc(1, sizeof(struct action));
+    new->type = set_anchor_action;
+    new->parent = file->head;
+    
+    new->begin = file->begin;
+    new->cursor = file->cursor;
+    new->render_cursor = file->render_cursor;
+    new->visual_cursor = file->visual_cursor;
+    new->visual_screen = file->visual_screen;
+    new->visual_origin = file->visual_origin;
+    new->visual_desired = file->visual_desired;
+    new->saved = file->saved;
+    
+    file->head->children = realloc(file->head->children, sizeof(struct action*) * (file->head->count + 1));
+    file->head->choice = file->head->count;
+    file->head->children[file->head->count++] = new;
+    file->head = new;
+    
     file->begin = file->cursor;
     sprintf(file->message, "set begin to (%lu,%lu)", file->begin.line, file->begin.column);
 }
 
 static inline void insert_text(const char* string) {
-    for (size_t i = 0; string[i]; i++) insert(string[i]);
+    struct file* file = buffers[active];
+    bool saved = file->saved;
+    for (size_t i = 0; string[i]; i++) insert(string[i], false);
+
+    struct action* new = calloc(1, sizeof(struct action));
+    new->type = insert_action;
+    new->parent = file->head;
+    
+    new->length = strlen(string);
+    new->text = malloc(new->length);
+    memcpy(new->text, string, new->length);
+    
+    new->begin = file->begin;
+    new->cursor = file->cursor;
+    new->render_cursor = file->render_cursor;
+    new->visual_cursor = file->visual_cursor;
+    new->visual_screen = file->visual_screen;
+    new->visual_origin = file->visual_origin;
+    new->visual_desired = file->visual_desired;
+    new->saved = saved;
+    
+    file->head->children = realloc(file->head->children, sizeof(struct action*) * (file->head->count + 1));
+    file->head->choice = file->head->count;
+    file->head->children[file->head->count++] = new;
+    file->head = new;
 }
 
 static inline void move_begin_line() {
     struct file* file = buffers[active];
-    
-    while (file->cursor.column)
-        move_left(true);
+    while (file->cursor.column) move_left(true);
 }
 
 static inline void move_end_line() {
     struct file* file = buffers[active];
-    
     while (file->cursor.column < file->logical.lines[file->cursor.line].length)
         move_right(true);
 }
@@ -1370,16 +1532,13 @@ static inline void move_top_file() {
 
 static inline void move_bottom_file() {
     struct file* file = buffers[active];
-    while (file->cursor.line < file->logical.count - 1)
-        move_down();
+    while (file->cursor.line < file->logical.count - 1) move_down();
     move_down();
 }
 
 static inline void move_word_left() {
     struct file* file = buffers[active];
-    
     do move_left(true);
-    
     while ((file->cursor.line or file->cursor.column) and
            ((file->cursor.column == file->logical.lines[file->cursor.line].length or
              not isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column])) or
@@ -1388,11 +1547,8 @@ static inline void move_word_left() {
 }
 
 static inline void move_word_right() {
-    
     struct file* file = buffers[active];
-    
     do move_right(true);
-    
     while ((file->cursor.line != file->logical.count - 1 or
             file->cursor.column != file->logical.lines[file->cursor.line].length) and
            ((file->cursor.column == file->logical.lines[file->cursor.line].length or
@@ -1400,7 +1556,6 @@ static inline void move_word_right() {
             (not file->cursor.column or
              not isalnum(file->logical.lines[file->cursor.line].line[file->cursor.column - 1]))));
 }
-
 
 
 static void interpret_escape_code() {
@@ -1423,23 +1578,75 @@ static void interpret_escape_code() {
             if (c == 97) {
                 read_byte(); read_byte();
                 
-                file->scroll_step++;
-                if (file->scroll_step == file->options.scroll_speed) {
+                file->scroll_counter++;
+                if (file->scroll_counter == file->options.scroll_speed) {
                     move_down();
-                    file->scroll_step = 0;
+                    file->scroll_counter = 0;
                 }
             } else if (c == 96) {
                 read_byte(); read_byte();
                 
-                file->scroll_step++;
-                if (file->scroll_step == file->options.scroll_speed) {
+                file->scroll_counter++;
+                if (file->scroll_counter == file->options.scroll_speed) {
                     move_up();
-                    file->scroll_step = 0;
+                    file->scroll_counter = 0;
                 }
             }
         }
     } else if (c == 27) file->mode = edit_mode;
 }
+
+
+
+
+
+
+
+
+
+
+enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
+    CXString spelling = clang_getCursorSpelling(cursor);
+    CXString kind = clang_getCursorKindSpelling(clang_getCursorKind(cursor));
+
+    printf("Cursor '%s' of kind '%s'.\n", clang_getCString(spelling), clang_getCString(kind));
+
+    CXSourceRange range = clang_getCursorExtent(cursor);
+    CXSourceLocation begin = clang_getRangeStart(range);
+    CXSourceLocation end = clang_getRangeEnd(range);
+
+    unsigned int line, column, offset;
+    clang_getSpellingLocation(begin, NULL, &line, &column, &offset);
+    printf("begin: (%u,%u) : %u \n", line, column, offset);
+
+    clang_getSpellingLocation(end, NULL, &line, &column, &offset);
+    printf("end: (%u,%u) : %u \n", line, column, offset);
+
+    clang_disposeString(spelling);
+    clang_disposeString(kind);
+
+    return CXChildVisit_Recurse;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 int main(const int argc, const char** argv) {
@@ -1459,11 +1666,17 @@ int main(const int argc, const char** argv) {
         
         if (file->mode == insert_mode) {
             
-            if (c == 'f' and p == 'w' or c == 'j' and p == 'o') { backspace(); file->mode = edit_mode; }
+            if (c == 'f' and p == 'w' or c == 'j' and p == 'o') {
+                
+                // undo();
+                backspace(false); // temporary
+                
+                file->mode = edit_mode;
+            }
             else if (c == 27) interpret_escape_code();
-            else if (c == 127) backspace();
-            else if (c == 13) insert('\n');
-            else insert(c);
+            else if (c == 127) backspace(true);
+            else if (c == 13) insert('\n', true);
+            else insert(c, true);
             
         } else if (file->mode == edit_mode) {
             
@@ -1512,28 +1725,4 @@ int main(const int argc, const char** argv) {
     }
     clipboard_free(system_clipboard);
     restore_terminal();
-}
-
-
-enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
-    CXString spelling = clang_getCursorSpelling(cursor);
-    CXString kind = clang_getCursorKindSpelling(clang_getCursorKind(cursor));
-
-    printf("Cursor '%s' of kind '%s'.\n", clang_getCString(spelling), clang_getCString(kind));
-
-    CXSourceRange range = clang_getCursorExtent(cursor);
-    CXSourceLocation begin = clang_getRangeStart(range);
-    CXSourceLocation end = clang_getRangeEnd(range);
-
-    unsigned int line, column, offset;
-    clang_getSpellingLocation(begin, NULL, &line, &column, &offset);
-    printf("begin: (%u,%u) : %u \n", line, column, offset);
-
-    clang_getSpellingLocation(end, NULL, &line, &column, &offset);
-    printf("end: (%u,%u) : %u \n", line, column, offset);
-
-    clang_disposeString(spelling);
-    clang_disposeString(kind);
-
-    return CXChildVisit_Recurse;
 }
