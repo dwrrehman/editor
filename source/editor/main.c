@@ -55,6 +55,10 @@ typedef int64_t i64;
 #define show_line_numbers 0x02
 #define use_txt_extension_when_absent 0x04
 #define use_c_syntax_highlighting 0x08
+#define should_autosave 0x10
+//#define _unused_option_1 0x20
+//#define _unused_option_2 0x40
+//#define _unused_option_3 0x80
 
 struct location {
     i32 line;
@@ -150,7 +154,8 @@ static const struct options default_options = {
         = show_status
         | show_line_numbers
         | use_txt_extension_when_absent
-        | use_c_syntax_highlighting,
+        | use_c_syntax_highlighting
+        | should_autosave,
 };
 
 struct textbox {
@@ -479,8 +484,7 @@ static inline void display() {
     
     if (file->options.flags & show_status) {
                                 
-        length += sprintf(window.screen + length, "\033[7m\033[38;5;252m");
-        
+        length += sprintf(window.screen + length, "\033[7m\033[38;5;246m");
         char datetime[16] = {0};
         get_datetime(datetime);
         
@@ -1650,8 +1654,6 @@ static void interpret_escape_code() {
 //    return CXChildVisit_Recurse;
 //}
 
-
-
 static inline void perform_action() {
     
     struct file* file = buffers[active];
@@ -1664,7 +1666,9 @@ static inline void perform_action() {
     else if (file->head->type == insert_action) {
 //        for (nat i = 0; i < action->length; i++)
 //            text[(*length)++] = action->text[i];
-    } else abort();
+    }
+    
+    else abort();
 }
 
 static inline void reverse_action() {
@@ -1772,8 +1776,6 @@ int main(const int argc, const char** argv) {
         struct file* file = buffers[active];
         resize_window();
         display();
-        autosave();
-                
         read(0, &c, 1);
         
         if (file->mode == insert_mode) {
@@ -1824,15 +1826,23 @@ int main(const int argc, const char** argv) {
             else if (c == 'Q') { if (file->saved or confirmed("discard unsaved changes")) close_buffer(); }
             else if (c == 'j') { if (active) active--; }
             else if (c == ';') { if (active < buffer_count - 1) active++; }
+            
             else if (c == '0') strcpy(file->message, "");
             else if (c == 'l') file->options.flags ^= show_line_numbers;
             else if (c == 's') file->options.flags ^= show_status;
-            else if (c == 'c') file->options.flags ^= use_c_syntax_highlighting;
-            
+            else if (c == 'c') {
+                file->options.flags ^= use_c_syntax_highlighting;
+                sprintf(file->message, "c syntax %s" , (file->options.flags & use_c_syntax_highlighting) ?  "on" : "off");
+            } else if (c == 'b') {
+                file->options.flags ^= should_autosave;
+                sprintf(file->message, "autosave %s" , (file->options.flags & should_autosave) ?  "on" : "off");
+            }
         } else {
             sprintf(file->message, "unknown mode: %d", file->mode);
             file->mode = edit_mode;
         }
+        
+        if (file->options.flags & should_autosave) autosave();
         p = c;
     }
     clipboard_free(system_clipboard);
