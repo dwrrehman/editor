@@ -247,6 +247,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = JTMD2SW5KN;
 				ENABLE_HARDENED_RUNTIME = YES;
+				GCC_WARN_PEDANTIC = YES;
 				HEADER_SEARCH_PATHS = (
 					/usr/local/Cellar/llvm/10.0.1_1/include,
 					/Users/deniylreimn/Documents/projects/editor/lib/libclipboard/include,
@@ -262,6 +263,16 @@
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/Cellar/llvm/10.0.1_1/include;
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wpedantic",
+					"-Wextra",
+					"-Weverything",
+					"-Wsign-conversion",
+					"-Wshadow",
+					"-Wimplicit-int-conversion",
+					"-Wfloat-conversion",
+				);
 			};
 			name = Debug;
 		};
@@ -273,6 +284,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				DEVELOPMENT_TEAM = JTMD2SW5KN;
 				ENABLE_HARDENED_RUNTIME = YES;
+				GCC_WARN_PEDANTIC = YES;
 				HEADER_SEARCH_PATHS = (
 					/usr/local/Cellar/llvm/10.0.1_1/include,
 					/Users/deniylreimn/Documents/projects/editor/lib/libclipboard/include,
@@ -288,6 +300,16 @@
 				);
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SYSTEM_HEADER_SEARCH_PATHS = /usr/local/Cellar/llvm/10.0.1_1/include;
+				WARNING_CFLAGS = (
+					"-Wall",
+					"-Wpedantic",
+					"-Wextra",
+					"-Weverything",
+					"-Wsign-conversion",
+					"-Wshadow",
+					"-Wimplicit-int-conversion",
+					"-Wfloat-conversion",
+				);
 			};
 			name = Release;
 		};
