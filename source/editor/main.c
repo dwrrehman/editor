@@ -439,51 +439,43 @@ static inline void display() {
     double f = floor(log10((double) file->logical.count));
     file->line_number_width = (i8) f + 1;
     file->line_number_cursor_offset = (file->options.flags & show_line_numbers) ? file->line_number_width + 2 : 0;
-    
-    i16 screen_line = 0;
-    i32 limit = min(file->visual_origin.line + window.rows - (file->options.flags & show_status), file->render.count);
-    
+
     i32 line_number = 0;
-    for (i32 i = 0; i < file->visual_origin.line; i++) {
-        if (not file->render.lines[i].continued) line_number++;
-    }
+    for (i32 i = 0; i < file->visual_origin.line; i++)
+        if (not file->render.lines[i].continued)
+            line_number++;
     
-    for (i32 line = file->visual_origin.line; line < limit; line++) {
+    for (i16 screen_line = 0; screen_line < window.rows - (file->options.flags & show_status); screen_line++) {
         
-        if (file->options.flags & show_line_numbers) {
-            if (not file->render.lines[line].continued) length += sprintf(window.screen + length,
-                                                                          "\033[38;5;59m%*d\033[0m  ",
-                                                                          file->line_number_width, ++line_number);
-            else length += sprintf(window.screen + length, "%*s  " , file->line_number_width, " ");
-        }
+        i32 line = (i32)screen_line + file->visual_origin.line;
+        if (line < file->render.count) {
         
-        for (i32 column = 0, visual_column = 0; column < file->render.lines[line].length; column++) {
-            u8 c = file->render.lines[line].line[column];
-            if (visual_column >= file->visual_origin.column and
-                visual_column < file->visual_origin.column + window.columns - file->line_number_cursor_offset) {
-                if (c == '\t' or c == '\n') window.screen[length++] = ' ';
-                else window.screen[length++] = (char) c;
+            if (file->options.flags & show_line_numbers) {
+                if (not file->render.lines[line].continued) length += sprintf(window.screen + length, "\033[38;5;59m%*d\033[0m  ", file->line_number_width, ++line_number);
+                else length += sprintf(window.screen + length, "%*s  " , file->line_number_width, " ");
             }
-            if ((c >> 6) != 2) visual_column++;
+            
+            for (i32 column = 0, visual_column = 0; column < file->render.lines[line].length; column++) {
+                u8 c = file->render.lines[line].line[column];
+                if (visual_column >= file->visual_origin.column and
+                    visual_column < file->visual_origin.column + window.columns - file->line_number_cursor_offset) {
+                    if (c == '\t' or c == '\n') window.screen[length++] = ' ';
+                    else window.screen[length++] = (char) c;
+                }
+                if ((c >> 6) != 2) visual_column++;
+            }
         }
+        
         window.screen[length++] = '\033';
         window.screen[length++] = '[';
         window.screen[length++] = 'K';
-        window.screen[length++] = '\r';
-        window.screen[length++] = '\n';
-        screen_line++;
-    }
-    
-    for (int line = screen_line; line < window.rows - (file->options.flags & show_status); line++) {
-        window.screen[length++] = '\033';
-        window.screen[length++] = '[';
-        window.screen[length++] = 'K';
-        window.screen[length++] = '\r';
-        window.screen[length++] = '\n';
+        if (screen_line < window.rows - 1) {
+            window.screen[length++] = '\r';
+            window.screen[length++] = '\n';
+        }
     }
     
     if (file->options.flags & show_status) {
-                                
         length += sprintf(window.screen + length, "\033[7m\033[38;5;246m");
         char datetime[16] = {0};
         get_datetime(datetime);
@@ -1776,6 +1768,8 @@ int main(const int argc, const char** argv) {
         struct file* file = buffers[active];
         resize_window();
         display();
+        if (file->options.flags & should_autosave) autosave();
+        
         read(0, &c, 1);
         
         if (file->mode == insert_mode) {
@@ -1828,8 +1822,10 @@ int main(const int argc, const char** argv) {
             else if (c == ';') { if (active < buffer_count - 1) active++; }
             
             else if (c == '0') strcpy(file->message, "");
+            
             else if (c == 'l') file->options.flags ^= show_line_numbers;
             else if (c == 's') file->options.flags ^= show_status;
+            
             else if (c == 'c') {
                 file->options.flags ^= use_c_syntax_highlighting;
                 sprintf(file->message, "c syntax %s" , (file->options.flags & use_c_syntax_highlighting) ?  "on" : "off");
@@ -1841,8 +1837,7 @@ int main(const int argc, const char** argv) {
             sprintf(file->message, "unknown mode: %d", file->mode);
             file->mode = edit_mode;
         }
-        
-        if (file->options.flags & should_autosave) autosave();
+                
         p = c;
     }
     clipboard_free(system_clipboard);
