@@ -79,18 +79,6 @@ struct window {
     i32 _padding;
 };
 
-struct colored_range {
-    i32 start;
-    i32 end;
-    i16 color;
-};
-
-struct coloring {
-    struct colored_range* ranges;
-    i32 count;
-    i32 capacity;
-};
-
 struct logical_line {
     u8* line;
     i32 capacity;
@@ -102,8 +90,7 @@ struct render_line {
     i32 capacity;
     i32 length;
     i32 visual_length;
-    i32 continued;
-    struct coloring coloring;
+    i32 continued; // should be i8, but padding.
 };
 
 struct logical_lines {
@@ -114,6 +101,19 @@ struct logical_lines {
 
 struct render_lines {
     struct render_line* lines;
+    i32 count;
+    i32 capacity;
+};
+
+struct colored_range {
+    struct location start;
+    struct location end;
+    i16 color;
+    i16 _padding;
+};
+
+struct coloring {
+    struct colored_range* ranges;
     i32 count;
     i32 capacity;
 };
@@ -204,6 +204,7 @@ struct file {
     struct location visual_origin;
     struct logical_lines logical;
     struct render_lines render;
+    struct coloring coloring;
     struct options options;
     struct action* tree;
     struct action* head;
@@ -452,11 +453,23 @@ static inline void resize_window() {
 static inline void syntax_highlight() {
     
     struct file* file = buffers[active];
-
-    if (not (file->options.flags & use_c_syntax_highlighting))
     
-            return;
-
+    file->coloring.count = 0;
+    
+    if (not (file->options.flags & use_c_syntax_highlighting))
+        
+        
+        
+        
+        
+        
+                abort();
+    
+    
+    
+    
+    
+    
     const char* keywords[] = {
         "0", "1",  "(", ")",
         "{", "}", "=", "+",
@@ -487,30 +500,39 @@ static inline void syntax_highlight() {
         33, 33, 33, 46,
     };
     
-//    for (i32 line = 0; line < file->render.count; line++) {
+    
+//    struct location start = {0, 0};
+//    struct location end = {0, 0 + (i32)strlen("float")};
 //
-//        file->render.lines[line].coloring.count = 0;
+//    if (file->coloring.count + 1 >= file->coloring.capacity)
+//        file->coloring.ranges = realloc(file->coloring.ranges, sizeof(struct colored_range) * (size_t)(file->coloring.capacity = 2 * (file->coloring.capacity + 1)));
 //
-//        for (i32 column = 0; column < file->render.lines[line].length; column++) {
-//            for (i32 k = 0; keywords[k]; k++) {
+//    file->coloring.ranges[file->coloring.count].start = start;
+//    file->coloring.ranges[file->coloring.count].end = end;
+//    file->coloring.ranges[file->coloring.count++].color = 214;
 //
-//                if (file->render.lines[line].length - column >= (i32)strlen(keywords[k]) and
-//                    not strncmp((char*)file->render.lines[line].line + column, keywords[k], strlen(keywords[k]))) {
-//
-//                    i32 start = column;
-//                    i32 end = column + (i32)strlen(keywords[k]);
-//
-//                    if (file->render.lines[line].coloring.count + 1 >= file->render.lines[line].coloring.capacity)
-//                        file->render.lines[line].coloring.ranges = realloc(file->render.lines[line].coloring.ranges, sizeof(struct colored_range) *
-//                                                                           (size_t)(file->render.lines[line].coloring.capacity = 2 * (file->render.lines[line].coloring.capacity + 1)));
-//
-//                    file->render.lines[line].coloring.ranges[file->render.lines[line].coloring.count].start = start;
-//                    file->render.lines[line].coloring.ranges[file->render.lines[line].coloring.count].end = end;
-//                    file->render.lines[line].coloring.ranges[file->render.lines[line].coloring.count++].color = colors[k];
-//                }
-//            }
-//        }
-//    }
+//    return;
+    
+    for (i32 line = 0; line < file->render.count; line++) {
+        for (i32 column = 0; column < file->render.lines[line].length; column++) {
+            for (i32 k = 0; keywords[k]; k++) {
+                
+                if (file->render.lines[line].length - column >= (i32)strlen(keywords[k]) and
+                    not strncmp((char*)file->render.lines[line].line + column, keywords[k], strlen(keywords[k]))) {
+                    
+                    struct location start = {line, column};
+                    struct location end = {line, column + (i32)strlen(keywords[k])};
+                    
+                    if (file->coloring.count + 1 >= file->coloring.capacity)
+                        file->coloring.ranges = realloc(file->coloring.ranges, sizeof(struct colored_range) * (size_t)(file->coloring.capacity = 2 * (file->coloring.capacity + 1)));                    
+                    
+                    file->coloring.ranges[file->coloring.count].start = start;
+                    file->coloring.ranges[file->coloring.count].end = end;
+                    file->coloring.ranges[file->coloring.count++].color = colors[k];
+                }
+            }
+        }
+    }
 }
 
 
@@ -518,13 +540,9 @@ static inline void display() {
     
     struct file* file = buffers[active];
     
-    
-    
-    
     syntax_highlight();
     
-    
-    
+    sprintf(file->message, "cc = %u", file->coloring.count);
     
     i32 length = 9;
     memcpy(window.screen,"\033[?25l\033[H", 9);
@@ -552,17 +570,15 @@ static inline void display() {
                 u8 c = file->render.lines[line].line[column];
                 if (visual_column >= file->visual_origin.column and
                     visual_column < file->visual_origin.column + window.columns - file->line_number_cursor_offset) {
-                                    
-                    
-                    
-                    ///TODO: perform an optimization on this code: assume that the ranges are given in order, always. thats important for performance.
-                    
-                    for (i32 range = 0; range < file->render.lines[line].coloring.count; range++) {
-                        if (column == file->render.lines[line].coloring.ranges[range].start) {
-                            length += sprintf(window.screen + length, "\033[38;5;%hdm", file->render.lines[line].coloring.ranges[range].color);
+                                        
+                    for (i32 range = 0; range < file->coloring.count; range++) {
+                        if (line == file->coloring.ranges[range].start.line and
+                            column == file->coloring.ranges[range].start.column) {
+                            length += sprintf(window.screen + length, "\033[38;5;%hdm", file->coloring.ranges[range].color);
                         }
                         
-                        if (column == file->render.lines[line].coloring.ranges[range].end) {
+                        if (line == file->coloring.ranges[range].end.line and
+                            column == file->coloring.ranges[range].end.column) {
                             window.screen[length++] = '\033';
                             window.screen[length++] = '[';
                             window.screen[length++] = 'm';
@@ -1140,9 +1156,6 @@ static inline void open_buffer(const char* given_filename) {
     strncpy(buffer->filename, given_filename, sizeof buffer->filename);
     sprintf(buffer->autosave_name, "%s/%x/", autosave_directory, buffer->id);
     
-    buffer->tree = calloc(1, sizeof(struct action));
-    buffer->head = buffer->tree;
-
     char* line = NULL;
     size_t line_capacity = 0;
     
