@@ -83,6 +83,7 @@ struct colored_range {
     i32 start;
     i32 end;
     i16 color;
+    i16 _padding;
 };
 
 struct coloring {
@@ -289,7 +290,7 @@ static inline void autosave() {
             mkdir(buffer->autosave_name, 0777);
 
             FILE* savefile = fopen(filename, "w");
-            if (!savefile) {
+            if (not savefile) {
                 sprintf(buffer->message, "could not autosave: %s", strerror(errno));
                 continue;
             }
@@ -449,43 +450,43 @@ static inline void resize_window() {
     }
 }
 
-static inline void syntax_highlight() {
+//static inline void syntax_highlight() {
     
-    struct file* file = buffers[active];
+//    struct file* file = buffers[active];
+//
+//    if (not (file->options.flags & use_c_syntax_highlighting))
+//
+//            return;
 
-    if (not (file->options.flags & use_c_syntax_highlighting))
+//    const char* keywords[] = {
+//        "0", "1",  "(", ")",
+//        "{", "}", "=", "+",
+//
+//        "exit", "puts", "MACRO",
+//
+//        "void", "int", "static", "inline",
+//        "struct", "unsigned", "sizeof", "const",
+//
+//        "char", "for", "if", "else",
+//        "while", "break", "continue", "long",
+//
+//        "float", "double", "short", "type",
+//    0};
     
-            return;
-
-    const char* keywords[] = {
-        "0", "1",  "(", ")",
-        "{", "}", "=", "+",
-        
-        "exit", "puts", "MACRO",
-        
-        "void", "int", "static", "inline",
-        "struct", "unsigned", "sizeof", "const",
-        
-        "char", "for", "if", "else",
-        "while", "break", "continue", "long",
-        
-        "float", "double", "short", "type",
-    0};
-    
-    i16 colors[] = {
-        214, 214, 246, 246,
-        246, 246, 246, 246,
-        
-        41, 41, 52,
-        
-        33, 33, 33, 33,
-        33, 33, 33, 33,
-        
-        33, 33, 33, 33,
-        33, 33, 33, 33,
-        
-        33, 33, 33, 46,
-    };
+//    i16 colors[] = {
+//        214, 214, 246, 246,
+//        246, 246, 246, 246,
+//
+//        41, 41, 52,
+//
+//        33, 33, 33, 33,
+//        33, 33, 33, 33,
+//
+//        33, 33, 33, 33,
+//        33, 33, 33, 33,
+//
+//        33, 33, 33, 46,
+//    };
     
 //    for (i32 line = 0; line < file->render.count; line++) {
 //
@@ -511,20 +512,11 @@ static inline void syntax_highlight() {
 //            }
 //        }
 //    }
-}
-
+//}
 
 static inline void display() {
     
     struct file* file = buffers[active];
-    
-    
-    
-    
-    syntax_highlight();
-    
-    
-    
     
     i32 length = 9;
     memcpy(window.screen,"\033[?25l\033[H", 9);
@@ -541,6 +533,7 @@ static inline void display() {
     for (i16 screen_line = 0; screen_line < window.rows - (file->options.flags & show_status); screen_line++) {
         
         i32 line = (i32)screen_line + file->visual_origin.line;
+        
         if (line < file->render.count) {
         
             if (file->options.flags & show_line_numbers) {
@@ -548,25 +541,23 @@ static inline void display() {
                 else length += sprintf(window.screen + length, "%*s  " , file->line_number_width, " ");
             }
             
+            i32 range = 0;
             for (i32 column = 0, visual_column = 0; column < file->render.lines[line].length; column++) {
                 u8 c = file->render.lines[line].line[column];
                 if (visual_column >= file->visual_origin.column and
                     visual_column < file->visual_origin.column + window.columns - file->line_number_cursor_offset) {
-                                    
                     
-                    
-                    ///TODO: perform an optimization on this code: assume that the ranges are given in order, always. thats important for performance.
-                    
-                    for (i32 range = 0; range < file->render.lines[line].coloring.count; range++) {
+                    if (range < file->render.lines[line].coloring.count) {
                         if (column == file->render.lines[line].coloring.ranges[range].start) {
                             length += sprintf(window.screen + length, "\033[38;5;%hdm", file->render.lines[line].coloring.ranges[range].color);
                         }
-                        
+                            
                         if (column == file->render.lines[line].coloring.ranges[range].end) {
                             window.screen[length++] = '\033';
                             window.screen[length++] = '[';
                             window.screen[length++] = 'm';
                         }
+                        if (column >= file->render.lines[line].coloring.ranges[range].end) range++;
                     }
                     
                     if (c == '\t' or c == '\n') window.screen[length++] = ' ';
@@ -899,7 +890,10 @@ static inline void insert(u8 c, i8 record_action) {
     struct logical_line* line = file->logical.lines + file->cursor.line;
     
     i32 at = file->cursor.column;
-    if (line->length + 1 >= line->capacity) line->line = realloc(line->line, (size_t)(line->capacity = 2 * (line->capacity + 1)));
+    if (line->length + 1 >= line->capacity)
+        line->line = realloc(line->line, (size_t)(line->capacity = 2 * (line->capacity + 1)));
+    
+    
     memmove(line->line + at + 1, line->line + at, (size_t)(line->length - at));
     ++line->length;
     line->line[at] = c;
@@ -908,6 +902,9 @@ static inline void insert(u8 c, i8 record_action) {
     
     if (c < 128) move_right(1);
     else {
+        
+        if (not file) abort();
+        
         file->cursor.column++;
         file->render_cursor.column++;
         
@@ -1091,19 +1088,21 @@ static inline void destroy_buffer(struct file* file) {
 }
 
 static inline void close_buffer() {
-    struct file* swap = buffers[--buffer_count];
-    buffers[buffer_count] = buffers[active];
-    buffers[active] = swap;
-    destroy_buffer(buffers[buffer_count]);
-    active = buffer_count - 1;
+    if (not buffer_count) return;
+    destroy_buffer(buffers[active]);
+    memmove(buffers + active, buffers + active + 1, (size_t)(buffer_count - (active + 1)));
+    if (active == --buffer_count) active--;
+    buffers = realloc(buffers, sizeof(struct file*) * (size_t) buffer_count);
 }
 
 static inline struct file* create_empty_buffer() {
     
     struct file* file = calloc(1, sizeof(struct file));
-    file->logical.lines = realloc(file->logical.lines, sizeof(struct logical_line) * (size_t)(file->logical.capacity = 2 * (file->logical.capacity + 1)));
+    
+    file->logical.lines = realloc(file->logical.lines, sizeof(struct logical_line));
     file->logical.lines[file->logical.count++] = (struct logical_line) {0};
-    file->render.lines = realloc(file->render.lines, sizeof(struct render_line) * (size_t)(file->render.capacity = 2 * (file->render.capacity + 1)));
+    
+    file->render.lines = realloc(file->render.lines, sizeof(struct render_line));
     file->render.lines[file->render.count++] = (struct render_line) {0};
     
     file->tree = calloc(1, sizeof(struct action));
@@ -1209,6 +1208,15 @@ static inline void open_buffer(const char* given_filename) {
             }
         }
     }
+    
+    
+    if (not buffer->logical.count) {
+        buffer->logical.lines = realloc(buffer->logical.lines, sizeof(struct logical_line));
+        buffer->logical.lines[buffer->logical.count++] = (struct logical_line) {0};
+        buffer->render.lines = realloc(buffer->render.lines, sizeof(struct render_line));
+        buffer->render.lines[buffer->render.count++] = (struct render_line) {0};
+    }
+    
     fclose(file);
     free(line);
     active = buffer_count;
@@ -1758,7 +1766,7 @@ static inline void move_top_file() {
 
 static inline void move_bottom_file() {
     struct file* file = buffers[active];
-    while (file->cursor.line < file->logical.count - 1) move_down();
+    while (file->render_cursor.line < file->render.count - 1) move_down();
     move_down();
 }
 
