@@ -1,9 +1,61 @@
 known bugs in the better editor code:
 -------------------------------------
 
-
 	- its possible to go into an infinite loop, if the editor is fed only unicode characters which arent well formed, i think.
 
 	- there is a rendering bug where a unicode character will get cut off, specfcially shifting the view. there will be some question marks, which will get printed because of the leading head of the unicode chracter not being displayed. hard to fix.
 
+	- there are actually alot of bugs with rendering of view shifting + line wrapping,  and unicode characters...
+		- i have to work on those like a lot. complete rework.
+
+
+
+
+	- there is a performance bug with cutting text, where it takes literally forever, to cut lines which are really long.
+	- specfically, if you cut from the beginning of the line, to somewhere in the middle. takes so long.
+
+
+
+
+	- word move left  :  doesnt recognize a word near the start of the line, i think.
+
+
+
+	- status bar doesnt go the whole way to the end of the line, it seems.
+
 	- 
+
+
+
+
+
+
+
+
+
+synopsis:
+-------------------
+
+	
+
+	- word move left bug
+
+	- status bar length rendering bug 
+
+	- delete text and insert text on line performance bug 
+
+	- unicode char view shifting render bug
+
+	- unicode fuzz-testing infinite loop bug.
+
+
+
+
+
+
+
+
+
+
+
+

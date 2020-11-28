@@ -29,7 +29,6 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/types.h>
-#include <stdnoreturn.h>
 #include <clang-c/Index.h>
 #include "libclipboard.h"
 #pragma clang diagnostic pop
@@ -304,12 +303,6 @@ static inline void autosave() {
         }
         buffers[active]->autosave_counter = 0;
     }
-}
-
-noreturn static inline void signal_interrupt(__attribute__((unused)) int _) {
-    printf("error: process interrupted, dump() & exit()'ing...\n");
-    dump();
-    exit(1);
 }
 
 static inline void restore_terminal() {
@@ -2043,6 +2036,13 @@ static inline void alternate_down() {
         file->head->choice--;
         redo();
     }
+}
+
+static inline void signal_interrupt(__attribute__((unused)) int _) {
+    if (not confirmed("signal interrupt, terminate? ")) return;
+    printf("error: process interrupted, dump() & exit()'ing...\n");
+    dump();
+    exit(1);
 }
 
 
