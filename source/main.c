@@ -5,14 +5,6 @@
 ///   Created on: 2005122.113101
 ///  Modified on: 2011157
 ///
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdocumentation-unknown-command"
-#pragma clang diagnostic ignored "-Wpadded"
-#pragma clang diagnostic ignored "-Wreserved-id-macro"
-#pragma clang diagnostic ignored "-Wnullability-completeness"
-#pragma clang diagnostic ignored "-Wnullability-extension"
-#pragma clang diagnostic ignored "-Wundef"
-#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
 #include <iso646.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -29,9 +21,6 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <sys/types.h>
-#include <clang-c/Index.h>
-#include "libclipboard.h"
-#pragma clang diagnostic pop
 
 static const char* autosave_directory = "/Users/deniylreimn/Documents/documents/other/autosaves/";
 
