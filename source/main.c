@@ -111,7 +111,7 @@ struct action {
     struct action** children;
     struct action* parent;
     u8* text;
-        
+    
     struct location pre_begin;
     struct location pre_cursor;
     struct location pre_render_cursor;
@@ -153,7 +153,7 @@ struct options {
 };
 
 static const struct options default_options = {
-    .wrap_width = 128,
+    .wrap_width = 0,
     .tab_width = 8,
     .scroll_speed = 4,
     .negative_view_shift_margin = 5,
@@ -212,6 +212,7 @@ struct file {
     char autosave_name[4096];
 };
 
+static char* system_clipboard = NULL;
 static i16 buffer_count = 0, active = 0;
 static struct file** buffers = NULL;
 static struct window window = {0};
@@ -339,7 +340,7 @@ static inline void render_line() {
     for (i32 column = file->cursor.column; column < file->logical.lines[file->cursor.line].length; column++) {
         u8 c = file->logical.lines[file->cursor.line].line[column];
         
-        if (file->render.lines[line].visual_length == file->options.wrap_width) {
+        if (file->options.wrap_width and file->render.lines[line].visual_length == file->options.wrap_width) {
             
             line++;
             if (line >= file->render.count or
@@ -368,7 +369,7 @@ static inline void render_line() {
             i32 at = file->render.lines[line].visual_length;
             i8 count = 0;
             do {
-                if (at >= file->options.wrap_width) break;
+                if (file->options.wrap_width and at >= file->options.wrap_width) break;
                 at++; count++;
             } while (at % file->options.tab_width);
             if (file->render.lines[line].length + count >= file->render.lines[line].capacity)
@@ -432,69 +433,6 @@ static inline void resize_window() {
     }
 }
 
-//static inline void syntax_highlight() {
-    
-//    struct file* file = buffers[active];
-//
-//    if (not (file->options.flags & use_c_syntax_highlighting))
-//
-//            return;
-
-//    const char* keywords[] = {
-//        "0", "1",  "(", ")",
-//        "{", "}", "=", "+",
-//
-//        "exit", "puts", "MACRO",
-//
-//        "void", "int", "static", "inline",
-//        "struct", "unsigned", "sizeof", "const",
-//
-//        "char", "for", "if", "else",
-//        "while", "break", "continue", "long",
-//
-//        "float", "double", "short", "type",
-//    0};
-    
-//    i16 colors[] = {
-//        214, 214, 246, 246,
-//        246, 246, 246, 246,
-//
-//        41, 41, 52,
-//
-//        33, 33, 33, 33,
-//        33, 33, 33, 33,
-//
-//        33, 33, 33, 33,
-//        33, 33, 33, 33,
-//
-//        33, 33, 33, 46,
-//    };
-    
-//    for (i32 line = 0; line < file->render.count; line++) {
-//
-//        file->render.lines[line].coloring.count = 0;
-//
-//        for (i32 column = 0; column < file->render.lines[line].length; column++) {
-//            for (i32 k = 0; keywords[k]; k++) {
-//
-//                if (file->render.lines[line].length - column >= (i32)strlen(keywords[k]) and
-//                    not strncmp((char*)file->render.lines[line].line + column, keywords[k], strlen(keywords[k]))) {
-//
-//                    i32 start = column;
-//                    i32 end = column + (i32)strlen(keywords[k]);
-//
-//                    if (file->render.lines[line].coloring.count + 1 >= file->render.lines[line].coloring.capacity)
-//                        file->render.lines[line].coloring.ranges = realloc(file->render.lines[line].coloring.ranges, sizeof(struct colored_range) *
-//                                                                           (size_t)(file->render.lines[line].coloring.capacity = 2 * (file->render.lines[line].coloring.capacity + 1)));
-//
-//                    file->render.lines[line].coloring.ranges[file->render.lines[line].coloring.count].start = start;
-//                    file->render.lines[line].coloring.ranges[file->render.lines[line].coloring.count].end = end;
-//                    file->render.lines[line].coloring.ranges[file->render.lines[line].coloring.count++].color = colors[k];
-//                }
-//            }
-//        }
-//    }
-//}
 
 static inline void display() {
     
@@ -596,7 +534,7 @@ static inline void display() {
     write(1, window.screen, (size_t) length);
 }
 
-static inline void move_left(bool change_desired) {
+static inline void move_left(i8 change_desired) {
 
     struct file* file = buffers[active];
     
@@ -665,7 +603,7 @@ static inline void move_left(bool change_desired) {
     if (change_desired) file->visual_desired = file->visual_cursor.column;
 }
 
-static inline void move_right(bool change_desired) {
+static inline void move_right(i8 change_desired) {
     
     struct file* file = buffers[active];
     
@@ -1152,7 +1090,7 @@ static inline void open_buffer(const char* given_filename) {
         for (i32 column = 0; column < buffer->logical.lines[logical_line].length; column++) {
             u8 c = buffer->logical.lines[logical_line].line[column];
             
-            if (buffer->render.lines[this_line].visual_length == buffer->options.wrap_width) {
+            if (buffer->options.wrap_width and buffer->render.lines[this_line].visual_length == buffer->options.wrap_width) {
                 if (buffer->render.count + 1 >= buffer->render.capacity)
                     buffer->render.lines =
                     realloc(buffer->render.lines,
@@ -1166,7 +1104,7 @@ static inline void open_buffer(const char* given_filename) {
                 i32 at = buffer->render.lines[this_line].visual_length;
                 i8 count = 0;
                 do {
-                    if (at >= buffer->options.wrap_width) break;
+                    if (buffer->options.wrap_width and at >= buffer->options.wrap_width) break;
                     at++; count++;
                 } while (at % buffer->options.tab_width);
                 if (buffer->render.lines[this_line].length + count >= buffer->render.lines[this_line].capacity)
@@ -1190,8 +1128,7 @@ static inline void open_buffer(const char* given_filename) {
             }
         }
     }
-    
-    
+         
     if (not buffer->logical.count) {
         buffer->logical.lines = realloc(buffer->logical.lines, sizeof(struct logical_line));
         buffer->logical.lines[buffer->logical.count++] = (struct logical_line) {0};
@@ -1395,70 +1332,6 @@ static inline i8 confirmed(const char* question) {
     }
 }
 
-
-//static inline char** segment(char* line) {
-//    char** argv = NULL;
-//    nat argc = 0;
-//    char* c = strtok(line, " ");
-//    while (c) {
-//        argv = realloc(argv, sizeof(const char*) * (argc + 1));
-//        argv[argc++] = c;
-//        c = strtok(NULL, " ");
-//    }
-//    argv = realloc(argv, sizeof(const char*) * (argc + 1));
-//    (argv)[argc++] = NULL;
-//    return argv;
-//}
-
-//static inline void execute_shell_command(char* line) {
-//
-//    char** argv = segment(line);
-//    if (!argv[0]) return;
-//
-//    bool succeeded = false, foreground = true;
-//    if (line[strlen(line) - 1] == '&') {
-//        line[strlen(line) - 1] = '\0';
-//        foreground = false;
-//    }
-//
-//    char* original = getenv("PATH");
-//    char paths[strlen(original) + 4];
-//    strcpy(paths, original);
-//    strcat(paths, ":./");
-//
-//    char* path = strtok(paths, ":");
-//    while (path) {
-//        char command[strlen(path) + strlen(argv[0]) + 2];
-//        sprintf(command, "%s/%s", path, argv[0]);
-//        if (!access(command, X_OK)) {
-//            if (!fork()) execv(command, argv);
-//            if (foreground) wait(NULL);
-//            succeeded = true;
-//        }
-//        path = strtok(NULL, ":");
-//    }
-//    if (!succeeded) sprintf(file->message, "%s: command not found", argv[0]);
-//    free(argv);
-//}
-
-
-//static inline void shell() {
-//
-//    struct winsize window;
-//    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
-//    printf(set_cursor, window.ws_row, 0);
-//    printf("%s", clear_line);
-//    char prompt[128] = {0};
-//    sprintf(prompt, set_color ": " reset_color, shell_prompt_color);
-//    restore_terminal();
-//    char* line = dummy_readline(prompt);
-//    add_history(line);
-//    execute_shell_command(line, file);
-//    free(line);
-//    configure_terminal();
-//    if (file->options.pause_on_shell_command_output) read_unicode();
-//}
-
 static inline void save() {
 
     struct file* buffer = buffers[active];
@@ -1589,14 +1462,40 @@ static inline u8* get_selection_as_string(i32* out_buffer_length) {
     return buffer;
 }
 
-static inline void copy_selection_to_clipboard(clipboard_c* cb) {
-    struct file* file = buffers[active];
-    i32 buffer_length = 0;
-    u8* buffer = get_selection_as_string(&buffer_length);
-    sprintf(file->message, "copied %db", buffer_length);
-    clipboard_set_text(cb, (char*) buffer);
-    free(buffer);
+// static inline void clipboard_set_text(const char* string) {
+// 	clipboard_text = ;
+
+
+// }
+
+
+static inline char* clipboard_text() {
+
+	FILE* clipboard = popen("pbpaste", "r");
+	if (not clipboard) abort();
+
+	fseek(clipboard, 0, SEEK_END);
+	size_t length = (size_t) ftell(clipboard);
+	fseek(clipboard, 0, SEEK_SET); 
+	sprintf(buffers[active]->message, "pasting %lub...", length);
+
+	free(system_clipboard);
+	system_clipboard = malloc(length + 1);
+	fread(system_clipboard, 1, length, clipboard);
+	pclose(clipboard);
+
+	system_clipboard[length] = 0;
+	return system_clipboard;
 }
+
+// static inline void copy_selection_to_clipboard() {
+//     struct file* file = buffers[active];
+//     i32 buffer_length = 0;
+//     u8* buffer = get_selection_as_string(&buffer_length);
+//     sprintf(file->message, "copied %db", buffer_length);
+//     clipboard_set_text((char*) buffer);
+//     free(buffer);
+// }
 
 static inline void delete_selection() {
     struct file* file = buffers[active];
@@ -1649,19 +1548,6 @@ static inline void delete_selection() {
     file->head = new;
 }
 
-//static void set_pre_conditions(struct action *action) {
-//    struct file* file = buffers[active];
-//
-//    action->pre_begin = file->begin;
-//    action->pre_cursor = file->cursor;
-//    action->pre_render_cursor = file->render_cursor;
-//    action->pre_visual_cursor = file->visual_cursor;
-//    action->pre_visual_screen = file->visual_screen;
-//    action->pre_visual_origin = file->visual_origin;
-//    action->pre_visual_desired = file->visual_desired;
-//    action->pre_saved = file->saved;
-//}
-
 static inline void set_begin() {
     struct file* file = buffers[active];
     
@@ -1689,7 +1575,7 @@ static inline void set_begin() {
     new->post_begin = file->begin;
 }
 
-static inline void insert_text(const char* string) {
+static inline void insert_text(const char* string) { 
     struct file* file = buffers[active];
     
     struct action* new = calloc(1, sizeof(struct action));
@@ -1810,32 +1696,6 @@ static void interpret_escape_code() {
         }
     } else if (c == 27) file->mode = edit_mode;
 }
-
-    
-
-
-//enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
-//    CXString spelling = clang_getCursorSpelling(cursor);
-//    CXString kind = clang_getCursorKindSpelling(clang_getCursorKind(cursor));
-//
-//    printf("Cursor '%s' of kind '%s'.\n", clang_getCString(spelling), clang_getCString(kind));
-//
-//    CXSourceRange range = clang_getCursorExtent(cursor);
-//    CXSourceLocation begin = clang_getRangeStart(range);
-//    CXSourceLocation end = clang_getRangeEnd(range);
-//
-//    unsigned int line, column, offset;
-//    clang_getSpellingLocation(begin, NULL, &line, &column, &offset);
-//    printf("begin: (%u,%u) : %u \n", line, column, offset);
-//
-//    clang_getSpellingLocation(end, NULL, &line, &column, &offset);
-//    printf("end: (%u,%u) : %u \n", line, column, offset);
-//
-//    clang_disposeString(spelling);
-//    clang_disposeString(kind);
-//
-//    return CXChildVisit_Recurse;
-//}
 
 static inline const char* action_name(i8 action_type) {
     if (action_type == no_action) return "no action";
@@ -1968,23 +1828,6 @@ static inline void undo() {
     file->head = file->head->parent;
 }
 
-//static inline void hard_undo() {
-//    struct file* file = buffers[active];
-//
-//    if (not file->head->parent) return;
-//
-//    reverse_action();
-//
-//    if (file->head->parent->count > 1) {
-//        sprintf(file->message, "selected #%d from %d histories: undoing %d",
-//                file->head->parent->choice, file->head->parent->count,
-//                file->head->type);
-//    }
-//
-//    file->head = file->head->parent;
-//    file->head->count = 0; // this needs to be a decrement. pretty sure. only if the count is at least one. of coruse.s
-//}
-
 static inline void redo() {
     
     struct file* file = buffers[active];
@@ -2034,14 +1877,12 @@ static inline void signal_interrupt(__attribute__((unused)) int _) {
     exit(1);
 }
 
-
 int main(const int argc, const char** argv) {
     srand((unsigned) time(0));
     if (argc <= 1) create_empty_buffer();
     else for (i32 i = argc; i-- > 1;) open_buffer(argv[i]);
         
     signal(SIGINT, signal_interrupt);
-    clipboard_c* system_clipboard = clipboard_new(0);
     configure_terminal();
     u8 c = 0, p = 0;
     
@@ -2079,8 +1920,8 @@ int main(const int argc, const char** argv) {
             else if (c == 'k') move_word_left();
             else if (c == 'l') move_word_right();
             else if (c == 'w') set_begin();
-            else if (c == 'c') copy_selection_to_clipboard(system_clipboard);
-            else if (c == 'v') insert_text(clipboard_text(system_clipboard));
+            // else if (c == 'c') copy_selection_to_clipboard();
+            else if (c == 'v') insert_text(clipboard_text());
             else if (c == 'd') delete_selection();
             else if (c == 'u') undo();
             else if (c == 'r') redo();
@@ -2089,8 +1930,15 @@ int main(const int argc, const char** argv) {
         
         } else if (file->mode == command_mode) {
             if (c == 'e') file->mode = edit_mode;
+	    else if (c == 27) interpret_escape_code();
             else if (c == 'w') save();
             else if (c == 'W') rename_file();
+
+	    else if (c == 'r') {
+		//char command_buffer[4096] = {0};
+		//prompt("command: ", 33, command_buffer, sizeof command_buffer);
+		//execute(command_buffer);
+	    } 
             else if (c == 'o') open_using_prompt();
             else if (c == 'i') create_empty_buffer();
             else if (c == '{') sprintf(file->message, "buffer id = %x : \"%s\"", file->id, file->filename);
@@ -2118,6 +1966,182 @@ int main(const int argc, const char** argv) {
                 
         p = c;
     }
-    clipboard_free(system_clipboard);
+    // free(system_clipboard);
     restore_terminal();
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//static inline void syntax_highlight() {
+    
+//    struct file* file = buffers[active];
+//
+//    if (not (file->options.flags & use_c_syntax_highlighting))
+//
+//            return;
+
+//    const char* keywords[] = {
+//        "0", "1",  "(", ")",
+//        "{", "}", "=", "+",
+//
+//        "exit", "puts", "MACRO",
+//
+//        "void", "int", "static", "inline",
+//        "struct", "unsigned", "sizeof", "const",
+//
+//        "char", "for", "if", "else",
+//        "while", "break", "continue", "long",
+//
+//        "float", "double", "short", "type",
+//    0};
+    
+//    i16 colors[] = {
+//        214, 214, 246, 246,
+//        246, 246, 246, 246,
+//
+//        41, 41, 52,
+//
+//        33, 33, 33, 33,
+//        33, 33, 33, 33,
+//
+//        33, 33, 33, 33,
+//        33, 33, 33, 33,
+//
+//        33, 33, 33, 46,
+//    };
+    
+//    for (i32 line = 0; line < file->render.count; line++) {
+//
+//        file->render.lines[line].coloring.count = 0;
+//
+//        for (i32 column = 0; column < file->render.lines[line].length; column++) {
+//            for (i32 k = 0; keywords[k]; k++) {
+//
+//                if (file->render.lines[line].length - column >= (i32)strlen(keywords[k]) and
+//                    not strncmp((char*)file->render.lines[line].line + column, keywords[k], strlen(keywords[k]))) {
+//
+//                    i32 start = column;
+//                    i32 end = column + (i32)strlen(keywords[k]);
+//
+//                    if (file->render.lines[line].coloring.count + 1 >= file->render.lines[line].coloring.capacity)
+//                        file->render.lines[line].coloring.ranges = realloc(file->render.lines[line].coloring.ranges, sizeof(struct colored_range) *
+//                                                                           (size_t)(file->render.lines[line].coloring.capacity = 2 * (file->render.lines[line].coloring.capacity + 1)));
+//
+//                    file->render.lines[line].coloring.ranges[file->render.lines[line].coloring.count].start = start;
+//                    file->render.lines[line].coloring.ranges[file->render.lines[line].coloring.count].end = end;
+//                    file->render.lines[line].coloring.ranges[file->render.lines[line].coloring.count++].color = colors[k];
+//                }
+//            }
+//        }
+//    }
+//}
+
+
+
+//enum CXChildVisitResult visitor(CXCursor cursor, CXCursor parent, CXClientData client_data) {
+//    CXString spelling = clang_getCursorSpelling(cursor);
+//    CXString kind = clang_getCursorKindSpelling(clang_getCursorKind(cursor));
+//
+//    printf("Cursor '%s' of kind '%s'.\n", clang_getCString(spelling), clang_getCString(kind));
+//
+//    CXSourceRange range = clang_getCursorExtent(cursor);
+//    CXSourceLocation begin = clang_getRangeStart(range);
+//    CXSourceLocation end = clang_getRangeEnd(range);
+//
+//    unsigned int line, column, offset;
+//    clang_getSpellingLocation(begin, NULL, &line, &column, &offset);
+//    printf("begin: (%u,%u) : %u \n", line, column, offset);
+//
+//    clang_getSpellingLocation(end, NULL, &line, &column, &offset);
+//    printf("end: (%u,%u) : %u \n", line, column, offset);
+//
+//    clang_disposeString(spelling);
+//    clang_disposeString(kind);
+//
+//    return CXChildVisit_Recurse;
+//}
+
+
+
+
+//static inline char** segment(char* line) {
+//    char** argv = NULL;
+//    nat argc = 0;
+//    char* c = strtok(line, " ");
+//    while (c) {
+//        argv = realloc(argv, sizeof(const char*) * (argc + 1));
+//        argv[argc++] = c;
+//        c = strtok(NULL, " ");
+//    }
+//    argv = realloc(argv, sizeof(const char*) * (argc + 1));
+//    (argv)[argc++] = NULL;
+//    return argv;
+//}
+
+//static inline void execute_shell_command(char* line) {
+//
+//    char** argv = segment(line);
+//    if (!argv[0]) return;
+//
+//    bool succeeded = false, foreground = true;
+//    if (line[strlen(line) - 1] == '&') {
+//        line[strlen(line) - 1] = '\0';
+//        foreground = false;
+//    }
+//
+//    char* original = getenv("PATH");
+//    char paths[strlen(original) + 4];
+//    strcpy(paths, original);
+//    strcat(paths, ":./");
+//
+//    char* path = strtok(paths, ":");
+//    while (path) {
+//        char command[strlen(path) + strlen(argv[0]) + 2];
+//        sprintf(command, "%s/%s", path, argv[0]);
+//        if (!access(command, X_OK)) {
+//            if (!fork()) execv(command, argv);
+//            if (foreground) wait(NULL);
+//            succeeded = true;
+//        }
+//        path = strtok(NULL, ":");
+//    }
+//    if (!succeeded) sprintf(file->message, "%s: command not found", argv[0]);
+//    free(argv);
+//}
+
+
+//static inline void shell() {
+//
+//    struct winsize window;
+//    ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+//    printf(set_cursor, window.ws_row, 0);
+//    printf("%s", clear_line);
+//    char prompt[128] = {0};
+//    sprintf(prompt, set_color ": " reset_color, shell_prompt_color);
+//    restore_terminal();
+//    char* line = dummy_readline(prompt);
+//    add_history(line);
+//    execute_shell_command(line, file);
+//    free(line);
+//    configure_terminal();
+//    if (file->options.pause_on_shell_command_output) read_unicode();
+//}
