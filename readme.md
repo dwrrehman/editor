@@ -1,12 +1,13 @@
 # My Text Editor.
 
 This is a text editor intended for daniel's personal use, 
-based on ergonomics and simplicity! still a work in progress.
+based on ergonomics and simplicity.
 
 
-### Dependancies:
+## No dependancies!
 
-- libclang : C / C++ semantic syn highlighting.
-- libclipboard : for accessing the system clipboard. 
-- readline : for its tab completion.
+## Uses my programming language!
 
+## Fast and efficient!
+
+## Correct by design!
