@@ -1068,7 +1068,7 @@ static inline void open_buffer(const char* given_filename) {
     i32 line_length;
     while ((line_length = (i32)getline(&line, &line_capacity, file)) >= 0) {
         
-        if (line[line_length - 1] == '\n') line_length--;
+        if (line_length and line[line_length - 1] == '\n') line_length--;
     
         i32 logical_line = buffer->logical.count;
         if (buffer->logical.count + 1 >= buffer->logical.capacity)
@@ -1471,20 +1471,30 @@ static inline u8* get_selection_as_string(i32* out_buffer_length) {
 
 static inline char* clipboard_text() {
 
+	free(system_clipboard);
+	system_clipboard = NULL;
+
 	FILE* clipboard = popen("pbpaste", "r");
 	if (not clipboard) abort();
 
-	fseek(clipboard, 0, SEEK_END);
-	size_t length = (size_t) ftell(clipboard);
-	fseek(clipboard, 0, SEEK_SET); 
-	sprintf(buffers[active]->message, "pasting %lub...", length);
-
-	free(system_clipboard);
-	system_clipboard = malloc(length + 1);
-	fread(system_clipboard, 1, length, clipboard);
+	char buffer[4096] = {0};
+	size_t length = 0;
+	ssize_t n = 0; 
+	int fd = fileno(clipboard);
+	
+	while ((n = read(fd, buffer, sizeof buffer)) > 0) {
+		system_clipboard = realloc(system_clipboard, (size_t) (length + (size_t) n));
+		memcpy(buffer + length, buffer, (size_t) n); 
+		length += (size_t) n;
+	}
+	
 	pclose(clipboard);
 
-	system_clipboard[length] = 0;
+	sprintf(buffers[active]->message, "pasting %lub...", length);
+
+	system_clipboard = realloc(system_clipboard, (size_t) (length + 1));
+	system_clipboard[length] = '\0';
+
 	return system_clipboard;
 }
 
