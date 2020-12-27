@@ -1,0 +1,17 @@
+#!/bin/zsh
+
+if [ "release" = "$1" ]; then
+	clang -Ofast -Weverything -Wno-poison-system-directories editor.c -o out
+
+elif [ "clean" = "$1" ]; then
+	rm -rf out
+	rm -rf out.dSYM
+
+elif [ "fuzzer" = "$1" ]; then 
+	clang -g -O0 -Weverything -Wno-poison-system-directories -fsanitize=address,undefined,fuzzer editor.c -o out
+
+elif [ "" = "$1" ]; then 
+	clang -g -O0 -Weverything -Wno-poison-system-directories -fsanitize=address,undefined editor.c -o out
+else 
+	echo "build: unknown target: $1"
+fi
