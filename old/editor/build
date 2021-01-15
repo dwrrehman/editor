@@ -1,0 +1,17 @@
+#!/bin/zsh
+
+if [ "release" = "$1" ]; then
+	clang -Ofast -Weverything -Wno-poison-system-directories n.c -o out
+
+elif [ "clean" = "$1" ]; then
+	rm -rf out
+	rm -rf out.dSYM
+
+elif [ "compile" = "$1" ]; then 
+	as out.s -o out.o && ld -dynamic -arch x86_64 -platform_version macos 11.0.0 11.1 -syslibroot /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk -o executable.out -L/usr/local/lib out.o -lSystem && rm -rf out.o && rm -rf out.s
+
+elif [ "" = "$1" ]; then 
+	clang -g -O0 -Weverything -Wno-poison-system-directories -fsanitize=address,undefined n.c -o out
+else 
+	echo "build: unknown target: $1"
+fi
