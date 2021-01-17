@@ -61,7 +61,7 @@ static inline void move_left() {
 		lcl--; lcc = lines[lcl].count;
 		vcl--; if (vsl) vsl--; else if (vol) vol--;
 		vcc = compute_visual();
-		if (vcc > window_columns) { vsc = window_columns; voc = vcc - vsc; } 
+		if (vcc > window_columns - 1) { vsc = window_columns - 1; voc = vcc - vsc; } 
 		else { vsc = vcc; voc = 0; }
 	} else {
 		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
@@ -82,14 +82,14 @@ static inline void move_right() {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0;
 		vcl++; vcc = 0; voc = 0; vsc = 0;
-		if (vsl < window_rows) vsl++; else vol++;
+		if (vsl < window_rows - 1) vsl++; else vol++;
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
 			do { 
-				vcc++; if (vsc < window_columns) vsc++; else voc++;
+				vcc++; if (vsc < window_columns - 1) vsc++; else voc++;
 			} while (vcc % tab_width); 
 		} else {
-			vcc++; if (vsc < window_columns) vsc++; else voc++;
+			vcc++; if (vsc < window_columns - 1) vsc++; else voc++;
 		}
 		do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
 	}
@@ -148,8 +148,8 @@ static inline void delete() {
 static inline void adjust_window_size() {
 	struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
-	window_rows = window.ws_row - 1;
-	window_columns = window.ws_col - 1;
+	window_rows = window.ws_row;
+	window_columns = window.ws_col;
 }
 
 static inline void display() {
@@ -210,9 +210,9 @@ static inline void display() {
 		column = 0;
 	}
 
-	length += sprintf(screen + length,
-		"\n\r\033[K\n\rxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\033[K\n\r[%d,%d:(%d,%d){%d,%d}[%d,%d:%d,%d]\033[K\n\r",
-	count, lines[lcl].count, lcl,lcc, vcl,vcc, vol,voc, vsl,vsc );
+	/*length += sprintf(screen + length,
+		"\033[K\n\rxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\033[K\n\r[%d,%d:(%d,%d){%d,%d}[%d,%d:%d,%d]\033[K\n\r",
+	count, lines[lcl].count, lcl,lcc, vcl,vcc, vol,voc, vsl,vsc );*/
 
 	length += sprintf(screen + length, "\033[%d;%dH\033[?25h", vsl + 1, vsc + 1);
 
@@ -226,7 +226,7 @@ int main() {
 	write(1, "\033[?1049h\033[?1000h", 16);	
 
 	do {
-		// adjust_window_size();
+		adjust_window_size();
 		display();
 		char c = 0;
 		read(0, &c, 1);
