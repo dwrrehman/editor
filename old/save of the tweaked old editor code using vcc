@@ -1,38 +1,72 @@
-#include <iso646.h>    // Daniel Warren Riaz Rehman's minimalist terminal-based text editor.
+/// a simpler more correct and beautiful version of my text editor.
+/// more minimalist, and efficient as well.
+
+#include <iso646.h>
 #include <stdint.h>
-#include <stdio.h>     //     designed with reliability, minimalism, 
-#include <stdlib.h>    //     simplicity, and ergonimics in mind.
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>    //          written on 2101177.005105
+#include <unistd.h>
 #include <termios.h>
 #include <sys/ioctl.h>
 
-struct line { char* data; int count, capacity; };
+struct line {
+	char* data;
+	int count;
+	int capacity;
+};
 
 static struct line* lines = NULL;
 static int count = 0;
 static int capacity = 0;
+
+// -------- logical versions ----------
+
 static int lcl = 0; // logical cursor line
 static int lcc = 0; // logical cursor column
+
+static int lol = 0; // logical origin line
+static int loc = 0; // logical origin column
+
+static int lsl = 0; // logical screen line
+static int lsc = 0; // logical screen column
+
+// -------- visual versions ----------
+
 static int vcl = 0; // visual cursor line
 static int vcc = 0; // visual cursor column
+
 static int vol = 0; // visual origin line
 static int voc = 0; // visual origin column
+
 static int vsl = 0; // visual screen line
 static int vsc = 0; // visual screen column
-static int vdc = 0; // visual desired column
-static int window_rows = 10;
-static int window_columns = 34;
-static int wrap_width = 60;
-static int tab_width = 8;
 
-static inline char zero_width(char c) { return (((uint8_t)c) >> 6) == 2; }
-static inline char visual(char c) { return (((uint8_t)c) >> 6) != 2; }
+
+static int vdc = 0; // visual desired column
+
+// ----------- visual constraints ----------
+  
+static int wrap_width = 60;       // given in visual coordinates!
+static int window_rows = 20;      // given in visual coordinates!
+static int window_columns = 40;   // given in visual coordinates!
+static int tab_width = 8;         // given in visual coordinates!
+
+
+static inline char zero_width(char c) { // 0b10xxxxxx
+	return (((uint8_t)c) >> 6) == 2;
+}
+
+static inline char visual(char c) { // not of the form 0b10xxxxxx
+	return (((uint8_t)c) >> 6) != 2;
+}
 
 static inline struct termios configure_terminal() {
 	struct termios terminal = {0};
 	tcgetattr(0, &terminal);
+
 	struct termios raw = terminal;
+
 	raw.c_oflag &= ~( (unsigned long)OPOST );
 	raw.c_iflag &= ~( (unsigned long)BRKINT 
 			| (unsigned long)ICRNL 
@@ -41,15 +75,19 @@ static inline struct termios configure_terminal() {
 	raw.c_lflag &= ~( (unsigned long)ECHO 
 			| (unsigned long)ICANON 
 			| (unsigned long)IEXTEN );
+
 	tcsetattr(0, TCSAFLUSH, &raw);
+
 	return terminal;
 }
 
-static inline int compute_visual() {
+
+static inline int compute_visual_length() {
 	int length = 0;
-	for (int c = 0; c < lcc; c++) {
-		char k = lines[lcl].data[c];
-		if (k == '\t') { do length++; while (length % tab_width); } 
+	struct line this = lines[lcl];
+	for (int c = 0; c < this.count; c++) {
+		char k = this.data[c];
+		if (k == '\t') length += 8;
 		else if (visual(k)) length++;
 	}
 	return length;
@@ -58,40 +96,70 @@ static inline int compute_visual() {
 static inline void move_left() {
 	if (not lcc) {
 		if (not lcl) return;
-		lcl--; lcc = lines[lcl].count;
-		vcl--; if (vsl) vsl--; else if (vol) vol--;
-		vcc = compute_visual();
-		if (vcc > window_columns) { vsc = window_columns; voc = vcc - vsc; } 
-		else { vsc = vcc; voc = 0; }
+
+		lcl--;
+		lcc = lines[lcl].count;
+
+		vcl--;
+		vcc = compute_visual_length();
+
 	} else {
-		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
-		if (lines[lcl].data[lcc] == '\t') {
-			int save = vcc;
-			vcc = compute_visual();
-			int diff = save - vcc;
-			if (vsc >= diff) vsc -= diff; 
-			else if (voc >= diff - vsc) { voc -= diff - vsc; vsc = 0; }
-		} else {
-			vcc--; if (vsc) vsc--; else if (voc) voc--;
-		}
+		do { lcc--; } while (lcc and zero_width(lines[lcl].data[lcc]));
+		if (lines[lcl].data[lcc] == '\t') { do vcc--; while (vcc % tab_width); } 
+		else if (visual(lines[lcl].data[lcc])) vcc--;
 	}
 }
+
+
+/*
+
+
+if (not file->column) {
+		if (not file->line) return;
+		file->line--;
+		file->column = file->lines[file->line].length;
+		if (file->screen_line) file->screen_line--;
+		else if (file->origin_line) file->origin_line--;
+		if (file->column > window_columns) {
+			file->screen_column = window_columns;
+			file->origin_column = file->column - window_columns;
+		} else {
+			file->screen_column = (i16) file->column;
+			file->origin_column = 0;
+		}
+	} else {
+		do {
+			file->column--;
+			if (file->screen_column) file->screen_column--;
+			else if (file->origin_column) file->origin_column--;
+		} while (file->column and 
+			is_unicode(file->lines[file->line].line[file->column]));
+	}
+
+
+
+*/
+
+
+
+
+
 
 static inline void move_right() {
 	if (lcc >= lines[lcl].count) {
 		if (lcl + 1 >= count) return;
-		lcl++; lcc = 0;
-		vcl++; vcc = 0; voc = 0; vsc = 0;
-		if (vsl < window_rows) vsl++; else vol++;
+
+		lcl++;
+		lcc = 0;
+
+		vcl++;
+		vcc = 0;
+
 	} else {
-		if (lines[lcl].data[lcc] == '\t') {
-			do { 
-				vcc++; if (vsc < window_columns) vsc++; else voc++;
-			} while (vcc % tab_width); 
-		} else {
-			vcc++; if (vsc < window_columns) vsc++; else voc++;
-		}
-		do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
+		if (lines[lcl].data[lcc] == '\t') { do vcc++; while (vcc % tab_width); }
+		else if (visual(lines[lcl].data[lcc])) vcc++;
+		do { lcc++; } while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
+		
 	}
 }
 
@@ -102,13 +170,17 @@ static inline void insert(char c) {
 		this->count = lcc;
 		struct line new = {malloc((size_t) rest), rest, rest};
 		if (rest) memcpy(new.data, this->data + lcc, (size_t) rest);
+
 		this->data = realloc(this->data, (size_t) (this->count)); // debug
 		lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1)); // debug
+
 		// if (file->count + 1 > file->capacity) // enable if release mode.
 		// file->lines = realloc(file->lines, sizeof(struct line) 
 		// * (size_t)(file->capacity = 8 * (file->capacity + 1)));
+
 		memmove(lines + lcl + 2, lines + lcl + 1, 
 			sizeof(struct line) * (size_t)(count - (lcl + 1)));
+
 		lines[lcl + 1] = new;
 		count++;
 	} else {
@@ -120,7 +192,10 @@ static inline void insert(char c) {
 		this->data[lcc] = c;
 		this->count++;
 	}
-	if (zero_width(c)) lcc++; else move_right();
+	if (zero_width(c)) {
+		lcc++;
+		// move along: loc, lol, lsc, lsl.
+	} else move_right();
 }
 
 static inline void delete() {
@@ -136,6 +211,7 @@ static inline void delete() {
 			sizeof(struct line) * (size_t)(count - (lcl + 2)));
 		count--;
 		lines = realloc(lines, sizeof(struct line) * (size_t)(count)); // debug
+
 	} else {
 		int save = lcc;
 		move_left();
@@ -145,97 +221,90 @@ static inline void delete() {
 	}
 }
 
-static inline void adjust_window_size() {
+/* static inline void adjust_window_size() {
 	struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
 	window_rows = window.ws_row - 1;
 	window_columns = window.ws_col - 1;
-}
+} */
 
 static inline void display() {
 	char* screen = malloc(sizeof(char) * (size_t) (window_rows * window_columns * 4));
 	int length = 9;
 	memcpy(screen, "\033[?25l\033[H", 9);
-
-	int line = 0, column = 0;
-	int visual_line = 0, visual_column = 0;
+	
 	int screen_line = 0, screen_column = 0;
 
-	while (screen_line < window_rows) {
+	for (int line = 0; line < count; line++) {
 
-		if (visual_line >= vol and visual_line < vol + window_rows) {
+		for (int column = 0; column < lines[line].count; column++) {
 
-			if (line < count) {
+			char c = lines[line].data[column];
 
-				while (screen_column < window_columns) {
-		
-					if (column >= lines[line].count) break;
-
-					char c = lines[line].data[column];
-
-					if (c == '\t') {
-						do { 
-							if (visual_column >= voc and visual_column < voc + window_columns) {
-								screen[length++] = ' ';
-								screen_column++; 
-							}
-							visual_column++;
-
-						} while (visual_column % tab_width);
-					} else {
-						if (visual_column >= voc and visual_column < voc + window_columns){
-							screen[length++] = c;
-							if (visual(c)) { screen_column++; }
-						}
-						if (visual(c)) visual_column++; 
-					}
-					column++;
-				}
+			if (c == '\t') {
+				do { 
+					if (screen_column >= window_columns) break;
+					screen[length++] = ' ';
+					screen_column++;
+				} while (screen_column % tab_width);
+			} else {
+				screen[length++] = c;
+				if (visual(c)) screen_column++;
 			}
-			
-			screen[length++] = '\033';
-			screen[length++] = '[';	
-			screen[length++] = 'K';
-			if (screen_line < window_rows - 1) {
-				screen[length++] = '\r';
-				screen[length++] = '\n';
-			}
-			screen_line++;
-			screen_column = 0;
 		}
-		visual_line++;
-		visual_column = 0;
 
-		line++;
-		column = 0;
+		screen[length++] = '\033';
+		screen[length++] = '[';	
+		screen[length++] = 'K';
+		if (screen_line < window_rows - 1) {
+			screen[length++] = '\r';
+			screen[length++] = '\n';
+		}
+		screen_line++;
+		screen_column = 0;
+	}
+
+	while (screen_line < window_rows - 1) {
+		screen[length++] = '\033';
+		screen[length++] = '[';	
+		screen[length++] = 'K';
+		// if (screen_line < window_rows - 1) {
+			screen[length++] = '\r';
+			screen[length++] = '\n';
+		// }
+		screen_line++;
 	}
 
 	length += sprintf(screen + length,
-		"\n\r\033[K\n\rxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\033[K\n\r[%d,%d:(%d,%d){%d,%d}[%d,%d:%d,%d]\033[K\n\r",
-	count, lines[lcl].count, lcl,lcc, vcl,vcc, vol,voc, vsl,vsc );
+	"\n\r[%d,%d %d,%d %d,%d %d,%d %d,%d %d,%d %d,%d:%d\033[K\n\r",  count, lines[lcl].count,
+	lcl,lcc,  lol,loc,  lsl,lsc,
+	vcl,vcc,  vol,voc,  vsl,vsc,    vdc
+	);
 
-	length += sprintf(screen + length, "\033[%d;%dH\033[?25h", vsl + 1, vsc + 1);
 
+	length += sprintf(screen + length, "\033[%d;%dH\033[?25h", vcl + 1, vcc + 1);
 	write(1, screen, (size_t) length);
 	free(screen);
 }
 
 int main() {
+
 	lines = calloc((size_t) (count = 1), sizeof(struct line));
+
 	struct termios terminal = configure_terminal();
 	write(1, "\033[?1049h\033[?1000h", 16);	
 
-	do {
+	while (1) {
 		// adjust_window_size();
 		display();
 		char c = 0;
 		read(0, &c, 1);
-		if (c == 'Q') break;
+		if (c == 'q') break;
 		else if (c == 'J') move_left();
 		else if (c == ':') move_right();
 		else if (c == 127) delete();
 		else insert(c);
-	} while (1);
+	}
 
 	write(1, "\033[?1049l\033[?1000l", 16);	
 	tcsetattr(0, TCSAFLUSH, &terminal);
@@ -268,11 +337,7 @@ int main() {
 
 
 
-
-
-
-
-// ------------------------------------------old code-----------------------------------------
+// ------------------------------------------old code-----------------------------------------------
 
 
 
@@ -535,142 +600,5 @@ static inline void move_right(struct file* file) {
 	// 		else file->origin_column++;
 	// 	} while (file->column < file->lines[file->line].length and 
 	// 		 is_unicode(file->lines[file->line].line[file->column]));
-
-
-
-/*
-	if (not file->column) {
-		if (not file->line) return;
-		file->line--;
-		file->column = file->lines[file->line].length;
-		if (file->screen_line) file->screen_line--;
-		else if (file->origin_line) file->origin_line--;
-		if (file->column > window_columns) {
-			file->screen_column = window_columns;
-			file->origin_column = file->column - window_columns;
-		} else {
-			file->screen_column = (i16) file->column;
-			file->origin_column = 0;
-		}
-	} else {
-		do {
-			file->column--;
-			if (file->screen_column) file->screen_column--;
-			else if (file->origin_column) file->origin_column--;
-		} while (file->column and 
-			is_unicode(file->lines[file->line].line[file->column]));
-	}
-
-
-
-*/
-
-
-		// if (column >= wrap_width) goto next_line;
-				// if (column < file->origin_column) {
-				// 	column++;
-				// 	continue;
-				// }
-			
-
-
-
-/*while (visual_length < voc and column < lines[line].count) {
-
-			char c = lines[line].data[column++];
-	
-			if (c == '\t') {
-				do {
-					if (not(visual_length < voc and column < lines[line].count)) break;
-					
-				} while (visual_length % tab_width);
-			} else if (visual(c)) visual_length++;
-		}*/
-
-
-
-
-
-/*
-static int lol = 0; // logical origin line
-static int loc = 0; // logical origin column
-
-static int lsl = 0; // logical screen line
-static int lsc = 0; // logical screen column
-
-
-
-
-
-
-
-
-
-
-
-
-for (int line = vol; line < count; line++) {
-
-		if (screen_line >= window_rows - 2) break;
-
-		int column = 0; 
-		int visual_length = 0;
-
-		for (; column < lines[line].count; column++) {
-
-			if (screen_column >= window_columns) break;
-		
-			if (column == lcc and line == lcl) {
-				cl = screen_line;
-				cc = screen_column;
-			}
-		
-			char c = lines[line].data[column];
-
-			if (c == '\t') {
-				do { 
-					if (visual_length >= voc) screen[length++] = ' ';
-					screen_column++;
-					visual_length++;
-				} while (screen_column % tab_width);
-			} else {
-				if (visual_length >= voc) screen[length++] = c;
-				if (visual(c)) { screen_column++; visual_length++; }
-			}
-		}
-
-		if (column == lcc and line == lcl) {
-			cl = screen_line;
-			cc = screen_column;
-		}
-
-		screen[length++] = '\033';
-		screen[length++] = '[';	
-		screen[length++] = 'K';
-		if (screen_line < window_rows - 1) {
-			screen[length++] = '\r';
-			screen[length++] = '\n';
-		}
-		screen_line++;
-		screen_column = 0;
-	}
-
-	for (; screen_line < window_rows - 2; screen_line++) {
-		screen[length++] = '\033';
-		screen[length++] = '[';	
-		screen[length++] = 'K';
-		if (screen_line < window_rows - 1) {
-			screen[length++] = '\r';
-			screen[length++] = '\n';
-		}
-	}
-
-
-
-
-
-
-*/
-
 
 
