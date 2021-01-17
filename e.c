@@ -183,7 +183,8 @@ static inline void display() {
 
 						} while (visual_column % tab_width);
 					} else {
-						if (visual_column >= voc and visual_column < voc + window_columns){
+						if (visual_column >= voc and visual_column < voc + window_columns and 
+							(screen_column or visual(c))) {
 							screen[length++] = c;
 							if (visual(c)) { screen_column++; }
 						}
