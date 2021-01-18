@@ -19,8 +19,8 @@ static int voc = 0;
 static int vsl = 0;
 static int vsc = 0;
 static int vdc = 0;
-static int window_rows = 10;
-static int window_columns = 34;
+static int window_rows = 15;
+static int window_columns = 40;
 static int wrap_width = 60;
 static int tab_width = 8;
 
@@ -52,9 +52,12 @@ static inline int compute_visual() {
 	int length = 0;
 	for (int c = 0; c < lcc; c++) {
 		char k = lines[lcl].data[c];
+		if (length >= wrap_width) length = 0;
 		if (k == '\t') { 
-			do length++; 
-			while (length % tab_width); 
+			do {
+				if (length >= wrap_width) length = 0;
+				length++; 
+			} while (length % tab_width); 
 		} else if (visual(k)) length++;
 	}
 	return length;
@@ -66,7 +69,7 @@ static inline void move_left() {
 		lcl--; vcl--; 
 		lcc = lines[lcl].count;
 		vcc = compute_visual();
-		if (vsl) vsl--; 
+		if (vsl) vsl--;
 		else if (vol) vol--;
 		if (vcc > window_columns - 1) { 
 			vsc = window_columns - 1; 
@@ -88,9 +91,25 @@ static inline void move_left() {
 				vsc = 0; 
 			}
 		} else {
-			vcc--; 
-			if (vsc) vsc--; 
-			else if (voc) voc--;
+
+			if (not vcc) {
+				vcl--;
+				vcc = compute_visual();
+				if (vsl) vsl--;
+				else if (vol) vol--;
+				if (vcc > window_columns - 1) {
+					vsc = window_columns - 1;
+					voc = vcc - vsc;
+				} else {
+					vsc = vcc;
+					voc = 0;
+				}
+			} else {
+				vcc--; 
+				if (vsc) vsc--; 
+				else if (voc) voc--;
+			}
+			
 		}
 	}
 }
@@ -105,12 +124,22 @@ static inline void move_right() {
 		else vol++;
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
-			do { 
-				vcc++; 
+			do {
+				if (vcc >= wrap_width) {
+					vcl++; vcc = 0; voc = 0; vsc = 0;
+					if (vsl < window_rows - 1) vsl++; 
+					else vol++;
+				}
+				vcc++;
 				if (vsc < window_columns - 1) vsc++; 
 				else voc++;
 			} while (vcc % tab_width); 
 		} else {
+			if (vcc >= wrap_width) {
+				vcl++; vcc = 0; voc = 0; vsc = 0;
+				if (vsl < window_rows - 1) vsl++; 
+				else vol++;
+			}
 			vcc++; 
 			if (vsc < window_columns - 1) vsc++; 
 			else voc++;
@@ -187,24 +216,24 @@ static inline void display() {
 	int sl = 0, sc = 0;
 
 	do {
-		if (vl < vol or vl >= vol + window_rows) goto next_logical_line;
-		if (line >= count) goto next_screen_line;
-
+		if (line >= count) goto next_logical_line;
 		do {
-			if (col >= lines[line].count) goto next_screen_line;
+			if (col >= lines[line].count) goto next_logical_line;
+			if (vc >= wrap_width) goto next_visual_line;
+
 			char k = lines[line].data[col];
 			if (k == '\t') {
 				do { 
-					if (vc >= voc and vc < voc + window_columns) {
+					if (vc >= voc and vc < voc + window_columns
+					and vl >= vol and vl < vol + window_rows) {
 						screen[length++] = ' ';
-						sc++; 
+						sc++;
 					}
 					vc++;
-
 				} while (vc % tab_width);
 			} else {
-				if (vc >= voc and 
-				vc < voc + window_columns and 
+				if (vc >= voc and vc < voc + window_columns
+				and vl >= vol and vl < vol + window_rows and
 				(sc or visual(k))) {
 					screen[length++] = k;
 					if (visual(k)) { sc++; }
@@ -213,9 +242,11 @@ static inline void display() {
 			}
 			col++;
 
-		} while (sc < window_columns);
+		} while (sc < window_columns or col < lines[line].count);
 
-	next_screen_line:
+	next_logical_line:
+		line++; col = 0;
+	next_visual_line:
 		screen[length++] = '\033';
 		screen[length++] = '[';	
 		screen[length++] = 'K';
@@ -223,18 +254,12 @@ static inline void display() {
 			screen[length++] = '\r';
 			screen[length++] = '\n';
 		}
-		sl++;
-		sc = 0;
-
-	next_logical_line:
-		line++;
-		col = 0;
-
-	next_visual_line:
-		vl++;
-		vc = 0;
+		sl++; vl++; vc = 0; sc = 0;
 
 	} while (sl < window_rows);
+
+/*length += sprintf(screen + length, "\033[K\n\rxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\033[K\n\r[%d,%d:(%d,%d){%d,%d}[%d,%d:%d,%d]\033[K\n\r",
+	count, lines[lcl].count, lcl,lcc, vcl,vcc, vol,voc, vsl,vsc );*/
 
 	length += sprintf(screen + length, "\033[%d;%dH\033[?25h", vsl + 1, vsc + 1);
 	write(1, screen, (size_t) length);
@@ -259,4 +284,7 @@ begin:	adjust_window_size();
 	write(1, "\033[?1049l\033[?1000l", 16);	
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+
 
