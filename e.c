@@ -194,7 +194,7 @@ static inline void move_begin() {
 }
 
 static inline void move_end() {
-	while (lcc < lines[lcl].count) move_right(1);
+	while (lcc < lines[lcl].count) move_right(1); //TODO: this function is incorrect. it should be the end of the visual line, not the logical one.
 }
 
 static inline void move_top() {
@@ -209,7 +209,6 @@ static inline void move_bottom() {
 	while (lcl < count - 1 or lcc < lines[lcl].count) move_down(); 
 	vdc = vcc;
 }
-
 
 static inline void insert(char c) {
 	struct line* this = lines + lcl;
