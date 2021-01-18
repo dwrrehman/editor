@@ -5,6 +5,7 @@
 #include <string.h>    //
 #include <unistd.h>    //          written on 2101177.005105
 #include <sys/ioctl.h> //         finished on 2101181.131817
+#include <ctype.h>
 
 struct line { char* data; int count, capacity; };
 
@@ -193,6 +194,45 @@ static inline void move_bottom() {
 	vdc = vcc;
 }
 
+static inline void move_word_left() {
+	do move_left(1);
+	while (not(  // until    
+		( 
+			not lcl and not lcc        //  we are at the top,
+		)
+		or
+		(
+			(
+				lcc < lines[lcl].count and isalnum(lines[lcl].data[lcc])
+			) 
+			and 
+			(
+				not lcc or not isalnum(lines[lcl].data[lcc - 1])
+			)
+		)
+	));
+}
+
+static inline void move_word_right() {
+	do move_right(1);
+	while (not(     // until
+		(
+			lcl >= count - 1 and lcc >= lines[lcl].count     // we are at the bottom,
+		)
+		or
+		(
+			(
+				lcc >= lines[lcl].count or not isalnum(lines[lcl].data[lcc])
+			) 
+			and 
+			(
+				lcc and isalnum(lines[lcl].data[lcc - 1])
+			)
+		)
+	));
+}
+
+
 static inline void insert(char c) {
 	struct line* this = lines + lcl;
 	if (c == 13) {
@@ -336,6 +376,9 @@ begin:	adjust_window_size();
 	else if (c == ':') move_right(1);
 	else if (c == 'O') move_up();
 	else if (c == 'I') move_down();
+	
+	else if (c == '{') move_word_left();
+	else if (c == '}') move_word_right();
 
 	else if (c == 'K') move_begin();
 	else if (c == 'L') move_end();
