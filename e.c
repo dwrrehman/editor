@@ -248,8 +248,7 @@ static inline void display() {
 		line++; col = 0;
 
 	next_visual_line:
-		if (vc >= voc and vc < voc + window_columns 
-		and vl >= vol and vl < vol + window_rows) {
+		if (vl >= vol and vl < vol + window_rows) {
 			screen[length++] = '\033';
 			screen[length++] = '[';	
 			screen[length++] = 'K';
