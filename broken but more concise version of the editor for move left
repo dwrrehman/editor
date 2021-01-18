@@ -1,3 +1,7 @@
+
+/*
+
+
 #include <iso646.h>    // Daniel Warren Riaz Rehman's minimalist terminal-based text editor.
 #include <termios.h>   //
 #include <stdio.h>     //     designed with reliability, minimalism, 
@@ -51,68 +55,49 @@ static inline struct termios configure_terminal() {
 	return terminal;
 }
 
+static inline void compute_vcc() {
+	for (int c = 0; c < lcc; c++) {
+		char k = lines[lcl].data[c];
+		if (vcc >= wrap_width) vcc = 0;
+		if (k == '\t') { 
+			do {
+				if (vcc >= wrap_width) vcc = 0;
+				vcc++; 
+			} while (vcc % tab_width); 
+		} else if (visual(k)) vcc++;
+	}
+}
+
 static inline void move_left(int change_desired) {
 	if (not lcc) {
 		if (not lcl) return;
 		lcl--; 
 		lcc = lines[lcl].count;
-visual_line_up: 
-		vcl--;
-		for (int c = 0; c < lcc; c++) {
-			char k = lines[lcl].data[c];
-			if (vcc >= wrap_width) vcc = 0;
-			if (k == '\t') { 
-				do {
-					if (vcc >= wrap_width) vcc = 0;
-					vcc++; 
-				} while (vcc % tab_width); 
-			} else if (visual(k)) vcc++;
-		}
-		if (vsl) vsl--;
-		else if (vol) vol--;
-		if (vcc > window_columns - 1) { 
-			vsc = window_columns - 1; 
-			voc = vcc - vsc; 
-		} else { 
-			vsc = vcc; 
-			voc = 0; 
-		}
+visual_line_up: vcl--; 
+		compute_vcc();
+		if (vsl) vsl--; else if (vol) vol--;
+		if (vcc > window_columns - 1) { vsc = window_columns - 1; voc = vcc - vsc; }
+		else { vsc = vcc; voc = 0; }
 	} else {
 		int save_lcc = lcc;
 		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
-		if (lines[lcl].data[lcc] == '\t') {		
-			int length_p = 0, wrap_p = 0;
-			for (int c = 0; c < save_lcc; c++) {
+		if (lines[lcl].data[lcc] == '\t') {
+			int wrap_diff = 0, diff = 0;
+			for (int c = lcc; c < save_lcc; c++) {
 				char k = lines[lcl].data[c];
-				if (length_p >= wrap_width) { length_p = 0; wrap_p++; }
+				if (diff >= wrap_width) { diff = 0; wrap_diff++; }
 				if (k == '\t') { 
 					do {
-						if (length_p >= wrap_width) { length_p = 0; wrap_p++; } length_p++; 
-					} while (length_p % tab_width); 
-				} else if (visual(k)) length_p++;
+						if (diff >= wrap_width) { diff = 0; wrap_diff++; } diff++; 
+					} while (diff % tab_width);
+				} else if (visual(k)) diff++;
 			}
-			int length_n = 0, wrap_n = 0;
-			for (int c = 0; c < lcc; c++) {
-				char k = lines[lcl].data[c];
-				if (length_n >= wrap_width) { length_n = 0; wrap_n++; }
-				if (k == '\t') { 
-					do {
-						if (length_n >= wrap_width) { length_n = 0; wrap_n++; } length_n++; 
-					} while (length_n % tab_width); 
-				} else if (visual(k)) length_n++;
-			}
-			vcc = length_n;
-			int wrap_diff = wrap_p - wrap_n, diff = length_p - length_n;
-			if (wrap_diff) {
-				vcl--; if (vsl) vsl--; else if (vol) vol--;
-				if (vcc > window_columns - 1) { vsc = window_columns - 1;  voc = vcc - vsc; } 
-				else { vsc = vcc;  voc = 0; }
-			} else {
-				if (vsc >= diff) vsc -= diff;
-				else if (voc >= diff - vsc) { 
-					voc -= diff - vsc;  vsc = 0;
-				}
-			}
+			
+			if (wrap_diff) goto visual_line_up;
+			compute_vcc();
+			if (vsc >= diff) vsc -= diff;
+			else if (voc >= diff - vsc) { voc -= diff - vsc; vsc = 0; }
+
 		} else {
 			if (not vcc) goto visual_line_up;
 			vcc--; 
@@ -170,9 +155,8 @@ static inline void move_up() {
 		vsl = 0; vsc = 0;
 		return;
 	}
-	int line_target = vcl - 1;
-	while (vcc and vcl > line_target) move_left(0); 
-	do move_left(0); while (vcc > vdc and vcl == line_target);
+	while (vcc) move_left(0); 
+	do move_left(0); while (vcc > vdc);
 	if (vcc > window_columns - 1) { vsc = window_columns - 1; voc = vcc - vsc; } 
 	else { vsc = vcc; voc = 0; }
 }
@@ -186,11 +170,11 @@ static inline void move_down() {
 }
 
 static inline void move_begin() {
-	while (vcc) move_left(1);
+	while (lcc) move_left(1);
 }
 
 static inline void move_end() {
-	while (lcc < lines[lcl].count) move_right(1);  // WRONG.
+	while (lcc < lines[lcl].count) move_right(1); //TODO: this function is incorrect. it should be the end of the visual line, not the logical one.
 }
 
 static inline void move_top() {
@@ -321,8 +305,7 @@ static inline void display() {
 
 	} while (sl < window_rows);
 
-/*length += sprintf(screen + length, "\033[K\n\rxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\033[K\n\r[%d,%d:(%d,%d){%d,%d}[%d,%d:%d,%d]\033[K\n\r",
-	count, lines[lcl].count, lcl,lcc, vcl,vcc, vol,voc, vsl,vsc );*/
+
 
 	length += sprintf(screen + length, "\033[%d;%dH\033[?25h", vsl + 1, vsc + 1);
 	write(1, screen, (size_t) length);
@@ -362,3 +345,10 @@ begin:	adjust_window_size();
 	write(1, "\033[?1049l\033[?1000l", 16);	
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+*/
+
+/*length += sprintf(screen + length, "\033[K\n\rxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\033[K\n\r[%d,%d:(%d,%d){%d,%d}[%d,%d:%d,%d]\033[K\n\r",
+	count, lines[lcl].count, lcl,lcc, vcl,vcc, vol,voc, vsl,vsc );*/
+
+
