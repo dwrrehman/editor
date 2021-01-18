@@ -182,7 +182,9 @@ static inline void move_down() {
 	while (vcl < line_target) { 
 		if (lcl == count - 1 and lcc == lines[lcl].count) return;
 		move_right(0);
-	} while (vcc < vdc and lcc < lines[lcl].count) move_right(0);
+	} 
+	while (vcc < vdc and lcc < lines[lcl].count) move_right(0);
+	if (vcc != vdc and lcc and lines[lcl].data[lcc - 1] != '\t') move_left(0);
 }
 
 static inline void move_begin() {
@@ -190,7 +192,7 @@ static inline void move_begin() {
 }
 
 static inline void move_end() {
-	while (lcc < lines[lcl].count) move_right(1);  // WRONG.
+	while (lcc < lines[lcl].count and vcc < wrap_width) move_right(1);  // WRONG.
 }
 
 static inline void move_top() {
