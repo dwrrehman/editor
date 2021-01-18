@@ -189,6 +189,28 @@ static inline void move_down() {
 	} while (vcc < vdc and lcc < lines[lcl].count) move_right(0);
 }
 
+static inline void move_begin() {
+	while (lcc) move_left(1);
+}
+
+static inline void move_end() {
+	while (lcc < lines[lcl].count) move_right(1);
+}
+
+static inline void move_top() {
+	lcl = 0; lcc = 0;
+	vcl = 0; vcc = 0;
+	vol = 0; voc = 0;
+	vsl = 0; vsc = 0;
+	vdc = 0;
+}
+
+static inline void move_bottom() {
+	while (lcl < count - 1 or lcc < lines[lcl].count) move_down(); 
+	vdc = vcc;
+}
+
+
 static inline void insert(char c) {
 	struct line* this = lines + lcl;
 	if (c == 13) {
@@ -321,10 +343,23 @@ begin:	adjust_window_size();
 	display();
 	char c = 0;
 	read(0, &c, 1);
-	if (c == 'J') move_left(1);
+
+	if (c == 'W') { wrap_width++; move_top(); }
+	else if (c == 'E') { if (wrap_width > tab_width) wrap_width--; move_top(); }
+
+	else if (c == 'T') { tab_width++; move_top(); }
+	else if (c == 'R') { if (tab_width > 1) tab_width--; move_top(); }
+
+	else if (c == 'J') move_left(1);
 	else if (c == ':') move_right(1);
 	else if (c == 'O') move_up();
 	else if (c == 'I') move_down();
+
+	else if (c == 'K') move_begin();
+	else if (c == 'L') move_end();
+	else if (c == 'U') move_top();
+	else if (c == 'M') move_bottom();
+
 	else if (c == 127) delete();
 	else insert(c);
 	if (c != 'Q') goto begin;
