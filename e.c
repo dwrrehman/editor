@@ -51,23 +51,27 @@ static inline struct termios configure_terminal() {
 	return terminal;
 }
 
+static inline void compute_vcc() {
+	vcc = 0;
+	for (int c = 0; c < lcc; c++) {
+		char k = lines[lcl].data[c];
+		if (vcc >= wrap_width) vcc = 0;
+		if (k == '\t') { 
+			do {
+				if (vcc >= wrap_width) vcc = 0;
+				vcc++; 
+			} while (vcc % tab_width); 
+		} else if (visual(k)) vcc++;
+	}
+}
+
 static inline void move_left(int change_desired) {
 	if (not lcc) {
 		if (not lcl) return;
 		lcl--; 
 		lcc = lines[lcl].count;
-visual_line_up: 
-		vcl--;
-		for (int c = 0; c < lcc; c++) {
-			char k = lines[lcl].data[c];
-			if (vcc >= wrap_width) vcc = 0;
-			if (k == '\t') { 
-				do {
-					if (vcc >= wrap_width) vcc = 0;
-					vcc++; 
-				} while (vcc % tab_width); 
-			} else if (visual(k)) vcc++;
-		}
+visual_line_up: compute_vcc();
+visual_just_line_up: vcl--;
 		if (vsl) vsl--;
 		else if (vol) vol--;
 		if (vcc > window_columns - 1) { 
@@ -80,39 +84,23 @@ visual_line_up:
 	} else {
 		int save_lcc = lcc;
 		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
-		if (lines[lcl].data[lcc] == '\t') {		
-			int length_p = 0, wrap_p = 0;
-			for (int c = 0; c < save_lcc; c++) {
+		if (lines[lcl].data[lcc] == '\t') {
+			compute_vcc();
+			int old_vcc = vcc;
+			for (int c = lcc; c < save_lcc; c++) {
 				char k = lines[lcl].data[c];
-				if (length_p >= wrap_width) { length_p = 0; wrap_p++; }
-				if (k == '\t') { 
+				if (old_vcc >= wrap_width) goto visual_just_line_up;
+				if (k == '\t') {
 					do {
-						if (length_p >= wrap_width) { length_p = 0; wrap_p++; } length_p++; 
-					} while (length_p % tab_width); 
-				} else if (visual(k)) length_p++;
+						if (old_vcc >= wrap_width) goto visual_just_line_up; 
+						old_vcc++; 
+					} while (old_vcc % tab_width); 
+				} else if (visual(k)) old_vcc++;
 			}
-			int length_n = 0, wrap_n = 0;
-			for (int c = 0; c < lcc; c++) {
-				char k = lines[lcl].data[c];
-				if (length_n >= wrap_width) { length_n = 0; wrap_n++; }
-				if (k == '\t') { 
-					do {
-						if (length_n >= wrap_width) { length_n = 0; wrap_n++; } length_n++; 
-					} while (length_n % tab_width); 
-				} else if (visual(k)) length_n++;
-			}
-			vcc = length_n;
-			int wrap_diff = wrap_p - wrap_n, diff = length_p - length_n;
-			if (wrap_diff) {
-				vcl--; if (vsl) vsl--; else if (vol) vol--;
-				if (vcc > window_columns - 1) { vsc = window_columns - 1;  voc = vcc - vsc; } 
-				else { vsc = vcc;  voc = 0; }
-			} else {
-				if (vsc >= diff) vsc -= diff;
-				else if (voc >= diff - vsc) { 
-					voc -= diff - vsc;  vsc = 0;
-				}
-			}
+			int diff = old_vcc - vcc;
+			if (vsc >= diff) vsc -= diff;
+			else if (voc >= diff - vsc) { voc -= diff - vsc; vsc = 0; }
+
 		} else {
 			if (not vcc) goto visual_line_up;
 			vcc--; 
@@ -127,7 +115,6 @@ static inline void move_right(int change_desired) {
 	if (lcc >= lines[lcl].count) {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0; 
-
 		vcl++;  vcc = 0; voc = 0; vsc = 0;
 		if (vsl < window_rows - 1) vsl++; 
 		else vol++;
@@ -140,7 +127,6 @@ static inline void move_right(int change_desired) {
 					if (vsl < window_rows - 1) vsl++; 
 					else vol++;
 				}
-
 				vcc++;
 				if (vsc < window_columns - 1) vsc++;
 				else voc++;
@@ -152,7 +138,6 @@ static inline void move_right(int change_desired) {
 				if (vsl < window_rows - 1) vsl++; 
 				else vol++;
 			}
-
 			vcc++; 
 			if (vsc < window_columns - 1) vsc++; 
 			else voc++;
@@ -192,7 +177,7 @@ static inline void move_begin() {
 }
 
 static inline void move_end() {
-	while (lcc < lines[lcl].count and vcc < wrap_width) move_right(1);  // WRONG.
+	while (lcc < lines[lcl].count and vcc < wrap_width) move_right(1); 
 }
 
 static inline void move_top() {
