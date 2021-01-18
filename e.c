@@ -7,9 +7,11 @@
 #include <sys/ioctl.h> //
 
 struct line { char* data; int count, capacity; };
+
 static struct line* lines = NULL;
 static int count = 0;
 static int capacity = 0;
+
 static int lcl = 0;
 static int lcc = 0;
 static int vcl = 0;
@@ -19,6 +21,7 @@ static int voc = 0;
 static int vsl = 0;
 static int vsc = 0;
 static int vdc = 0;
+
 static int window_rows = 15;
 static int window_columns = 40;
 static int wrap_width = 60;
@@ -66,9 +69,10 @@ static inline int compute_visual() {
 static inline void move_left() {
 	if (not lcc) {
 		if (not lcl) return;
-		lcl--; vcl--; 
+		lcl--; 
 		lcc = lines[lcl].count;
-		vcc = compute_visual();
+visual_line_up: 
+		vcl--;  vcc = compute_visual();
 		if (vsl) vsl--;
 		else if (vol) vol--;
 		if (vcc > window_columns - 1) { 
@@ -79,37 +83,74 @@ static inline void move_left() {
 			voc = 0; 
 		}
 	} else {
-		do lcc--; 
-		while (lcc and zero_width(lines[lcl].data[lcc]));
-		if (lines[lcl].data[lcc] == '\t') {
-			int save = vcc;
-			vcc = compute_visual();
-			int diff = save - vcc;
-			if (vsc >= diff) vsc -= diff; 
-			else if (voc >= diff - vsc) { 
-				voc -= diff - vsc; 
-				vsc = 0; 
-			}
-		} else {
+		int save_lcc = lcc;
 
-			if (not vcc) {
-				vcl--;
-				vcc = compute_visual();
-				if (vsl) vsl--;
-				else if (vol) vol--;
-				if (vcc > window_columns - 1) {
-					vsc = window_columns - 1;
-					voc = vcc - vsc;
-				} else {
-					vsc = vcc;
-					voc = 0;
-				}
-			} else {
-				vcc--; 
-				if (vsc) vsc--; 
-				else if (voc) voc--;
+		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
+		if (lines[lcl].data[lcc] == '\t') {
+		
+
+			int length_p = 0, wrap_p = 0;
+			for (int c = 0; c < save_lcc; c++) {
+				char k = lines[lcl].data[c];
+				if (length_p >= wrap_width) { length_p = 0; wrap_p++; }
+				if (k == '\t') { 
+					do {
+						if (length_p >= wrap_width) { length_p = 0; wrap_p++; }
+						length_p++; 
+					} while (length_p % tab_width); 
+				} else if (visual(k)) length_p++;
 			}
 			
+
+			int length_n = 0, wrap_n = 0;
+			for (int c = 0; c < lcc; c++) {
+				char k = lines[lcl].data[c];
+				if (length_n >= wrap_width) { length_n = 0; wrap_n++; }
+				if (k == '\t') { 
+					do {
+						if (length_n >= wrap_width) { length_n = 0; wrap_n++; }
+						length_n++; 
+					} while (length_n % tab_width); 
+				} else if (visual(k)) length_n++;
+			}
+			
+			//printf("lp = %d, wp = %d :: ln = %d, wn = %d\n", 
+				//length_p, wrap_p, 
+				//length_n, wrap_n);
+			//abort();
+
+
+			if (wrap_p - wrap_n) {
+				vcl--; 
+				if (vsl) vsl--;
+				else if (vol) vol--;
+
+				vcc = length_n;
+				if (vcc > window_columns - 1) { 
+					vsc = window_columns - 1; 
+					voc = vcc - vsc; 
+				} else { 
+					vsc = vcc; 
+					voc = 0; 
+				}
+
+			} else {
+				int diff = length_p - length_n;
+				vcc = length_n;
+				if (vsc >= diff) vsc -= diff;
+				else if (voc >= diff - vsc) { 
+					voc -= diff - vsc; 
+					vsc = 0;
+				}
+			}
+
+
+
+		} else {
+			if (not vcc) goto visual_line_up;
+			vcc--; 
+			if (vsc) vsc--; 
+			else if (voc) voc--;
 		}
 	}
 }
@@ -117,11 +158,12 @@ static inline void move_left() {
 static inline void move_right() {
 	if (lcc >= lines[lcl].count) {
 		if (lcl + 1 >= count) return;
-		lcl++; vcl++; 
-		lcc = 0; vcc = 0; 
-		voc = 0; vsc = 0;
+		lcl++; lcc = 0; 
+
+		vcl++;  vcc = 0; voc = 0; vsc = 0;
 		if (vsl < window_rows - 1) vsl++; 
 		else vol++;
+
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
 			do {
@@ -130,9 +172,11 @@ static inline void move_right() {
 					if (vsl < window_rows - 1) vsl++; 
 					else vol++;
 				}
+
 				vcc++;
-				if (vsc < window_columns - 1) vsc++; 
+				if (vsc < window_columns - 1) vsc++;
 				else voc++;
+
 			} while (vcc % tab_width); 
 		} else {
 			if (vcc >= wrap_width) {
@@ -140,12 +184,12 @@ static inline void move_right() {
 				if (vsl < window_rows - 1) vsl++; 
 				else vol++;
 			}
+
 			vcc++; 
 			if (vsc < window_columns - 1) vsc++; 
 			else voc++;
 		}
-		do lcc++; 
-		while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
+		do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
 	}
 }
 
@@ -224,6 +268,7 @@ static inline void display() {
 			char k = lines[line].data[col];
 			if (k == '\t') {
 				do { 
+					if (vc >= wrap_width) goto next_visual_line;
 					if (vc >= voc and vc < voc + window_columns
 					and vl >= vol and vl < vol + window_rows) {
 						screen[length++] = ' ';
@@ -293,3 +338,132 @@ begin:	adjust_window_size();
 
 
 
+
+
+
+			
+			/*if (not vcc) {
+				exit(1);
+				vcl--;
+				if (vsl) vsl--;
+				else if (vol) vol--;
+			}
+			printf("lcc = %d. vcc = %d\n", lcc,vcc);
+			abort();
+
+			if (save == tab_width) {
+				vcl--;
+				if (vsl) vsl--;
+				else if (vol) vol--;
+			}
+				*/
+
+
+
+
+
+	/*// adjust column
+			
+			int diff = tab_width;
+			if (vsc >= 8) vsc -= 8;
+			else if (voc >= diff - vsc) { 
+				voc -= 8 - vsc; 
+				vsc = 0;
+			}
+
+			// adjust line
+			
+			if (vsl >= diff) vsl -= diff;
+			else if (vol >= diff) { vol -= diff - vsl; vsl = 0; }
+			if (vcc > window_columns - 1) {
+				vsc = window_columns - 1;
+				voc = vcc - vsc;
+			} else {
+				vsc = vcc;
+				voc = 0;
+			}*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+			for (int i = 0; i < tab_width; i++) {
+
+					vcc--; 
+					if (vsc) vsc--; 
+					else if (voc) voc--;
+
+				if (not vcc) {
+					vcl--;
+					vcc = compute_visual();
+					if (vsl) vsl--;
+					else if (vol) vol--;
+					if (vcc > window_columns - 1) {
+						vsc = window_columns - 1;
+						voc = vcc - vsc;
+					} else {
+						vsc = vcc;
+						voc = 0;
+					}
+				} 
+			}
+
+*/
+
+
+
+
+
+/* 	okay, heres the algorithm. it hass to do with how tabs work!
+
+				here is it.
+
+				you first want to move 32 (or less, if there isnt that many avilable)
+				 LOGICAL characters back from where you are, as in, "lcc".
+
+				you then want to move forwards, until, you find the tab that
+
+				
+
+				
+
+
+				1 2 3 4 5 6 7 _  
+
+			
+
+
+			// adjust line
+			
+			if (vsl >= diff) vsl -= diff;
+			else if (vol >= diff) { vol -= diff - vsl; vsl = 0; }
+			if (vcc > window_columns - 1) {
+				vsc = window_columns - 1;
+				voc = vcc - vsc;
+			} else {
+				vsc = vcc;
+				voc = 0;
+			}
+
+
+
+*/
