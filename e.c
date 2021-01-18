@@ -51,28 +51,23 @@ static inline struct termios configure_terminal() {
 	return terminal;
 }
 
-static inline int compute_visual() {
-	int length = 0;
-	for (int c = 0; c < lcc; c++) {
-		char k = lines[lcl].data[c];
-		if (length >= wrap_width) length = 0;
-		if (k == '\t') { 
-			do {
-				if (length >= wrap_width) length = 0;
-				length++; 
-			} while (length % tab_width); 
-		} else if (visual(k)) length++;
-	}
-	return length;
-}
-
-static inline void move_left() {
+static inline void move_left(int change_desired) {
 	if (not lcc) {
 		if (not lcl) return;
 		lcl--; 
 		lcc = lines[lcl].count;
 visual_line_up: 
-		vcl--;  vcc = compute_visual();
+		vcl--;  
+		for (int c = 0; c < lcc; c++) {
+			char k = lines[lcl].data[c];
+			if (vcc >= wrap_width) vcc = 0;
+			if (k == '\t') { 
+				do {
+					if (vcc >= wrap_width) vcc = 0;
+					vcc++; 
+				} while (vcc % tab_width); 
+			} else if (visual(k)) vcc++;
+		}
 		if (vsl) vsl--;
 		else if (vol) vol--;
 		if (vcc > window_columns - 1) { 
@@ -84,68 +79,45 @@ visual_line_up:
 		}
 	} else {
 		int save_lcc = lcc;
-
 		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
-		if (lines[lcl].data[lcc] == '\t') {
-		
-
+		// int lcc_diff = save_lcc - lcc;
+		if (lines[lcl].data[lcc] == '\t') {		
 			int length_p = 0, wrap_p = 0;
 			for (int c = 0; c < save_lcc; c++) {
 				char k = lines[lcl].data[c];
 				if (length_p >= wrap_width) { length_p = 0; wrap_p++; }
 				if (k == '\t') { 
 					do {
-						if (length_p >= wrap_width) { length_p = 0; wrap_p++; }
-						length_p++; 
+						if (length_p >= wrap_width) { length_p = 0; wrap_p++; } length_p++; 
 					} while (length_p % tab_width); 
 				} else if (visual(k)) length_p++;
 			}
-			
-
 			int length_n = 0, wrap_n = 0;
 			for (int c = 0; c < lcc; c++) {
 				char k = lines[lcl].data[c];
 				if (length_n >= wrap_width) { length_n = 0; wrap_n++; }
 				if (k == '\t') { 
 					do {
-						if (length_n >= wrap_width) { length_n = 0; wrap_n++; }
-						length_n++; 
+						if (length_n >= wrap_width) { length_n = 0; wrap_n++; } length_n++; 
 					} while (length_n % tab_width); 
 				} else if (visual(k)) length_n++;
 			}
-			
-			//printf("lp = %d, wp = %d :: ln = %d, wn = %d\n", 
-				//length_p, wrap_p, 
-				//length_n, wrap_n);
-			//abort();
-
-
 			if (wrap_p - wrap_n) {
-				vcl--; 
-				if (vsl) vsl--;
-				else if (vol) vol--;
-
+				vcl--;  if (vsl) vsl--; else if (vol) vol--;
 				vcc = length_n;
 				if (vcc > window_columns - 1) { 
-					vsc = window_columns - 1; 
-					voc = vcc - vsc; 
+					vsc = window_columns - 1;  voc = vcc - vsc; 
 				} else { 
-					vsc = vcc; 
-					voc = 0; 
+					vsc = vcc;  voc = 0; 
 				}
-
 			} else {
 				int diff = length_p - length_n;
 				vcc = length_n;
 				if (vsc >= diff) vsc -= diff;
 				else if (voc >= diff - vsc) { 
-					voc -= diff - vsc; 
-					vsc = 0;
+					voc -= diff - vsc;  vsc = 0;
 				}
 			}
-
-
-
 		} else {
 			if (not vcc) goto visual_line_up;
 			vcc--; 
@@ -153,9 +125,10 @@ visual_line_up:
 			else if (voc) voc--;
 		}
 	}
+	if (change_desired) vdc = vcc;
 }
 
-static inline void move_right() {
+static inline void move_right(int change_desired) {
 	if (lcc >= lines[lcl].count) {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0; 
@@ -190,7 +163,30 @@ static inline void move_right() {
 			else voc++;
 		}
 		do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
+	}	
+	if (change_desired) vdc = vcc;
+}
+
+static inline void move_up() {
+	if (not vcl) {
+		lcl = 0; lcc = 0;
+		vcl = 0; vcc = 0;
+		vol = 0; voc = 0;
+		vsl = 0; vsc = 0;
+		return;
 	}
+	while (vcc) move_left(0); 
+	do move_left(0); while (vcc > vdc);
+	if (vcc > window_columns - 1) { vsc = window_columns - 1; voc = vcc - vsc; } 
+	else { vsc = vcc; voc = 0; }
+}
+
+static inline void move_down() {
+	int line_target = vcl + 1;
+	while (vcl < line_target) { 
+		if (lcl == count - 1 and lcc == lines[lcl].count) return;
+		move_right(0);
+	} while (vcc < vdc and lcc < lines[lcl].count) move_right(0);
 }
 
 static inline void insert(char c) {
@@ -219,14 +215,14 @@ static inline void insert(char c) {
 		this->count++;
 	}
 	if (zero_width(c)) lcc++; 
-	else move_right();
+	else move_right(1);
 }
 
 static inline void delete() {
 	struct line* this = lines + lcl;
 	if (not lcc) {
 		if (not lcl) return;
-		move_left();
+		move_left(1);
 		struct line* new = lines + lcl;
 		new->data = realloc(new->data, (size_t)(new->count + this->count)); // debug
 		if (this->count) memcpy(new->data + new->count, this->data, (size_t) this->count);
@@ -237,7 +233,7 @@ static inline void delete() {
 		lines = realloc(lines, sizeof(struct line) * (size_t)(count)); // debug
 	} else {
 		int save = lcc;
-		move_left();
+		move_left(1);
 		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
 		this->count -= save - lcc;
 		this->data = realloc(this->data, (size_t) (this->count)); // debug
@@ -325,8 +321,10 @@ begin:	adjust_window_size();
 	display();
 	char c = 0;
 	read(0, &c, 1);
-	if (c == 'J') move_left();
-	else if (c == ':') move_right();
+	if (c == 'J') move_left(1);
+	else if (c == ':') move_right(1);
+	else if (c == 'O') move_up();
+	else if (c == 'I') move_down();
 	else if (c == 127) delete();
 	else insert(c);
 	if (c != 'Q') goto begin;
@@ -337,133 +335,11 @@ begin:	adjust_window_size();
 
 
 
-
-
-
-
-			
-			/*if (not vcc) {
-				exit(1);
-				vcl--;
-				if (vsl) vsl--;
-				else if (vol) vol--;
-			}
-			printf("lcc = %d. vcc = %d\n", lcc,vcc);
-			abort();
-
-			if (save == tab_width) {
-				vcl--;
-				if (vsl) vsl--;
-				else if (vol) vol--;
-			}
-				*/
-
-
-
-
-
-	/*// adjust column
-			
-			int diff = tab_width;
-			if (vsc >= 8) vsc -= 8;
-			else if (voc >= diff - vsc) { 
-				voc -= 8 - vsc; 
-				vsc = 0;
-			}
-
-			// adjust line
-			
-			if (vsl >= diff) vsl -= diff;
-			else if (vol >= diff) { vol -= diff - vsl; vsl = 0; }
-			if (vcc > window_columns - 1) {
-				vsc = window_columns - 1;
-				voc = vcc - vsc;
-			} else {
-				vsc = vcc;
-				voc = 0;
-			}*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /*
-
-			for (int i = 0; i < tab_width; i++) {
-
-					vcc--; 
-					if (vsc) vsc--; 
-					else if (voc) voc--;
-
-				if (not vcc) {
-					vcl--;
-					vcc = compute_visual();
-					if (vsl) vsl--;
-					else if (vol) vol--;
-					if (vcc > window_columns - 1) {
-						vsc = window_columns - 1;
-						voc = vcc - vsc;
-					} else {
-						vsc = vcc;
-						voc = 0;
-					}
-				} 
-			}
-
+if (lcl == count - 1) {
+		while (lcc < lines[lcl].count) move_right(0);
+		return;
+	}
 */
 
 
-
-
-
-/* 	okay, heres the algorithm. it hass to do with how tabs work!
-
-				here is it.
-
-				you first want to move 32 (or less, if there isnt that many avilable)
-				 LOGICAL characters back from where you are, as in, "lcc".
-
-				you then want to move forwards, until, you find the tab that
-
-				
-
-				
-
-
-				1 2 3 4 5 6 7 _  
-
-			
-
-
-			// adjust line
-			
-			if (vsl >= diff) vsl -= diff;
-			else if (vol >= diff) { vol -= diff - vsl; vsl = 0; }
-			if (vcc > window_columns - 1) {
-				vsc = window_columns - 1;
-				voc = vcc - vsc;
-			} else {
-				vsc = vcc;
-				voc = 0;
-			}
-
-
-
-*/

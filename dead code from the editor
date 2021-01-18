@@ -1,0 +1,131 @@
+
+
+
+
+
+			
+			/*if (not vcc) {
+				exit(1);
+				vcl--;
+				if (vsl) vsl--;
+				else if (vol) vol--;
+			}
+			printf("lcc = %d. vcc = %d\n", lcc,vcc);
+			abort();
+
+			if (save == tab_width) {
+				vcl--;
+				if (vsl) vsl--;
+				else if (vol) vol--;
+			}
+				*/
+
+
+
+
+
+	/*// adjust column
+			
+			int diff = tab_width;
+			if (vsc >= 8) vsc -= 8;
+			else if (voc >= diff - vsc) { 
+				voc -= 8 - vsc; 
+				vsc = 0;
+			}
+
+			// adjust line
+			
+			if (vsl >= diff) vsl -= diff;
+			else if (vol >= diff) { vol -= diff - vsl; vsl = 0; }
+			if (vcc > window_columns - 1) {
+				vsc = window_columns - 1;
+				voc = vcc - vsc;
+			} else {
+				vsc = vcc;
+				voc = 0;
+			}*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+			for (int i = 0; i < tab_width; i++) {
+
+					vcc--; 
+					if (vsc) vsc--; 
+					else if (voc) voc--;
+
+				if (not vcc) {
+					vcl--;
+					vcc = compute_visual();
+					if (vsl) vsl--;
+					else if (vol) vol--;
+					if (vcc > window_columns - 1) {
+						vsc = window_columns - 1;
+						voc = vcc - vsc;
+					} else {
+						vsc = vcc;
+						voc = 0;
+					}
+				} 
+			}
+
+*/
+
+
+
+
+
+/* 	okay, heres the algorithm. it hass to do with how tabs work!
+
+				here is it.
+
+				you first want to move 32 (or less, if there isnt that many avilable)
+				 LOGICAL characters back from where you are, as in, "lcc".
+
+				you then want to move forwards, until, you find the tab that
+
+				
+
+				
+
+
+				1 2 3 4 5 6 7 _  
+
+			
+
+
+			// adjust line
+			
+			if (vsl >= diff) vsl -= diff;
+			else if (vol >= diff) { vol -= diff - vsl; vsl = 0; }
+			if (vcc > window_columns - 1) {
+				vsc = window_columns - 1;
+				voc = vcc - vsc;
+			} else {
+				vsc = vcc;
+				voc = 0;
+			}
+
+
+
+*/
