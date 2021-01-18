@@ -13,6 +13,9 @@ static struct line* lines = NULL;
 static int count = 0;
 static int capacity = 0;
 
+static int scroll_counter = 0;
+static int scroll_speed = 4;
+
 static int lcl = 0;
 static int lcc = 0;
 static int vcl = 0;
@@ -232,7 +235,6 @@ static inline void move_word_right() {
 	));
 }
 
-
 static inline void insert(char c) {
 	struct line* this = lines + lcl;
 	if (c == 13) {
@@ -356,6 +358,42 @@ static inline void display() {
 	free(screen);
 }
 
+
+static void interpret_escape_code() {
+    char c = 0;
+    read(0, &c, 1);
+    if (c == '[') {
+        read(0, &c, 1);
+        if (c == 'A') move_up();
+        else if (c == 'B') move_down();
+        else if (c == 'C') move_right(1);
+        else if (c == 'D') move_left(1);
+        else if (c == 32) { read(0, &c, 1); read(0, &c, 1); }
+        else if (c == 77) {
+            read(0, &c, 1);
+            if (c == 97) {
+                read(0, &c, 1); read(0, &c, 1);
+                scroll_counter++;
+                if (scroll_counter == scroll_speed) {
+                    move_down();
+                    scroll_counter = 0;
+                }
+            } else if (c == 96) {
+                read(0, &c, 1); read(0, &c, 1);
+                
+                scroll_counter++;
+                if (scroll_counter == scroll_speed) {
+                    move_up();
+                    scroll_counter = 0;
+                }
+            }
+        }
+    }
+    // } else if (c == 27) file->mode = edit_mode;
+}
+
+
+
 int main() {
 	lines = calloc((size_t) (count = 1), sizeof(struct line));
 	struct termios terminal = configure_terminal();
@@ -366,7 +404,9 @@ begin:	adjust_window_size();
 	char c = 0;
 	read(0, &c, 1);
 
-	if (c == 'W') { wrap_width++; move_top(); }
+	if (c == 27) interpret_escape_code();
+
+	else if (c == 'W') { wrap_width++; move_top(); }
 	else if (c == 'E') { if (wrap_width > tab_width) wrap_width--; move_top(); }
 
 	else if (c == 'T') { tab_width++; move_top(); }

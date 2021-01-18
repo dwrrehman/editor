@@ -5,12 +5,16 @@
 #include <string.h>    //
 #include <unistd.h>    //          written on 2101177.005105
 #include <sys/ioctl.h> //         finished on 2101181.131817
+#include <ctype.h>
 
 struct line { char* data; int count, capacity; };
 
 static struct line* lines = NULL;
 static int count = 0;
 static int capacity = 0;
+
+static int scroll_counter = 0;
+static int scroll_speed = 4;
 
 static int lcl = 0;
 static int lcc = 0;
@@ -193,6 +197,44 @@ static inline void move_bottom() {
 	vdc = vcc;
 }
 
+static inline void move_word_left() {
+	do move_left(1);
+	while (not(  // until    
+		( 
+			not lcl and not lcc        //  we are at the top,
+		)
+		or
+		(
+			(
+				lcc < lines[lcl].count and isalnum(lines[lcl].data[lcc])
+			) 
+			and 
+			(
+				not lcc or not isalnum(lines[lcl].data[lcc - 1])
+			)
+		)
+	));
+}
+
+static inline void move_word_right() {
+	do move_right(1);
+	while (not(     // until
+		(
+			lcl >= count - 1 and lcc >= lines[lcl].count     // we are at the bottom,
+		)
+		or
+		(
+			(
+				lcc >= lines[lcl].count or not isalnum(lines[lcl].data[lcc])
+			) 
+			and 
+			(
+				lcc and isalnum(lines[lcl].data[lcc - 1])
+			)
+		)
+	));
+}
+
 static inline void insert(char c) {
 	struct line* this = lines + lcl;
 	if (c == 13) {
@@ -316,6 +358,42 @@ static inline void display() {
 	free(screen);
 }
 
+
+static void interpret_escape_code() {
+    char c = 0;
+    read(0, &c, 1);
+    if (c == '[') {
+        read(0, &c, 1);
+        if (c == 'A') move_up();
+        else if (c == 'B') move_down();
+        else if (c == 'C') move_right(1);
+        else if (c == 'D') move_left(1);
+        else if (c == 32) { read(0, &c, 1); read(0, &c, 1); }
+        else if (c == 77) {
+            read(0, &c, 1);
+            if (c == 97) {
+                read(0, &c, 1); read(0, &c, 1);
+                scroll_counter++;
+                if (scroll_counter == scroll_speed) {
+                    move_down();
+                    scroll_counter = 0;
+                }
+            } else if (c == 96) {
+                read(0, &c, 1); read(0, &c, 1);
+                
+                scroll_counter++;
+                if (scroll_counter == scroll_speed) {
+                    move_up();
+                    scroll_counter = 0;
+                }
+            }
+        }
+    }
+    // } else if (c == 27) file->mode = edit_mode;
+}
+
+
+
 int main() {
 	lines = calloc((size_t) (count = 1), sizeof(struct line));
 	struct termios terminal = configure_terminal();
@@ -326,7 +404,9 @@ begin:	adjust_window_size();
 	char c = 0;
 	read(0, &c, 1);
 
-	if (c == 'W') { wrap_width++; move_top(); }
+	if (c == 27) interpret_escape_code();
+
+	else if (c == 'W') { wrap_width++; move_top(); }
 	else if (c == 'E') { if (wrap_width > tab_width) wrap_width--; move_top(); }
 
 	else if (c == 'T') { tab_width++; move_top(); }
@@ -336,6 +416,9 @@ begin:	adjust_window_size();
 	else if (c == ':') move_right(1);
 	else if (c == 'O') move_up();
 	else if (c == 'I') move_down();
+	
+	else if (c == '{') move_word_left();
+	else if (c == '}') move_word_right();
 
 	else if (c == 'K') move_begin();
 	else if (c == 'L') move_end();
