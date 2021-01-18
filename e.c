@@ -216,7 +216,7 @@ static inline void display() {
 	int sl = 0, sc = 0;
 
 	do {
-		if (line >= count) goto next_logical_line;
+		if (line >= count) goto next_visual_line;
 		do {
 			if (col >= lines[line].count) goto next_logical_line;
 			if (vc >= wrap_width) goto next_visual_line;
@@ -246,15 +246,21 @@ static inline void display() {
 
 	next_logical_line:
 		line++; col = 0;
+
 	next_visual_line:
-		screen[length++] = '\033';
-		screen[length++] = '[';	
-		screen[length++] = 'K';
-		if (sl < window_rows - 1) {
-			screen[length++] = '\r';
-			screen[length++] = '\n';
+		if (vc >= voc and vc < voc + window_columns 
+		and vl >= vol and vl < vol + window_rows) {
+			screen[length++] = '\033';
+			screen[length++] = '[';	
+			screen[length++] = 'K';
+			if (sl < window_rows - 1) {
+				screen[length++] = '\r';
+				screen[length++] = '\n';
+			}
+			sl++; sc = 0;
 		}
-		sl++; vl++; vc = 0; sc = 0;
+
+		vl++; vc = 0; 
 
 	} while (sl < window_rows);
 
