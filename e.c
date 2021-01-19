@@ -36,7 +36,7 @@ static int count = 0;
 static int capacity = 0;
 static int scroll_counter = 0;
 static int line_number_width = 0;
-static int needs_display_update = 1;
+static int needs_display_update = 0;
 static int lcl = 0;
 static int lcc = 0;
 static int vcl = 0;
@@ -277,7 +277,12 @@ static inline void delete() {
 		if (not lcl) return;
 		move_left(1);
 		struct line* new = lines + lcl;
+
+		if (new->count + this->count > new->capacity)
+			new->data = realloc(new->data, (size_t)(new->capacity = 8 * (new->capacity + this->count)));
+        
 		if (this->count) memcpy(new->data + new->count, this->data, (size_t) this->count);
+
 		new->count += this->count;
 		memmove(lines + lcl + 1, lines + lcl + 2, 
 			sizeof(struct line) * (size_t)(count - (lcl + 2)));
@@ -294,6 +299,10 @@ static inline void delete() {
 static inline void adjust_window_size() {
 	struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
+
+	// debug:
+	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 20; window.ws_col = 40; }
+
 	if (window.ws_row != window_rows or window.ws_col != window_columns) {
 		window_rows = window.ws_row;
 		window_columns = window.ws_col;
@@ -573,22 +582,15 @@ static inline void save() {
 }
 
 static inline void rename_file() {
-
 	char new[4096] = {0};
 	prompt("rename to: ", 214, new, sizeof new);
-	if (not strlen(new)) {
-		sprintf(message, "aborted rename");
-		return;
-	}
+	if (not strlen(new)) { sprintf(message, "aborted rename"); return; }
 
 	if (file_exists(new) and not confirmed("file already exists, overwrite")) {
-		sprintf(message, "aborted rename");
-		return;
+		sprintf(message, "aborted rename"); return;
 	}
 
-	if (rename(filename, new))
-		sprintf(message, "error: %s", strerror(errno));
-
+	if (rename(filename, new)) sprintf(message, "error: %s", strerror(errno));
 	else {
 		strncpy(filename, new, sizeof new);
 		sprintf(message, "renamed to \"%s\"", filename);
@@ -639,6 +641,8 @@ int main(const int argc, const char** argv) {
 	struct termios terminal = configure_terminal();
 	write(1, "\033[?1049h\033[?1000h", 16);
 	char p = 0, c = 0;
+	needs_display_update = 1;
+
 loop:	
 	if (needs_display_update) {
 		adjust_window_size();
