@@ -7,6 +7,7 @@
 #include <sys/ioctl.h> //         finished on 2101181.131817
 #include <ctype.h>
 #include <time.h>
+#include <math.h>
 #include <sys/time.h>
 
 struct line { char* data; int count, capacity; };
@@ -24,6 +25,7 @@ static struct line* lines = NULL;
 static int count = 0;
 static int capacity = 0;
 static int scroll_counter = 0;
+static int line_number_width = 0;
 static int lcl = 0;
 static int lcc = 0;
 static int vcl = 0;
@@ -34,10 +36,13 @@ static int vsl = 0;
 static int vsc = 0;
 static int vdc = 0;
 
-static int wrap_width = 200;
+static int line_number_color = 236;
+static int status_bar_color = 240;
+static int wrap_width = 120;
 static int tab_width = 8;
 static int scroll_speed = 4;
 static int show_status = 1;
+static int show_line_numbers = 1;
 
 
 
@@ -93,8 +98,8 @@ visual_line_up: compute_vcc();
 visual_just_line_up: vcl--;
 		if (vsl) vsl--;
 		else if (vol) vol--;
-		if (vcc > window_columns - 1) { 
-			vsc = window_columns - 1; 
+		if (vcc > window_columns - 1 - line_number_width) { 
+			vsc = window_columns - 1 - line_number_width; 
 			voc = vcc - vsc; 
 		} else { 
 			vsc = vcc; 
@@ -147,7 +152,7 @@ static inline void move_right(int change_desired) {
 					else vol++;
 				}
 				vcc++;
-				if (vsc < window_columns - 1) vsc++;
+				if (vsc < window_columns - 1 - line_number_width) vsc++;
 				else voc++;
 
 			} while (vcc % tab_width); 
@@ -158,7 +163,7 @@ static inline void move_right(int change_desired) {
 				else vol++;
 			}
 			vcc++; 
-			if (vsc < window_columns - 1) vsc++; 
+			if (vsc < window_columns - 1 - line_number_width) vsc++; 
 			else voc++;
 		}
 		do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
@@ -177,7 +182,7 @@ static inline void move_up() {
 	int line_target = vcl - 1;
 	while (vcc and vcl > line_target) move_left(0); 
 	do move_left(0); while (vcc > vdc and vcl == line_target);
-	if (vcc > window_columns - 1) { vsc = window_columns - 1; voc = vcc - vsc; } 
+	if (vcc > window_columns - 1 - line_number_width) { vsc = window_columns - 1 - line_number_width; voc = vcc - vsc; } 
 	else { vsc = vcc; voc = 0; }
 }
 
@@ -239,20 +244,23 @@ static inline void insert(char c) {
 		this->count = lcc;
 		struct line new = {malloc((size_t) rest), rest, rest};
 		if (rest) memcpy(new.data, this->data + lcc, (size_t) rest);
-		this->data = realloc(this->data, (size_t) (this->count)); // debug
-		lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1)); // debug
-		// if (file->count + 1 > file->capacity) // enable if release mode.
-		// file->lines = realloc(file->lines, sizeof(struct line) 
-		// * (size_t)(file->capacity = 8 * (file->capacity + 1)));
+
+		// this->data = realloc(this->data, (size_t) (this->count)); // debug
+		// lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1)); // debug
+
+		if (count + 1 > capacity) 
+			lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
+
 		memmove(lines + lcl + 2, lines + lcl + 1, 
 			sizeof(struct line) * (size_t)(count - (lcl + 1)));
 		lines[lcl + 1] = new;
 		count++;
 	} else {
-		this->data = realloc(this->data, (size_t) (this->count + 1)); // debug
-		// enable if release mode.
-		// if (this->length + 1 > this->capacity) this->line = realloc(this->line, 
-		// (size_t)(this->capacity = 8 * (this->capacity + 1)));
+		// this->data = realloc(this->data, (size_t) (this->count + 1)); // debug
+		
+		if (this->count + 1 > this->capacity) 
+			this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
+
 		memmove(this->data + lcc + 1, this->data + lcc, (size_t) (this->count - lcc));
 		this->data[lcc] = c;
 		this->count++;
@@ -268,19 +276,25 @@ static inline void delete() {
 		if (not lcl) return;
 		move_left(1);
 		struct line* new = lines + lcl;
-		new->data = realloc(new->data, (size_t)(new->count + this->count)); // debug
-		if (this->count) memcpy(new->data + new->count, this->data, (size_t) this->count);
+
+		// new->data = realloc(new->data, (size_t)(new->count + this->count)); // debug
+
+		if (this->count) 
+			memcpy(new->data + new->count, this->data, (size_t) this->count);
+
 		new->count += this->count;
 		memmove(lines + lcl + 1, lines + lcl + 2, 
 			sizeof(struct line) * (size_t)(count - (lcl + 2)));
 		count--;
-		lines = realloc(lines, sizeof(struct line) * (size_t)(count)); // debug
+
+		// lines = realloc(lines, sizeof(struct line) * (size_t)(count)); // debug
 	} else {
 		int save = lcc;
 		move_left(1);
 		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
 		this->count -= save - lcc;
-		this->data = realloc(this->data, (size_t) (this->count)); // debug
+
+		// this->data = realloc(this->data, (size_t) (this->count)); // debug
 	}
 	saved = 0;
 }
@@ -317,8 +331,18 @@ static inline void display() {
 	int vl = 0, vc = 0;
 	int sl = 0, sc = 0;
 
+	double f = floor(log10((double) count)) + 1;
+	int line_number_digits = (int)f;
+	line_number_width = show_line_numbers * (line_number_digits + 2);
+
 	do {
 		if (line >= count) goto next_visual_line;
+
+		if (show_line_numbers and vl >= vol and vl < vol + window_rows - show_status) {
+			if (not col) length += sprintf(screen + length, "\033[38;5;%dm%*d\033[0m  ", line_number_color, line_number_digits, line + 1);
+			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
+		}
+            
 		do {
 			if (col >= lines[line].count) goto next_logical_line;
 			if (vc >= wrap_width) goto next_visual_line;
@@ -327,7 +351,7 @@ static inline void display() {
 			if (k == '\t') {
 				do { 
 					if (vc >= wrap_width) goto next_visual_line;
-					if (vc >= voc and vc < voc + window_columns
+					if (vc >= voc and vc < voc + window_columns - line_number_width
 					and vl >= vol and vl < vol + window_rows - show_status) {
 						screen[length++] = ' ';
 						sc++;
@@ -335,7 +359,7 @@ static inline void display() {
 					vc++;
 				} while (vc % tab_width);
 			} else {
-				if (vc >= voc and vc < voc + window_columns
+				if (vc >= voc and vc < voc + window_columns - line_number_width
 				and vl >= vol and vl < vol + window_rows - show_status and
 				(sc or visual(k))) {
 					screen[length++] = k;
@@ -345,7 +369,7 @@ static inline void display() {
 			}
 			col++;
 
-		} while (sc < window_columns or col < lines[line].count);
+		} while (sc < window_columns - line_number_width or col < lines[line].count);
 
 	next_logical_line:
 		line++; col = 0;
@@ -367,7 +391,7 @@ static inline void display() {
 	} while (sl < window_rows - show_status);
 
 	if (show_status) {
-		length += sprintf(screen + length, "\033[7m\033[38;5;246m");
+		length += sprintf(screen + length, "\033[7m\033[38;5;%dm", status_bar_color);
 
 		char datetime[16] = {0};
 		get_datetime(datetime);
@@ -391,7 +415,7 @@ static inline void display() {
 		screen[length++] = 'm';
 	}
     
-	length += sprintf(screen + length, "\033[%d;%dH\033[?25h", vsl + 1, vsc + 1);
+	length += sprintf(screen + length, "\033[%d;%dH\033[?25h", vsl + 1, vsc + 1 + line_number_width);
 	write(1, screen, (size_t) length);
 }
 
@@ -448,7 +472,12 @@ static inline void open_file(const char* given_filename) {
 		if (line_length and line[line_length - 1] == '\n') line_length--;
 		char* line_copy = malloc((size_t) line_length);
 		memcpy(line_copy, line, (size_t) line_length);
-		lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1)); // debug
+
+		// lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1)); // debug
+
+		if (count + 1 > capacity) 
+			lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
+
 		lines[count++] = (struct line) {line_copy, (int) line_length, (int) line_length};
 	}
 
@@ -488,7 +517,7 @@ loop:	adjust_window_size();
 		else if (c == 'R') { if (tab_width > 1) tab_width--; }
 
 		else if (c == 's') show_status = !show_status;
-		// else if (c == 'd') show_line_numbers = !show_line_numbers;
+		else if (c == 'd') show_line_numbers = !show_line_numbers;
 
 		else if (c == 'j') move_left(1);
 		else if (c == ';') move_right(1);
