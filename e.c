@@ -26,6 +26,7 @@ static int count = 0;
 static int capacity = 0;
 static int scroll_counter = 0;
 static int line_number_width = 0;
+static int needs_display_update = 1;
 static int lcl = 0;
 static int lcc = 0;
 static int vcl = 0;
@@ -306,6 +307,7 @@ static inline void adjust_window_size() {
 		window_rows = window.ws_row;
 		window_columns = window.ws_col;
 		screen = realloc(screen, sizeof(char) * (size_t) (window_rows * window_columns * 4));
+		memcpy(screen, "\033[?25l\033[H", 9);
 	}
 }
 
@@ -325,7 +327,7 @@ static inline void get_full_datetime(char buffer[32]) {
 
 static inline void display() {
 	
-	int length = 9; memcpy(screen, "\033[?25l\033[H", 9);
+	int length = 9; 
 
 	int line = 0, col = 0;
 	int vl = 0, vc = 0;
@@ -437,7 +439,7 @@ static void interpret_escape_code() {
                 if (scroll_counter == scroll_speed) {
                     move_down();
                     scroll_counter = 0;
-                }
+                } else needs_display_update = 0;
             } else if (c == 96) {
                 read(0, &c, 1); read(0, &c, 1);
                 
@@ -445,7 +447,7 @@ static void interpret_escape_code() {
                 if (scroll_counter == scroll_speed) {
                     move_up();
                     scroll_counter = 0;
-                }
+                } else needs_display_update = 0;
             }
         }
     } else if (c == 27) mode = 0;
@@ -498,12 +500,15 @@ int main(const int argc, const char** argv) {
 	else open_file(argv[1]);
 
 	struct termios terminal = configure_terminal();
-	write(1, "\033[?1049h\033[?1000h", 16);	
-
-loop:	adjust_window_size();
-	display();
+	write(1, "\033[?1049h\033[?1000h", 16);
+loop:	
+	if (needs_display_update) {
+		adjust_window_size();
+		display();
+	}
 	char c = 0;
 	read(0, &c, 1);
+	needs_display_update = 1;
 
 	if (not mode) {
 		if (c == 'q') { if (saved) goto done; }
@@ -544,7 +549,5 @@ done:
 	write(1, "\033[?1049l\033[?1000l", 16);	
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
-
-
 
 
