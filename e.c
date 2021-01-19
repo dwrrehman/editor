@@ -9,12 +9,22 @@
 #include <time.h>
 #include <math.h>
 #include <sys/time.h>
+#include <errno.h>
 
 struct line { char* data; int count, capacity; };
 
 static int window_rows = 0;
 static int window_columns = 0;
 static char* screen = NULL;
+
+static char* tb_data = NULL;
+static int tb_count = 0;
+static int tb_capacity = 0;
+static int tb_prompt_length = 0;
+static int tb_c = 0;
+static int tb_vc = 0;
+static int tb_vs = 0;
+static int tb_vo = 0;
 
 static char message[4096] = {0};
 static char filename[4096] = {0};
@@ -44,8 +54,7 @@ static int tab_width = 8;
 static int scroll_speed = 4;
 static int show_status = 1;
 static int show_line_numbers = 1;
-
-
+static int use_txt_extension_when_absent = 1;
 
 static inline char zero_width(char c) { 
 	return (((unsigned char)c) >> 6) == 2; 
@@ -54,7 +63,6 @@ static inline char zero_width(char c) {
 static inline char visual(char c) { 
 	return (((unsigned char)c) >> 6) != 2; 
 }
-
 
 static inline int file_exists(const char* f) {
     return access(f, F_OK) != -1;
@@ -240,28 +248,20 @@ static inline void move_word_right() {
 
 static inline void insert(char c) {
 	struct line* this = lines + lcl;
-	if (c == 13) {
+	if (c == 10) {
 		int rest = this->count - lcc;
 		this->count = lcc;
 		struct line new = {malloc((size_t) rest), rest, rest};
 		if (rest) memcpy(new.data, this->data + lcc, (size_t) rest);
-
-		// this->data = realloc(this->data, (size_t) (this->count)); // debug
-		// lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1)); // debug
-
 		if (count + 1 > capacity) 
 			lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
-
 		memmove(lines + lcl + 2, lines + lcl + 1, 
 			sizeof(struct line) * (size_t)(count - (lcl + 1)));
 		lines[lcl + 1] = new;
 		count++;
 	} else {
-		// this->data = realloc(this->data, (size_t) (this->count + 1)); // debug
-		
 		if (this->count + 1 > this->capacity) 
 			this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
-
 		memmove(this->data + lcc + 1, this->data + lcc, (size_t) (this->count - lcc));
 		this->data[lcc] = c;
 		this->count++;
@@ -277,25 +277,16 @@ static inline void delete() {
 		if (not lcl) return;
 		move_left(1);
 		struct line* new = lines + lcl;
-
-		// new->data = realloc(new->data, (size_t)(new->count + this->count)); // debug
-
-		if (this->count) 
-			memcpy(new->data + new->count, this->data, (size_t) this->count);
-
+		if (this->count) memcpy(new->data + new->count, this->data, (size_t) this->count);
 		new->count += this->count;
 		memmove(lines + lcl + 1, lines + lcl + 2, 
 			sizeof(struct line) * (size_t)(count - (lcl + 2)));
 		count--;
-
-		// lines = realloc(lines, sizeof(struct line) * (size_t)(count)); // debug
 	} else {
 		int save = lcc;
 		move_left(1);
 		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
 		this->count -= save - lcc;
-
-		// this->data = realloc(this->data, (size_t) (this->count)); // debug
 	}
 	saved = 0;
 }
@@ -307,7 +298,6 @@ static inline void adjust_window_size() {
 		window_rows = window.ws_row;
 		window_columns = window.ws_col;
 		screen = realloc(screen, sizeof(char) * (size_t) (window_rows * window_columns * 4));
-		memcpy(screen, "\033[?25l\033[H", 9);
 	}
 }
 
@@ -318,16 +308,18 @@ static inline void get_datetime(char buffer[16]) {
 	strftime(buffer, 15, "%y%m%d%u.%H%M%S", tm_info);
 }
 
+/*
 static inline void get_full_datetime(char buffer[32]) {
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	struct tm* time = localtime(&tv.tv_sec);
 	strftime(buffer, 31, "CE%Y%m%d%u.%H%M%S", time);
-}
+}*/
 
 static inline void display() {
 	
 	int length = 9; 
+	memcpy(screen, "\033[?25l\033[H", 9);
 
 	int line = 0, col = 0;
 	int vl = 0, vc = 0;
@@ -397,16 +389,9 @@ static inline void display() {
 
 		char datetime[16] = {0};
 		get_datetime(datetime);
-
 		int status_length = sprintf(screen + length, " %s %d %d %d %s %c  %s",
-			datetime,
-			mode,
-			lcl + 1, lcc + 1,
-			filename,
-			saved ? 's' : 'e',
-			message
+			datetime, mode, lcl + 1, lcc + 1, filename, saved ? 's' : 'e', message
 		);
-
 		length += status_length;
 
 		for (int i = status_length; i < window_columns; i++)
@@ -421,36 +406,103 @@ static inline void display() {
 	write(1, screen, (size_t) length);
 }
 
-static void interpret_escape_code() {
-    char c = 0;
-    read(0, &c, 1);
-    if (c == '[') {
-        read(0, &c, 1);
-        if (c == 'A') move_up();
-        else if (c == 'B') move_down();
-        else if (c == 'C') move_right(1);
-        else if (c == 'D') move_left(1);
-        else if (c == 32) { read(0, &c, 1); read(0, &c, 1); }
-        else if (c == 77) {
-            read(0, &c, 1);
-            if (c == 97) {
-                read(0, &c, 1); read(0, &c, 1);
-                scroll_counter++;
-                if (scroll_counter == scroll_speed) {
-                    move_down();
-                    scroll_counter = 0;
-                } else needs_display_update = 0;
-            } else if (c == 96) {
-                read(0, &c, 1); read(0, &c, 1);
-                
-                scroll_counter++;
-                if (scroll_counter == scroll_speed) {
-                    move_up();
-                    scroll_counter = 0;
-                } else needs_display_update = 0;
-            }
-        }
-    } else if (c == 27) mode = 0;
+static inline void textbox_move_left() {
+	if (not tb_c) return;
+	do tb_c--; while (tb_c and zero_width(tb_data[tb_c]));
+	tb_vc--; 
+	if (tb_vs) tb_vs--; else if (tb_vo) tb_vo--;
+}
+
+static inline void textbox_move_right() {
+	if (tb_c >= tb_count) return;
+	tb_vc++; 
+	if (tb_vs < window_columns - 1 - tb_prompt_length) tb_vs++; else tb_vo++;
+	do tb_c++; while (tb_c < tb_count and zero_width(tb_data[tb_c]));
+}
+
+static inline void textbox_insert(char c) {
+	if (tb_count + 1 > tb_capacity) 
+		tb_data = realloc(tb_data, (size_t)(tb_capacity = 8 * (tb_capacity + 1)));
+	memmove(tb_data + tb_c + 1, tb_data + tb_c, (size_t) (tb_count - tb_c));
+	tb_data[tb_c] = c;
+	tb_count++;
+	if (zero_width(c)) tb_c++; else textbox_move_right();
+}
+
+static inline void textbox_delete() {
+	if (not tb_c) return;
+	int save = tb_c;
+	textbox_move_left();
+	memmove(tb_data + tb_c, tb_data + save, (size_t)(tb_count - save));
+	tb_count -= save - tb_c;
+}
+
+static inline void textbox_display(const char* prompt, int prompt_color) {
+	int length = sprintf(screen, "\033[?25l\033[%d;1H\033[38;5;%dm%s\033[m", window_rows, prompt_color, prompt);
+	int col = 0, vc = 0, sc = tb_prompt_length;
+	while (sc < window_columns and col < tb_count) {
+		char k = tb_data[col];
+		if (vc >= tb_vo and vc < tb_vo + window_columns - 1 - tb_prompt_length and (sc or visual(k))) {
+			screen[length++] = k;
+			if (visual(k)) { sc++; }
+		}
+		if (visual(k)) vc++; 
+		col++;
+	} 
+
+	for (int i = sc; i < window_columns; i++) 
+		screen[length++] = ' ';
+
+	length += sprintf(screen + length, "\033[%d;%dH\033[?25h", window_rows, tb_vs + 1 + tb_prompt_length);
+	write(1, screen, (size_t) length);
+}
+
+static inline void prompt(const char* prompt_message, int color, char* out, int out_size) {
+	tb_prompt_length = (int) strlen(prompt_message);
+	do {
+		adjust_window_size();
+		textbox_display(prompt_message, color);
+		char c = 0;
+		read(0, &c, 1);
+		if (c == '\r') break;
+		if (c == '\t') { /*tab complete*/ }
+		else if (c == 27) {
+			read(0, &c, 1);
+			if (c == '[') {
+				read(0, &c, 1);
+				if (c == 'A') {}
+				else if (c == 'B') {}
+				else if (c == 'C') textbox_move_right();
+				else if (c == 'D') textbox_move_left();
+			} else if (c == 27) { tb_count = 0; break; }
+		} else if (c == 127) textbox_delete();
+		else textbox_insert(c);
+	} while (1);
+	if (tb_count > out_size) tb_count = out_size;
+	memcpy(out, tb_data, (size_t) tb_count);
+	memset(out + tb_count, 0, (size_t) out_size - (size_t) tb_count);
+	free(tb_data); tb_data = NULL;
+	tb_count = 0; tb_capacity = 0;
+	tb_c = 0; tb_vo = 0; tb_vc = 0; tb_vs = 0;
+}
+
+static inline void print_above_textbox(char* write_message, int color) {
+	int length = sprintf(screen, "\033[%d;1H\033[38;5;%dm%s\033[m", window_rows - 1, color, write_message);
+	write(1, screen, (size_t) length);
+}
+
+static inline int confirmed(const char* question) {
+	char prompt_message[4096] = {0};
+	sprintf(prompt_message, "%s? (yes/no): ", question);
+
+	while (1) {
+		char response[10] = {0};
+		prompt(prompt_message, 196, response, sizeof response);
+
+		if (not strncmp(response, "yes", 4)) return 1;
+		else if (not strncmp(response, "no", 3)) return 0;
+		else print_above_textbox("please type \"yes\" or \"no\".", 214L);
+	}
 }
 
 static inline void open_file(const char* given_filename) {
@@ -462,36 +514,116 @@ static inline void open_file(const char* given_filename) {
 		exit(1);
 	}
 
+	fseek(file, 0, SEEK_END);        
+        size_t length = (size_t) ftell(file);
+	char* buffer = malloc(sizeof(char) * (length + 1));
+        fseek(file, 0, SEEK_SET);
+        fread(buffer, sizeof(char), length, file);
+	buffer[length] = '\0';
+	lines = calloc((size_t) (count = 1), sizeof(struct line));
+	for (size_t i = 0; i < length; i++) insert(buffer[i]);
+	move_top();
+	free(buffer);
 	strcpy(filename, given_filename);
-	char* line = NULL;
-	size_t line_capacity = 0;
-	ssize_t line_length;
-	
 	saved = 1;
-	mode = 0;
-
-	while ((line_length = getline(&line, &line_capacity, file)) >= 0) {
-		if (line_length and line[line_length - 1] == '\n') line_length--;
-		char* line_copy = malloc((size_t) line_length);
-		memcpy(line_copy, line, (size_t) line_length);
-
-		// lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1)); // debug
-
-		if (count + 1 > capacity) 
-			lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
-
-		lines[count++] = (struct line) {line_copy, (int) line_length, (int) line_length};
-	}
-
-	if (not count) lines = calloc((size_t) (count = 1), sizeof(struct line));
-
 	fclose(file);
-	free(line);
 }
 
 static inline void save() {
-	sprintf(message, "error: save unimplemented.");
-	saved = 1;
+
+	if (not strlen(filename)) {
+		prompt("save as: ", 214, filename, sizeof filename);
+		if (not strlen(filename)) { sprintf(message, "aborted save"); return; }
+		if (not strrchr(filename, '.') and use_txt_extension_when_absent) strcat(filename, ".txt");
+		if (file_exists(filename) and not confirmed("file already exists, overwrite")) {
+			strcpy(filename, "");
+			sprintf(message, "aborted save");
+			return;
+		}
+	}
+
+	FILE* file = fopen(filename, "w+");
+	if (not file) {
+		sprintf(message, "error: %s", strerror(errno));
+		strcpy(filename, "");
+		return;
+
+	} else {
+		unsigned long long bytes = 0;
+		for (int i = 0; i < count; i++) {
+			bytes += fwrite(lines[i].data, sizeof(char), (size_t) lines[i].count, file);
+			if (i < count - 1) {
+				fputc('\n', file);
+				bytes++;
+			}
+		}
+		if (ferror(file)) {
+			sprintf(message, "error: %s", strerror(errno));
+			strcpy(filename, "");
+			fclose(file);
+			return;
+
+		} else {
+			fclose(file);
+			sprintf(message, "wrote %lldb;%dl", bytes, count);
+			saved = 1;
+		}
+	}
+}
+
+static inline void rename_file() {
+
+	char new[4096] = {0};
+	prompt("rename to: ", 214, new, sizeof new);
+	if (not strlen(new)) {
+		sprintf(message, "aborted rename");
+		return;
+	}
+
+	if (file_exists(new) and not confirmed("file already exists, overwrite")) {
+		sprintf(message, "aborted rename");
+		return;
+	}
+
+	if (rename(filename, new))
+		sprintf(message, "error: %s", strerror(errno));
+
+	else {
+		strncpy(filename, new, sizeof new);
+		sprintf(message, "renamed to \"%s\"", filename);
+	}
+}
+
+static inline void interpret_escape_code() {
+	char c = 0;
+	read(0, &c, 1);
+	if (c == 27) mode = 0;
+	else if (c == '[') {
+		read(0, &c, 1);
+		if (c == 'A') move_up();
+		else if (c == 'B') move_down();
+		else if (c == 'C') move_right(1);
+		else if (c == 'D') move_left(1);
+		else if (c == 32) { read(0, &c, 1); read(0, &c, 1); }
+		else if (c == 77) {
+			read(0, &c, 1);
+			if (c == 97) {
+				read(0, &c, 1); read(0, &c, 1);
+				scroll_counter++;
+				if (scroll_counter == scroll_speed) {
+					move_down();
+					scroll_counter = 0;
+				} else needs_display_update = 0;
+			} else if (c == 96) {
+				read(0, &c, 1); read(0, &c, 1);
+				scroll_counter++;
+				if (scroll_counter == scroll_speed) {
+					move_up();
+					scroll_counter = 0;
+				} else needs_display_update = 0;
+			}
+		}
+	} 
 }
 
 int main(const int argc, const char** argv) {
@@ -512,13 +644,14 @@ loop:
 
 	if (not mode) {
 		if (c == 'q') { if (saved) goto done; }
-		if (c == 'Q') { goto done; }
+		if (c == 'Q') { if (saved or confirmed("discard unsaved changed")) goto done; }
 		else if (c == 'f') mode = 1;
 		else if (c == 27) interpret_escape_code();
-		else if (c == 'W') { wrap_width++; }
+
+		else if (c == '#') { wrap_width++; }
 		else if (c == 'E') { if (wrap_width > tab_width) wrap_width--; }
 
-		else if (c == 'T') { tab_width++; }
+		else if (c == '$') { tab_width++; }
 		else if (c == 'R') { if (tab_width > 1) tab_width--; }
 
 		else if (c == 's') show_status = !show_status;
@@ -538,10 +671,12 @@ loop:
 		else if (c == 'I') move_bottom();
 
 		else if (c == 'w') save();
+		else if (c == 'W') rename_file();
 
 	} else if (mode == 1) {
 		if (c == 27) interpret_escape_code();
 		else if (c == 127) delete();
+		else if (c == 13) insert(10);
 		else insert(c);
 	}
 	goto loop;
@@ -550,4 +685,47 @@ done:
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+	size_t line_length = 0;
+
+	if (line_length and line[line_length - 1] == '\n') line_length--;
+
+	char* line_copy = malloc((size_t) line_length);
+	memcpy(line_copy, line, (size_t) line_length);
+
+	if (count + 1 > capacity) 
+		lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
+	lines[count++] = (struct line) {line_copy, (int) line_length, (int) line_length};
+	
+
+
+
+	if (not count) ;
+*/
 
