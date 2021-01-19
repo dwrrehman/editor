@@ -6,16 +6,24 @@
 #include <unistd.h>    //          written on 2101177.005105
 #include <sys/ioctl.h> //         finished on 2101181.131817
 #include <ctype.h>
+#include <time.h>
+#include <sys/time.h>
 
 struct line { char* data; int count, capacity; };
 
+static int window_rows = 0;
+static int window_columns = 0;
+static char* screen = NULL;
+
+static char message[4096] = {0};
+static char filename[4096] = {0};
+
+static int saved = 0;
+static int mode = 0;
 static struct line* lines = NULL;
 static int count = 0;
 static int capacity = 0;
-
 static int scroll_counter = 0;
-static int scroll_speed = 4;
-
 static int lcl = 0;
 static int lcc = 0;
 static int vcl = 0;
@@ -26,10 +34,12 @@ static int vsl = 0;
 static int vsc = 0;
 static int vdc = 0;
 
-static int window_rows = 15;
-static int window_columns = 40;
-static int wrap_width = 60;
+static int wrap_width = 200;
 static int tab_width = 8;
+static int scroll_speed = 4;
+static int show_status = 1;
+
+
 
 static inline char zero_width(char c) { 
 	return (((unsigned char)c) >> 6) == 2; 
@@ -37,6 +47,11 @@ static inline char zero_width(char c) {
 
 static inline char visual(char c) { 
 	return (((unsigned char)c) >> 6) != 2; 
+}
+
+
+static inline int file_exists(const char* f) {
+    return access(f, F_OK) != -1;
 }
 
 static inline struct termios configure_terminal() {
@@ -120,7 +135,7 @@ static inline void move_right(int change_desired) {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0; 
 		vcl++;  vcc = 0; voc = 0; vsc = 0;
-		if (vsl < window_rows - 1) vsl++; 
+		if (vsl < window_rows - 1 - show_status) vsl++; 
 		else vol++;
 
 	} else {
@@ -128,7 +143,7 @@ static inline void move_right(int change_desired) {
 			do {
 				if (vcc >= wrap_width) {
 					vcl++; vcc = 0; voc = 0; vsc = 0;
-					if (vsl < window_rows - 1) vsl++; 
+					if (vsl < window_rows - 1 - show_status) vsl++; 
 					else vol++;
 				}
 				vcc++;
@@ -139,7 +154,7 @@ static inline void move_right(int change_desired) {
 		} else {
 			if (vcc >= wrap_width) {
 				vcl++; vcc = 0; voc = 0; vsc = 0;
-				if (vsl < window_rows - 1) vsl++; 
+				if (vsl < window_rows - 1 - show_status) vsl++; 
 				else vol++;
 			}
 			vcc++; 
@@ -199,38 +214,20 @@ static inline void move_bottom() {
 
 static inline void move_word_left() {
 	do move_left(1);
-	while (not(  // until    
-		( 
-			not lcl and not lcc        //  we are at the top,
-		)
-		or
-		(
-			(
-				lcc < lines[lcl].count and isalnum(lines[lcl].data[lcc])
-			) 
-			and 
-			(
-				not lcc or not isalnum(lines[lcl].data[lcc - 1])
-			)
+	while (not(
+		(not lcl and not lcc) or (
+			(lcc < lines[lcl].count and isalnum(lines[lcl].data[lcc]))  and 
+			(not lcc or not isalnum(lines[lcl].data[lcc - 1]))
 		)
 	));
 }
 
 static inline void move_word_right() {
 	do move_right(1);
-	while (not(     // until
-		(
-			lcl >= count - 1 and lcc >= lines[lcl].count     // we are at the bottom,
-		)
-		or
-		(
-			(
-				lcc >= lines[lcl].count or not isalnum(lines[lcl].data[lcc])
-			) 
-			and 
-			(
-				lcc and isalnum(lines[lcl].data[lcc - 1])
-			)
+	while (not(
+		(lcl >= count - 1 and lcc >= lines[lcl].count) or (
+			(lcc >= lines[lcl].count or not isalnum(lines[lcl].data[lcc]))  and 
+			(lcc and isalnum(lines[lcl].data[lcc - 1]))
 		)
 	));
 }
@@ -262,6 +259,7 @@ static inline void insert(char c) {
 	}
 	if (zero_width(c)) lcc++; 
 	else move_right(1);
+	saved = 0;
 }
 
 static inline void delete() {
@@ -284,17 +282,35 @@ static inline void delete() {
 		this->count -= save - lcc;
 		this->data = realloc(this->data, (size_t) (this->count)); // debug
 	}
+	saved = 0;
 }
 
 static inline void adjust_window_size() {
 	struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
-	window_rows = window.ws_row;
-	window_columns = window.ws_col;
+	if (window.ws_row != window_rows or window.ws_col != window_columns) {
+		window_rows = window.ws_row;
+		window_columns = window.ws_col;
+		screen = realloc(screen, sizeof(char) * (size_t) (window_rows * window_columns * 4));
+	}
+}
+
+static inline void get_datetime(char buffer[16]) {
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	struct tm* tm_info = localtime(&tv.tv_sec);
+	strftime(buffer, 15, "%y%m%d%u.%H%M%S", tm_info);
+}
+
+static inline void get_full_datetime(char buffer[32]) {
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	struct tm* time = localtime(&tv.tv_sec);
+	strftime(buffer, 31, "CE%Y%m%d%u.%H%M%S", time);
 }
 
 static inline void display() {
-	char* screen = malloc(sizeof(char) * (size_t) (window_rows * window_columns * 4));
+	
 	int length = 9; memcpy(screen, "\033[?25l\033[H", 9);
 
 	int line = 0, col = 0;
@@ -312,7 +328,7 @@ static inline void display() {
 				do { 
 					if (vc >= wrap_width) goto next_visual_line;
 					if (vc >= voc and vc < voc + window_columns
-					and vl >= vol and vl < vol + window_rows) {
+					and vl >= vol and vl < vol + window_rows - show_status) {
 						screen[length++] = ' ';
 						sc++;
 					}
@@ -320,7 +336,7 @@ static inline void display() {
 				} while (vc % tab_width);
 			} else {
 				if (vc >= voc and vc < voc + window_columns
-				and vl >= vol and vl < vol + window_rows and
+				and vl >= vol and vl < vol + window_rows - show_status and
 				(sc or visual(k))) {
 					screen[length++] = k;
 					if (visual(k)) { sc++; }
@@ -335,7 +351,7 @@ static inline void display() {
 		line++; col = 0;
 
 	next_visual_line:
-		if (vl >= vol and vl < vol + window_rows) {
+		if (vl >= vol and vl < vol + window_rows - show_status) {
 			screen[length++] = '\033';
 			screen[length++] = '[';	
 			screen[length++] = 'K';
@@ -348,16 +364,37 @@ static inline void display() {
 
 		vl++; vc = 0; 
 
-	} while (sl < window_rows);
+	} while (sl < window_rows - show_status);
 
-/*length += sprintf(screen + length, "\033[K\n\rxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\033[K\n\r[%d,%d:(%d,%d){%d,%d}[%d,%d:%d,%d]\033[K\n\r",
-	count, lines[lcl].count, lcl,lcc, vcl,vcc, vol,voc, vsl,vsc );*/
 
+	if (show_status) {
+		length += sprintf(screen + length, "\033[7m\033[38;5;246m");
+
+		char datetime[16] = {0};
+		get_datetime(datetime);
+
+		int status_length = sprintf(screen + length, " %s %d %d %d %s %c  %s",
+			datetime,
+			mode,
+			lcl + 1, lcc + 1,
+			filename,
+			saved ? 's' : 'e',
+			message
+		);
+
+		length += status_length;
+
+		for (int i = status_length; i < window_columns; i++)
+			screen[length++] = ' ';
+
+		screen[length++] = '\033';
+		screen[length++] = '[';
+		screen[length++] = 'm';
+	}
+    
 	length += sprintf(screen + length, "\033[%d;%dH\033[?25h", vsl + 1, vsc + 1);
 	write(1, screen, (size_t) length);
-	free(screen);
 }
-
 
 static void interpret_escape_code() {
     char c = 0;
@@ -388,47 +425,99 @@ static void interpret_escape_code() {
                 }
             }
         }
-    }
-    // } else if (c == 27) file->mode = edit_mode;
+    } else if (c == 27) mode = 0;
 }
 
+static inline void open_file(const char* given_filename) {
+	if (not strlen(given_filename)) return;
+	
+	FILE* file = fopen(given_filename, "r");
+	if (not file) {
+		perror("fopen");
+		exit(1);
+	}
 
+	strcpy(filename, given_filename);
+	char* line = NULL;
+	size_t line_capacity = 0;
+	ssize_t line_length;
+	
+	saved = 1;
+	mode = 0;
 
-int main() {
-	lines = calloc((size_t) (count = 1), sizeof(struct line));
+	while ((line_length = getline(&line, &line_capacity, file)) >= 0) {
+		if (line_length and line[line_length - 1] == '\n') line_length--;
+		char* line_copy = malloc((size_t) line_length);
+		memcpy(line_copy, line, (size_t) line_length);
+		lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1)); // debug
+		lines[count++] = (struct line) {line_copy, (int) line_length, (int) line_length};
+	}
+
+	if (not count) lines = calloc((size_t) (count = 1), sizeof(struct line));
+
+	fclose(file);
+	free(line);
+}
+
+static inline void save() {
+	
+	sprintf(message, "error: save unimplemented.");
+	saved = 1;
+}
+
+int main(const int argc, const char** argv) {
+
+	if (argc == 1) lines = calloc((size_t) (count = 1), sizeof(struct line));
+	else open_file(argv[1]);
+
 	struct termios terminal = configure_terminal();
 	write(1, "\033[?1049h\033[?1000h", 16);	
 
-begin:	adjust_window_size();
+loop:	adjust_window_size();
 	display();
 	char c = 0;
 	read(0, &c, 1);
 
-	if (c == 27) interpret_escape_code();
+	if (not mode) {
+		if (c == 'q') { if (saved) goto done; }
+		if (c == 'Q') { goto done; }
+		else if (c == 'f') mode = 1;
+		else if (c == 27) interpret_escape_code();
+		else if (c == 'W') { wrap_width++; }
+		else if (c == 'E') { if (wrap_width > tab_width) wrap_width--; }
 
-	else if (c == 'W') { wrap_width++; move_top(); }
-	else if (c == 'E') { if (wrap_width > tab_width) wrap_width--; move_top(); }
+		else if (c == 'T') { tab_width++; }
+		else if (c == 'R') { if (tab_width > 1) tab_width--; }
 
-	else if (c == 'T') { tab_width++; move_top(); }
-	else if (c == 'R') { if (tab_width > 1) tab_width--; move_top(); }
+		else if (c == 's') show_status = !show_status;
+		// else if (c == 'd') show_line_numbers = !show_line_numbers;
 
-	else if (c == 'J') move_left(1);
-	else if (c == ':') move_right(1);
-	else if (c == 'O') move_up();
-	else if (c == 'I') move_down();
-	
-	else if (c == '{') move_word_left();
-	else if (c == '}') move_word_right();
+		else if (c == 'j') move_left(1);
+		else if (c == ';') move_right(1);
+		else if (c == 'o') move_up();
+		else if (c == 'i') move_down();
+		
+		else if (c == 'J') move_word_left();
+		else if (c == ':') move_word_right();
 
-	else if (c == 'K') move_begin();
-	else if (c == 'L') move_end();
-	else if (c == 'U') move_top();
-	else if (c == 'M') move_bottom();
+		else if (c == 'k') move_begin();
+		else if (c == 'l') move_end();
+		else if (c == 'O') move_top();
+		else if (c == 'I') move_bottom();
 
-	else if (c == 127) delete();
-	else insert(c);
-	if (c != 'Q') goto begin;
+		else if (c == 'w') save();
 
+	} else if (mode == 1) {
+		if (c == 27) interpret_escape_code();
+		else if (c == 127) delete();
+		else insert(c);
+	}
+	goto loop;
+done:
 	write(1, "\033[?1049l\033[?1000l", 16);	
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+
+
