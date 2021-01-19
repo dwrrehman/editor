@@ -597,7 +597,7 @@ static inline void rename_file() {
 static inline void interpret_escape_code() {
 	char c = 0;
 	read(0, &c, 1);
-	if (c == 27) mode = 0;
+	if (c == 27) mode = 1;
 	else if (c == '[') {
 		read(0, &c, 1);
 		if (c == 'A') move_up();
@@ -628,24 +628,30 @@ static inline void interpret_escape_code() {
 
 int main(const int argc, const char** argv) {
 
-	if (argc == 1) lines = calloc((size_t) (count = 1), sizeof(struct line));
+	if (argc == 1) {
+		lines = calloc((size_t) (count = 1), sizeof(struct line));
+		saved = 1;
+	}
 	else open_file(argv[1]);
 
 	struct termios terminal = configure_terminal();
 	write(1, "\033[?1049h\033[?1000h", 16);
+	char p = 0, c = 0;
 loop:	
 	if (needs_display_update) {
 		adjust_window_size();
 		display();
 	}
-	char c = 0;
 	read(0, &c, 1);
 	needs_display_update = 1;
 
-	if (not mode) {
+	if (mode == 1) {
+
 		if (c == 'q') { if (saved) goto done; }
 		if (c == 'Q') { if (saved or confirmed("discard unsaved changed")) goto done; }
-		else if (c == 'f') mode = 1;
+
+		else if (c == 'f') mode = 0;
+		else if (c == 'e') mode = 2;
 		else if (c == 27) interpret_escape_code();
 
 		else if (c == '#') { wrap_width++; }
@@ -655,7 +661,7 @@ loop:
 		else if (c == 'R') { if (tab_width > 1) tab_width--; }
 
 		else if (c == 's') show_status = !show_status;
-		else if (c == 'd') show_line_numbers = !show_line_numbers;
+		else if (c == 'a') show_line_numbers = !show_line_numbers;
 
 		else if (c == 'j') move_left(1);
 		else if (c == ';') move_right(1);
@@ -671,61 +677,27 @@ loop:
 		else if (c == 'I') move_bottom();
 
 		else if (c == 'w') save();
-		else if (c == 'W') rename_file();
 
-	} else if (mode == 1) {
-		if (c == 27) interpret_escape_code();
+	} else if (mode == 0) {
+		if ((c == 'f' and p == 'w') or (c == 'j' and p == 'o')) mode = 1;
+		else if (c == 27) interpret_escape_code();
 		else if (c == 127) delete();
 		else if (c == 13) insert(10);
 		else insert(c);
+	} else if (mode == 2) {
+
+		if (c == 'f') mode = 1;
+		else if (c == 'w') rename_file();
+
+		else if (c == 's') show_status = not show_status;
+		else if (c == 'd') show_line_numbers = not show_line_numbers;
+	
+		else if (c == '0') memset(message, 0, sizeof message);
 	}
+	p = c;
 	goto loop;
 done:
 	write(1, "\033[?1049l\033[?1000l", 16);	
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-
-	size_t line_length = 0;
-
-	if (line_length and line[line_length - 1] == '\n') line_length--;
-
-	char* line_copy = malloc((size_t) line_length);
-	memcpy(line_copy, line, (size_t) line_length);
-
-	if (count + 1 > capacity) 
-		lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
-	lines[count++] = (struct line) {line_copy, (int) line_length, (int) line_length};
-	
-
-
-
-	if (not count) ;
-*/
 
