@@ -366,7 +366,6 @@ static inline void display() {
 
 	} while (sl < window_rows - show_status);
 
-
 	if (show_status) {
 		length += sprintf(screen + length, "\033[7m\033[38;5;246m");
 
@@ -460,7 +459,6 @@ static inline void open_file(const char* given_filename) {
 }
 
 static inline void save() {
-	
 	sprintf(message, "error: save unimplemented.");
 	saved = 1;
 }
