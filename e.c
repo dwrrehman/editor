@@ -526,6 +526,7 @@ static inline void open_file(const char* given_filename) {
 	free(buffer);
 	strcpy(filename, given_filename);
 	saved = 1;
+	mode = 1;
 	fclose(file);
 }
 
@@ -631,6 +632,7 @@ int main(const int argc, const char** argv) {
 	if (argc == 1) {
 		lines = calloc((size_t) (count = 1), sizeof(struct line));
 		saved = 1;
+		mode = 0;
 	}
 	else open_file(argv[1]);
 
@@ -648,7 +650,7 @@ loop:
 	if (mode == 1) {
 
 		if (c == 'q') { if (saved) goto done; }
-		if (c == 'Q') { if (saved or confirmed("discard unsaved changed")) goto done; }
+		if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) goto done; }
 
 		else if (c == 'f') mode = 0;
 		else if (c == 'e') mode = 2;
@@ -679,7 +681,7 @@ loop:
 		else if (c == 'w') save();
 
 	} else if (mode == 0) {
-		if ((c == 'f' and p == 'w') or (c == 'j' and p == 'o')) mode = 1;
+		if ((c == 'f' and p == 'w') or (c == 'j' and p == 'o')) { delete(); mode = 1; }
 		else if (c == 27) interpret_escape_code();
 		else if (c == 127) delete();
 		else if (c == 13) insert(10);
