@@ -11,11 +11,48 @@
 #include <sys/time.h>
 #include <errno.h>
 
+// current implementing:     copy-paste,  undo-tree,  and   multiple buffers.
+
 struct line { char* data; int count, capacity; };
+
+
+struct file_data {
+	struct line* lines;
+	int 
+		saved, mode, 
+		count, capacity, 
+		scroll_counter, line_number_width, needs_display_update, 
+		lal, lac, 	lcl, lcc, 	vcl, vcc, 
+		vol, voc, 	vsl, vsc, 	vdc, 
+		line_number_color, status_bar_color, 
+		wrap_width, tab_width, 
+		scroll_speed, show_status, show_line_numbers, 
+		use_txt_extension_when_absent;
+	char message[4096]; 
+	char filename[4096];
+};
+
+struct action {
+	struct file_data data;
+	
+};
+
+#define no_action 0
+#define insert_action 1
+#define backspace_action 2
+#define paste_text_action 3
+#define delete_text_action 4
+#define set_anchor_action 5
+
+
+
 
 static int window_rows = 0;
 static int window_columns = 0;
 static char* screen = NULL;
+
+static char* system_clipboard = NULL;
+static int system_clipboard_length = 0;
 
 static char* tb_data = NULL;
 static int tb_count = 0;
@@ -28,7 +65,6 @@ static int tb_vo = 0;
 
 static char message[4096] = {0};
 static char filename[4096] = {0};
-
 static int saved = 0;
 static int mode = 0;
 static struct line* lines = NULL;
@@ -37,6 +73,8 @@ static int capacity = 0;
 static int scroll_counter = 0;
 static int line_number_width = 0;
 static int needs_display_update = 0;
+static int lal = 0;
+static int lac = 0;
 static int lcl = 0;
 static int lcc = 0;
 static int vcl = 0;
@@ -47,14 +85,21 @@ static int vsl = 0;
 static int vsc = 0;
 static int vdc = 0;
 
+static int rename_color = 214;
 static int line_number_color = 236;
 static int status_bar_color = 240;
-static int wrap_width = 120;
+static int wrap_width = 200;
 static int tab_width = 8;
 static int scroll_speed = 4;
-static int show_status = 1;
-static int show_line_numbers = 1;
+static int show_status = 0;
+static int show_line_numbers = 0;
 static int use_txt_extension_when_absent = 1;
+
+
+
+static struct file_data* buffers = NULL;
+static int buffer_count = 0;
+static int active_buffer = 0;
 
 static inline char zero_width(char c) { 
 	return (((unsigned char)c) >> 6) == 2; 
@@ -143,7 +188,7 @@ visual_just_line_up: vcl--;
 	}
 	if (change_desired) vdc = vcc;
 }
-
+												
 static inline void move_right(int change_desired) {
 	if (lcc >= lines[lcl].count) {
 		if (lcl + 1 >= count) return;
@@ -246,6 +291,14 @@ static inline void move_word_right() {
 	));
 }
 
+static inline void move_down_10() {
+	for (int i = 0; i < 10; i++) move_down();
+}
+
+static inline void move_up_10() {
+	for (int i = 0; i < 10; i++) move_up();
+}
+
 static inline void insert(char c) {
 	struct line* this = lines + lcl;
 	if (c == 10) {
@@ -300,7 +353,6 @@ static inline void adjust_window_size() {
 	struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
 
-	// debug:
 	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 20; window.ws_col = 40; }
 
 	if (window.ws_row != window_rows or window.ws_col != window_columns) {
@@ -308,6 +360,8 @@ static inline void adjust_window_size() {
 		window_columns = window.ws_col;
 		screen = realloc(screen, sizeof(char) * (size_t) (window_rows * window_columns * 4));
 	}
+
+	if (not wrap_width) wrap_width = window_columns - 1;
 }
 
 static inline void get_datetime(char buffer[16]) {
@@ -317,13 +371,12 @@ static inline void get_datetime(char buffer[16]) {
 	strftime(buffer, 15, "%y%m%d%u.%H%M%S", tm_info);
 }
 
-/*
 static inline void get_full_datetime(char buffer[32]) {
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	struct tm* time = localtime(&tv.tv_sec);
 	strftime(buffer, 31, "CE%Y%m%d%u.%H%M%S", time);
-}*/
+}
 
 static inline void display() {
 	
@@ -542,7 +595,7 @@ static inline void open_file(const char* given_filename) {
 static inline void save() {
 
 	if (not strlen(filename)) {
-		prompt("save as: ", 214, filename, sizeof filename);
+		prompt("save as: ", rename_color, filename, sizeof filename);
 		if (not strlen(filename)) { sprintf(message, "aborted save"); return; }
 		if (not strrchr(filename, '.') and use_txt_extension_when_absent) strcat(filename, ".txt");
 		if (file_exists(filename) and not confirmed("file already exists, overwrite")) {
@@ -583,7 +636,7 @@ static inline void save() {
 
 static inline void rename_file() {
 	char new[4096] = {0};
-	prompt("rename to: ", 214, new, sizeof new);
+	prompt("rename to: ", rename_color, new, sizeof new);
 	if (not strlen(new)) { sprintf(message, "aborted rename"); return; }
 
 	if (file_exists(new) and not confirmed("file already exists, overwrite")) {
@@ -607,7 +660,11 @@ static inline void interpret_escape_code() {
 		else if (c == 'B') move_down();
 		else if (c == 'C') move_right(1);
 		else if (c == 'D') move_left(1);
-		else if (c == 32) { read(0, &c, 1); read(0, &c, 1); }
+		else if (c == 32) { 
+			for (int i = 0; i < 4; i++) {
+				read(0, &c, 1);
+			}
+		}
 		else if (c == 77) {
 			read(0, &c, 1);
 			if (c == 97) {
@@ -629,18 +686,91 @@ static inline void interpret_escape_code() {
 	} 
 }
 
+static inline void undo() {
+    
+    if (not head->parent) return;
+    
+    reverse_action();
+    
+    if (file->head->parent->count == 1) {
+        sprintf(file->message, "undoing %s", action_name(file->head->type));
+    
+    } else {
+        sprintf(file->message, "selected #%d from %d histories: undoing %s",
+                file->head->parent->choice, file->head->parent->count,
+                action_name(file->head->type));
+    }
+    
+    file->head = file->head->parent;
+}
+
+static inline void redo() {
+        
+    if (not file->head->count) return;
+    
+    file->head = file->head->children[file->head->choice];
+    
+    if (file->head->parent->count == 1) {
+        sprintf(file->message, "redoing %s", action_name(file->head->type));
+        
+    } else {
+        sprintf(file->message, "selected #%d from %d histories: redoing %s",
+                file->head->parent->choice, file->head->parent->count,
+                action_name(file->head->type));
+    }
+    
+    replay_action();
+}
+
+static inline void alternate_up() {
+    
+    if (file->head->parent and file->head->parent->choice + 1 < file->head->parent->count) {
+        undo();
+        file->head->choice++;
+        redo();
+    }
+}
+
+static inline void alternate_down() {
+    if (file->head->parent and file->head->parent->choice) {
+        undo();
+        file->head->choice--;
+        redo();
+    }
+}
+
+static inline void jump_line() {
+	char string_number[128] = {0};
+	prompt("line: ", 214, string_number, sizeof string_number);
+	int line = atoi(string_number);
+}
+
+static inline void jump_column() {
+	char string_number[128] = {0};
+	prompt("column: ", 214, string_number, sizeof string_number);
+	int column = atoi(string_number);
+}
+
+static inline void create_empty_buffer() {
+
+	buffers = realloc(buffer, sizeof(struct file_data) * (buffer_count + 1));
+	buffers[buffer_count] = (struct file_data) {0};
+
+	lines = calloc((size_t) (count = 1), sizeof(struct line));
+	saved = 1;
+	mode = 0;
+}
+
 int main(const int argc, const char** argv) {
 
-	if (argc == 1) {
-		lines = calloc((size_t) (count = 1), sizeof(struct line));
-		saved = 1;
-		mode = 0;
-	}
+	if (argc == 1) create_empty_buffer();
 	else open_file(argv[1]);
 
 	struct termios terminal = configure_terminal();
 	write(1, "\033[?1049h\033[?1000h", 16);
 	char p = 0, c = 0;
+
+	adjust_window_size();
 	needs_display_update = 1;
 
 loop:	
@@ -651,59 +781,98 @@ loop:
 	read(0, &c, 1);
 	needs_display_update = 1;
 
-	if (mode == 1) {
+	if (c == 27) interpret_escape_code();
 
-		if (c == 'q') { if (saved) goto done; }
-		if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) goto done; }
+	if (mode == 0) {
+		if ((c == 'f' and p == 'd') or (c == 'j' and p == 'k')) { undo(); mode = 1; }
+		else if (c == 127) delete();
+		else if (c == 13) insert(10);
+		else insert(c);
 
+	} else if (mode == 1) {
+
+		if (c == 'a') mode = 2;
+		else if (c == 'A') mode = 3;
+		else if (c == 'w') save();
+		else if (c == 'W') rename_file();
+		else if (c == 'e') anchor();
 		else if (c == 'f') mode = 0;
-		else if (c == 'e') mode = 2;
-		else if (c == 27) interpret_escape_code();
 
-		else if (c == '#') { wrap_width++; }
-		else if (c == 'E') { if (wrap_width > tab_width) wrap_width--; }
-
-		else if (c == '$') { tab_width++; }
-		else if (c == 'R') { if (tab_width > 1) tab_width--; }
-
-		else if (c == 's') show_status = !show_status;
-		else if (c == 'a') show_line_numbers = !show_line_numbers;
+		else if (c == 'r') {}
+		else if (c == 'u') {}
+		
+		else if (c == 'v') paste();
+		else if (c == 'c') copy();
+		else if (c == 'd') cut();
 
 		else if (c == 'j') move_left(1);
 		else if (c == ';') move_right(1);
 		else if (c == 'o') move_up();
 		else if (c == 'i') move_down();
-		
-		else if (c == 'J') move_word_left();
-		else if (c == ':') move_word_right();
 
 		else if (c == 'k') move_begin();
 		else if (c == 'l') move_end();
-		else if (c == 'O') move_top();
-		else if (c == 'I') move_bottom();
+	
+		else if (c == 'J') move_word_left();
+		else if (c == ':') move_word_right();
+		else if (c == 'I') move_down_10();
+		else if (c == 'O') move_up_10();
 
-		else if (c == 'w') save();
+		else if (c == 'K') move_top();
+		else if (c == 'L') move_bottom();
 
-	} else if (mode == 0) {
-		if ((c == 'f' and p == 'w') or (c == 'j' and p == 'o')) { delete(); mode = 1; }
-		else if (c == 27) interpret_escape_code();
-		else if (c == 127) delete();
-		else if (c == 13) insert(10);
-		else insert(c);
 	} else if (mode == 2) {
+		
+		if (c == 'q') { if (saved) goto done; }
+		else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) goto done; }
 
-		if (c == 'f') mode = 1;
-		else if (c == 'w') rename_file();
+		if (c == 'a') mode = 3;
+		else if (c == 'w') {}
+		else if (c == 'e') execute_command();
+		else if (c == 'f') mode = 1;
 
+		else if (c == 'E') use_txt_extension_when_absent = not use_txt_extension_when_absent;
 		else if (c == 's') show_status = not show_status;
 		else if (c == 'd') show_line_numbers = not show_line_numbers;
-	
-		else if (c == '0') memset(message, 0, sizeof message);
+
+		else if (c == 'j') { if (active) active--; }
+            	else if (c == ';') { if (active < buffer_count - 1) active++; }
+		else if (c == 'o') open_using_prompt();
+            	else if (c == 'i') create_empty_buffer();
+
+		else if (c == 'l') jump_line();
+		else if (c == 'k') jump_column();
+
+		else if (c == 'u') undo();
+		else if (c == 'r') redo();
+		else if (c == 'U') alternate_up();
+		else if (c == 'R') alternate_down();
+		
+		else if (c == ':') memset(message, 0, sizeof message);
+		
+	} else if (mode == 3) {
+
+		if (c == 'f') mode = 1;
+
+		else if (c == 'w') {
+			char string_number[128] = {0};
+			print_above_textbox("(0 sets to window width)", rename_color);
+			prompt("wrap width: ", rename_color, string_number, sizeof string_number);
+			wrap_width = atoi(string_number);	
+			move_top();
+
+		} else if (c == 'e') {
+			char string_number[128] = {0};
+			prompt("tab width: ", rename_color, string_number, sizeof string_number);
+			tab_width = atoi(string_number);
+			move_top();
+		}
 	}
 	p = c;
 	goto loop;
 done:
 	write(1, "\033[?1049l\033[?1000l", 16);	
 	tcsetattr(0, TCSAFLUSH, &terminal);
+	free(system_clipboard);
 }
 

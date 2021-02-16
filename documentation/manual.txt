@@ -1,0 +1,124 @@
+manual for the ef text editor.
+---------------------------------
+
+
+	NOTE:	this document is currently not finished.
+
+
+
+------------------- mode 1: edit mode ---------------------
+
+
+MODES:
+---------
+
+
+	f 	enter insert mode (mode 0)
+	a	enter command mode (mode 2)
+	A	enter option mode (mode 3)
+
+
+CURSOR MOVEMENT:
+-----------------
+
+	j	move cursor left
+	;	move cursor right
+	i	move cursor down
+	o	move cursor up
+	
+	J	move cursor a word to the left
+	:	move cursor a word to the right
+	I	move cursor 10 lines down
+	O	move cursor 10 lines up
+
+	k	move cursor to beginning of line
+	l	move cursor to end of line
+
+	K	move cursor to top of file
+	L	move cursor to bottom of file
+
+
+
+	
+EDITING:
+-----------------
+
+	v	paste
+	c	copy
+	d	delete text (no copy)
+
+	w 	save file
+	W	rename file
+
+	e	set the anchor to be at the current position of the cursor
+
+
+------------------- mode 1: command mode ---------------------
+
+
+
+
+MODES:
+---------
+
+	f 	enter edit mode (mode 1)
+
+
+UNDO SYSTEM:
+-----------------
+
+	u	undo action
+	r	redo action
+	U	alteranate undo-tree history branch up
+	R 	alternate undo-tree history branch down
+
+TOGGLE OPTIONS:
+-----------------
+
+	E	toggle whether to add .txt extension if an extension is not present.
+	s	toggle status bar
+	d	toggle line numbers
+
+
+BUFFER COMMANDS:
+-------------------
+
+	j	previous buffer
+	;	next buffer
+	i	create a new empty buffer
+	o	open a file and use contents as a new buffer
+
+
+
+JUMPING:
+------------
+
+	k	jump column
+	l	jump line
+		
+	
+
+OTHER:
+---------
+
+
+	e 	execute shell command
+
+
+
+
+------------------- mode 1: option mode ---------------------
+
+
+
+
+	w	edit wrap width variable
+
+	e	edit tab width variable
+
+
+
+
+
+
+

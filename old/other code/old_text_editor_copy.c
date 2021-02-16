@@ -1930,7 +1930,7 @@ int main(const int argc, const char** argv) {
             else if (c == 'k') move_word_left();
             else if (c == 'l') move_word_right();
             else if (c == 'w') set_begin();
-            // else if (c == 'c') copy_selection_to_clipboard();
+            else if (c == 'c') copy_selection_to_clipboard();
             else if (c == 'v') insert_text(clipboard_text());
             else if (c == 'd') delete_selection();
             else if (c == 'u') undo();
