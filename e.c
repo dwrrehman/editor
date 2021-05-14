@@ -44,9 +44,12 @@ struct file_data {
 // #define set_anchor_action 5
 
 // preferences / configurations:
-static int rename_color = 214;
+
+static int alert_prompt_color = 196;
+static int default_prompt_color = 214;
 static int line_number_color = 236;
 static int status_bar_color = 240;
+
 static int wrap_width = 120;
 static int tab_width = 8;
 static int scroll_speed = 4;
@@ -439,8 +442,14 @@ static inline void display() {
 
 		char datetime[16] = {0};
 		get_datetime(datetime);
-		int status_length = sprintf(screen + length, " %s %d %d %d %s %c  %s",
-			datetime, mode, lcl + 1, lcc + 1, filename, saved ? 's' : 'e', message
+		int status_length = sprintf(screen + length, "%s %d %d %d %d %d %s %c  %s",
+			datetime, 
+			mode, 
+			active_buffer, buffer_count,
+			lcl + 1, lcc + 1, 
+			filename, 
+			saved ? 's' : 'e', 
+			message
 		);
 		length += status_length;
 
@@ -547,15 +556,13 @@ static inline int confirmed(const char* question) {
 
 	while (1) {
 		char response[10] = {0};
-		prompt(prompt_message, 196, response, sizeof response);
+		prompt(prompt_message, alert_prompt_color, response, sizeof response);
 
 		if (not strncmp(response, "yes", 4)) return 1;
 		else if (not strncmp(response, "no", 3)) return 0;
 		else print_above_textbox("please type \"yes\" or \"no\".", 214L);
 	}
 }
-
-
 
 
 static inline void store_current_data_to_buffer() {
@@ -707,7 +714,7 @@ static inline void open_file(const char* given_filename) {
 
 static inline void prompt_open() {
 	char new_filename[4096] = {0};
-	prompt("open: ", 196, new_filename, sizeof new_filename);
+	prompt("open: ", default_prompt_color, new_filename, sizeof new_filename);
 	if (not strlen(new_filename)) { sprintf(message, "aborted open"); return; }
 	open_file(new_filename);
 }
@@ -872,6 +879,14 @@ static inline void interpret_escape_code() {
 // }
 
 
+static inline void show_buffer_list() {
+	char list[4096] = {0};
+	for (int i = 0; i < buffer_count; i++) {
+		sprintf(list, "[%d:%.10s] ", i, buffers[i].filename);
+	}
+	print_above_textbox(list, default_prompt_color);
+}
+
 
 int main(const int argc, const char** argv) {
 
@@ -956,6 +971,7 @@ loop:
 
 		else if (c == 'o') prompt_open();
             	else if (c == 'i') create_empty_buffer();
+		else if (c == 'l') show_buffer_list();
 
 		// else if (c == 'l') jump_line();
 		// else if (c == 'k') jump_column();
