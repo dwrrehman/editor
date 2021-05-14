@@ -17,6 +17,8 @@
 
 //        multiple buffers   :   completed.
 
+
+
 //	  copy-paste         :   incomplete.
 
 //	  undo-tree          :   incomplete.
@@ -34,8 +36,7 @@ struct file_data {
 		saved, mode, 
 		count, capacity, 
 		scroll_counter, line_number_width, needs_display_update, 
-		lal, lac, 	lcl, lcc, 	vcl, vcc, 
-		vol, voc, 	vsl, vsc, 	vdc, 
+		lcl, lcc, 	vcl, vcc,  	vol, voc, 	vsl, vsc, 	vdc,     lal,  lac,
 		line_number_color, status_bar_color, alert_prompt_color, 
 		info_prompt_color, default_prompt_color, 
 		wrap_width, tab_width, 
@@ -64,7 +65,7 @@ static int alert_prompt_color = 196;
 static int info_prompt_color = 45;
 static int default_prompt_color = 214;
 static int line_number_color = 236;
-static int status_bar_color = 240;
+static int status_bar_color = 245;
 
 static int wrap_width = 120;
 static int tab_width = 8;
@@ -82,9 +83,8 @@ static int window_rows = 0;
 static int window_columns = 0;
 static char* screen = NULL;
 
-static char* system_clipboard = NULL;
-static int system_clipboard_length = 0;
-
+static char* clipboard = NULL;
+static int clipboard_length = 0;
 
 
 // textbox data:
@@ -98,7 +98,6 @@ static int tb_vs = 0;
 static int tb_vo = 0;
 
 
-
 // current tab data:
 static char message[4096] = {0};
 static char filename[4096] = {0};
@@ -108,16 +107,14 @@ static int count = 0, capacity = 0;
 static int scroll_counter = 0;
 static int line_number_width = 0;
 static int needs_display_update = 0;
-static int lal = 0, lac = 0, lcl = 0, lcc = 0, vcl = 0, 
-	   vcc = 0, vol = 0, voc = 0, vsl = 0, vsc = 0, vdc = 0;
+static int lcl = 0, lcc = 0, vcl = 0, vcc = 0, vol = 0, 
+           voc = 0, vsl = 0, vsc = 0, vdc = 0, lal = 0, lac = 0;
 
 
 // all tab data:
 static struct file_data* buffers = NULL;
 static int buffer_count = 0;
 static int active_buffer = 0;
-
-
 
 
 
@@ -610,8 +607,6 @@ static inline void store_current_data_to_buffer() {
 	buffers[b].count = count;
 	buffers[b].lines = lines;
 
-	buffers[b].lal = lal; 
-	buffers[b].lac = lac; 
 	buffers[b].lcl = lcl; 
 	buffers[b].lcc = lcc; 
 	buffers[b].vcl = vcl;
@@ -621,12 +616,15 @@ static inline void store_current_data_to_buffer() {
 	buffers[b].vsl = vsl; 
 	buffers[b].vsc = vsc; 
 	buffers[b].vdc = vdc;
+	buffers[b].lal = lal;
+	buffers[b].lac = lac;
 
 	// buffers[b].alert_prompt_color = alert_prompt_color;
 	// buffers[b].info_prompt_color = info_prompt_color;
 	// buffers[b].default_prompt_color = default_prompt_color;
 	// buffers[b].line_number_color = line_number_color;
 	// buffers[b].status_bar_color = status_bar_color;
+
 	buffers[b].wrap_width = wrap_width;
 	buffers[b].tab_width = tab_width;
 	buffers[b].scroll_speed = scroll_speed;
@@ -654,8 +652,6 @@ static inline void load_buffers_data_into_registers() {
 	count = this.count;
 	lines = this.lines;
 
-	lal = this.lal; 
-	lac = this.lac; 
 	lcl = this.lcl; 
 	lcc = this.lcc; 
 	vcl = this.vcl;
@@ -666,11 +662,15 @@ static inline void load_buffers_data_into_registers() {
 	vsc = this.vsc; 
 	vdc = this.vdc;
 
+	lal = this.lal;
+	lac = this.lac;
+
 	// alert_prompt_color = this.alert_prompt_color;
 	// info_prompt_color = this.info_prompt_color;
 	// default_prompt_color = this.default_prompt_color;
 	// line_number_color = this.line_number_color;
 	// status_bar_color = this.status_bar_color;
+
 	wrap_width = this.wrap_width;
 	tab_width = this.tab_width;
 	scroll_speed = this.scroll_speed;
@@ -693,8 +693,22 @@ static inline void initialize_current_data_registers() {
 	count = 1;
 	lines = calloc((size_t) (capacity), sizeof(struct line));
 
-	lal = 0; lac = 0; lcl = 0; lcc = 0; vcl = 0; 
-	vcc = 0; vol = 0; voc = 0; vsl = 0; vsc = 0; vdc = 0;
+	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
+	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
+
+	alert_prompt_color = 196;
+	info_prompt_color = 45;
+	default_prompt_color = 214;
+	line_number_color = 236;
+	status_bar_color = 245;
+
+	wrap_width = 120;
+	tab_width = 8;
+	scroll_speed = 4;
+
+	show_status = 1;
+	show_line_numbers = 1;
+	use_txt_extension_when_absent = 1;
 
 	memset(message, 0, sizeof message);
 	memset(filename, 0, sizeof filename);
@@ -951,7 +965,73 @@ static inline int is_exit_sequence(char c, char p) {
 	       (c == right_exit[1] and p == right_exit[0]);
 }
 
+
+static inline void paste() {
+	// if (not use_system_clipboard) return;
+	// char buffer[128] = {0};
+	FILE* file = popen("pbpaste", "r");
+	int c;
+	while ((c = fgetc(file)) != EOF) insert((char)c);
+	pclose(file);
+}
+
+static inline void copy() {
+
+
+
+	if (lal < lcl) goto anchor_first;
+	if (lcl < lal) goto cursor_first;
+	if (lac < lcc) goto anchor_first;
+	if (lcc < lac) goto cursor_first;
+	return;
+
+
+anchor_first:
+
+	int line = lal, column = lac;
+
+
+
+loop:
+	if (line == lcl and column >= lcc) goto done;
+	if (line == lcl and column < lcc) fwrite(lines[line].data, 1, lcc - lac, file);
+
+	}
+	
+
+
+done:
+	
+
+	
+
+	// if (not use_system_clipboard) return;
+	// char buffer[128] = "hello there from space.";
+	// size_t buffer_length = (size_t) strlen(buffer);
+
+	FILE* file = popen("pbcopy", "w");
+
+	fwrite(buffer, 1, buffer_length, file);
+
+	pclose(file);
+}
+
+static inline void anchor() {
+	lal = lcl; 
+	lac = lcc; 
+	sprintf(message, "set anchor %d %d", lal, lac);
+}
+
+
 int main(const int argc, const char** argv) {
+
+	// paste();
+
+	// printf("\n\ncopying things to clipboard!!\n\n");
+	
+	// copy();
+
+	// exit(1);
 
 	if (argc == 1) create_empty_buffer();
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
@@ -985,17 +1065,17 @@ loop:
 		else if (c == 'f') mode = 0;
 		else if (c == 'a') mode = 1;
 		else if (c == 'e') mode = 2;
-		else if (c == 'p') mode = 3;
+		else if (c == 't') mode = 3;
 
 		else if (c == 'w') save();
+		else if (c == 's') anchor();
+		else if (c == 'v') paste();
+		else if (c == 'c') copy();
+
+		// else if (c == 'd') cut();
 
 		else if (c == 'r') {}
 		else if (c == 'u') {}
-		
-		// else if (c == 's') anchor();
-		// else if (c == 'v') paste();
-		// else if (c == 'c') copy();
-		// else if (c == 'd') cut();
 
 		else if (c == 'j') move_left(1);
 		else if (c == ';') move_right(1);
@@ -1028,7 +1108,7 @@ loop:
 		else if (c == 'f') mode = 0;
 		else if (c == 'a') mode = 1;
 		else if (c == 'e') mode = 2;
-		else if (c == 'p') mode = 3;
+		else if (c == 't') mode = 3;
 
 		else if (c == 'w') save();
 		else if (c == 'W') rename_file();
@@ -1058,7 +1138,7 @@ loop:
 		     if (c == 'f') mode = 0;
 		else if (c == 'a') mode = 1;
 		else if (c == 'e') mode = 2;
-		else if (c == 'p') mode = 3;
+		else if (c == 't') mode = 3;
 
 		else if (c == 'w') {			
 			print_above_textbox("(0 sets to window width)", info_prompt_color);
