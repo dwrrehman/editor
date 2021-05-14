@@ -557,13 +557,12 @@ static inline int confirmed(const char* question) {
 	while (1) {
 		char response[10] = {0};
 		prompt(prompt_message, alert_prompt_color, response, sizeof response);
-
+		
 		if (not strncmp(response, "yes", 4)) return 1;
 		else if (not strncmp(response, "no", 3)) return 0;
 		else print_above_textbox("please type \"yes\" or \"no\".", 214L);
 	}
 }
-
 
 static inline void store_current_data_to_buffer() {
 	if (not buffer_count) return;
@@ -633,11 +632,9 @@ static inline void initialize_current_data_registers() {
 	
 	saved = 1;
 	mode = 0;
-
 	scroll_counter = 0;
 	line_number_width = 0;
 	needs_display_update = 1;
-
 	capacity = 1;
 	count = 1;
 	lines = calloc((size_t) (capacity), sizeof(struct line));
@@ -685,13 +682,11 @@ static inline void open_file(const char* given_filename) {
 	
 	FILE* file = fopen(given_filename, "r");
 	if (not file) {
-		if (not buffer_count) {
-			perror("fopen");
-			exit(1);
-		} else {
+		if (buffer_count) {
 			sprintf(message, "error: fopen: %s", strerror(errno));
 			return;
 		}
+		perror("fopen"); exit(1);
 	}
 
 	fseek(file, 0, SEEK_END);        
@@ -699,17 +694,13 @@ static inline void open_file(const char* given_filename) {
 	char* buffer = malloc(sizeof(char) * length);
         fseek(file, 0, SEEK_SET);
         fread(buffer, sizeof(char), length, file);
-
 	create_empty_buffer();
 	for (size_t i = 0; i < length; i++) insert(buffer[i]);
-	free(buffer);
-	fclose(file);
-
+	free(buffer); fclose(file);
+	saved = 1; mode = 1; move_top();
 	strcpy(filename, given_filename);
+	store_current_data_to_buffer();
 	sprintf(message, "read %lub", length);
-	saved = 1;
-	mode = 1;
-	move_top();
 }
 
 static inline void prompt_open() {
@@ -722,7 +713,7 @@ static inline void prompt_open() {
 static inline void save() {
 
 	if (not strlen(filename)) {
-		prompt("save as: ", rename_color, filename, sizeof filename);
+		prompt("save as: ", default_prompt_color, filename, sizeof filename);
 		if (not strlen(filename)) { sprintf(message, "aborted save"); return; }
 		if (not strrchr(filename, '.') and use_txt_extension_when_absent) strcat(filename, ".txt");
 		if (file_exists(filename) and not confirmed("file already exists, overwrite")) {
@@ -763,7 +754,7 @@ static inline void save() {
 
 static inline void rename_file() {
 	char new[4096] = {0};
-	prompt("rename to: ", rename_color, new, sizeof new);
+	prompt("rename to: ", default_prompt_color, new, sizeof new);
 	if (not strlen(new)) { sprintf(message, "aborted rename"); return; }
 
 	if (file_exists(new) and not confirmed("file already exists, overwrite")) {
@@ -866,27 +857,29 @@ static inline void interpret_escape_code() {
 //     }
 // }
 
-// static inline void jump_line() {
-// 	char string_number[128] = {0};
-// 	prompt("line: ", 214, string_number, sizeof string_number);
-// 	int line = atoi(string_number);
-// }
+static inline void jump_line() {
+	char string_number[128] = {0};
+	prompt("line: ", default_prompt_color, string_number, sizeof string_number);
+	int line = atoi(string_number);
+}
 
-// static inline void jump_column() {
-// 	char string_number[128] = {0};
-// 	prompt("column: ", 214, string_number, sizeof string_number);
-// 	int column = atoi(string_number);
-// }
+static inline void jump_column() {
+	char string_number[128] = {0};
+	prompt("column: ", default_prompt_color, string_number, sizeof string_number);
+	int column = atoi(string_number);
+}
 
 
 static inline void show_buffer_list() {
 	char list[4096] = {0};
+	int length = 0;
+	
 	for (int i = 0; i < buffer_count; i++) {
-		sprintf(list, "[%d:%.10s] ", i, buffers[i].filename);
+		length += sprintf(list + length, "[%d:%s] ", i, buffers[i].filename);
 	}
 	print_above_textbox(list, default_prompt_color);
+	needs_display_update = 0;
 }
-
 
 int main(const int argc, const char** argv) {
 
@@ -899,7 +892,6 @@ int main(const int argc, const char** argv) {
 
 	adjust_window_size();
 	needs_display_update = 1;
-
 loop:	
 	if (needs_display_update) {
 		adjust_window_size();
@@ -920,7 +912,7 @@ loop:
 		if (c == 'q') { if (saved) close_active_buffer(); }
 		else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
 		
-		else if (c == 'f') mode = 0;
+		else if (c == 'e') mode = 0;
 		else if (c == 'a') mode = 2;
 
 		else if (c == 'w') save();
@@ -928,7 +920,7 @@ loop:
 		else if (c == 'r') {}
 		else if (c == 'u') {}
 		
-		// else if (c == 'e') anchor();
+		// else if (c == 's') anchor();
 		// else if (c == 'v') paste();
 		// else if (c == 'c') copy();
 		// else if (c == 'd') cut();
@@ -940,7 +932,7 @@ loop:
 
 		else if (c == 'k') move_begin();
 		else if (c == 'l') move_end();
-	
+
 		else if (c == 'J') move_word_left();
 		else if (c == ':') move_word_right();
 		else if (c == 'I') move_down_10();
@@ -948,6 +940,11 @@ loop:
 
 		else if (c == 'K') move_top();
 		else if (c == 'L') move_bottom();
+
+		else if (c == 'n') jump_line();
+		else if (c == 'm') jump_column();
+
+		else if (c == '_') memset(message, 0, sizeof message);
 
 		else if (c == 27) interpret_escape_code();
 
@@ -959,8 +956,8 @@ loop:
 		else if (c == 'W') rename_file();
 
 		else if (c == 'a') mode = 3;
-		else if (c == 'f') mode = 1;
-		// else if (c == 'e') execute_command();
+		else if (c == 'e') mode = 1;
+		// else if (c == 'f') execute_command();
 
 		else if (c == 'E') use_txt_extension_when_absent = not use_txt_extension_when_absent;
 		else if (c == 's') show_status = not show_status;
@@ -973,32 +970,27 @@ loop:
             	else if (c == 'i') create_empty_buffer();
 		else if (c == 'l') show_buffer_list();
 
-		// else if (c == 'l') jump_line();
-		// else if (c == 'k') jump_column();
-
 		// else if (c == 'u') undo();
 		// else if (c == 'r') redo();
 		// else if (c == 'U') alternate_up();
 		// else if (c == 'R') alternate_down();
 		
-		else if (c == ':') memset(message, 0, sizeof message);
-
 		else if (c == 27) interpret_escape_code();
 		
 	} else if (mode == 3) {
 
-		if (c == 'f') mode = 1;
+		if (c == 'e') mode = 1;
 
 		else if (c == 'w') {
 			char string_number[128] = {0};
-			print_above_textbox("(0 sets to window width)", rename_color);
-			prompt("wrap width: ", rename_color, string_number, sizeof string_number);
+			print_above_textbox("(0 sets to window width)", default_prompt_color);
+			prompt("wrap width: ", default_prompt_color, string_number, sizeof string_number);
 			wrap_width = atoi(string_number);	
 			move_top();
 
-		} else if (c == 'e') {
+		} else if (c == 't') {
 			char string_number[128] = {0};
-			prompt("tab width: ", rename_color, string_number, sizeof string_number);
+			prompt("tab width: ", default_prompt_color, string_number, sizeof string_number);
 			tab_width = atoi(string_number);
 			move_top();
 		}
