@@ -471,7 +471,7 @@ static inline void display() {
 
 		char datetime[16] = {0};
 		get_datetime(datetime);
-		int status_length = sprintf(screen + length, "%s %d %d %d %d %d %s %c  %s",
+		int status_length = sprintf(screen + length, " %s %d %d %d %d %d %s %c  %s",
 			datetime, 
 			mode, 
 			active_buffer, buffer_count,
@@ -569,6 +569,7 @@ static inline void prompt(const char* prompt_message, int color, char* out, int 
 	if (tb_count > out_size) tb_count = out_size;
 	memcpy(out, tb_data, (size_t) tb_count);
 	memset(out + tb_count, 0, (size_t) out_size - (size_t) tb_count);
+	out[out_size - 1] = 0;
 	free(tb_data); tb_data = NULL;
 	tb_count = 0; tb_capacity = 0;
 	tb_c = 0; tb_vo = 0; tb_vc = 0; tb_vs = 0;
