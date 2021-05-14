@@ -11,7 +11,19 @@
 #include <sys/time.h>
 #include <errno.h>
 
-// current implementing:     copy-paste,  undo-tree,  and   multiple buffers.
+// current implementing:     copy-paste,  undo-tree, 
+// --------------------------------------------------------
+
+
+//        multiple buffers   :   completed.
+
+//	  copy-paste         :   incomplete.
+
+//	  undo-tree          :   incomplete.
+
+
+// --------------------------------------------------------
+
 
 struct line { char* data; int count, capacity; };
 
@@ -24,10 +36,11 @@ struct file_data {
 		scroll_counter, line_number_width, needs_display_update, 
 		lal, lac, 	lcl, lcc, 	vcl, vcc, 
 		vol, voc, 	vsl, vsc, 	vdc, 
-		line_number_color, status_bar_color, 
+		line_number_color, status_bar_color, alert_prompt_color, 
+		info_prompt_color, default_prompt_color, 
 		wrap_width, tab_width, 
 		scroll_speed, show_status, show_line_numbers, 
-		use_txt_extension_when_absent;
+		use_txt_extension_when_absent, padding0;
 	char message[4096];
 	char filename[4096];
 };
@@ -43,9 +56,12 @@ struct file_data {
 // #define delete_text_action 4
 // #define set_anchor_action 5
 
-// preferences / configurations:
 
+
+
+// preferences and configurations:
 static int alert_prompt_color = 196;
+static int info_prompt_color = 45;
 static int default_prompt_color = 214;
 static int line_number_color = 236;
 static int status_bar_color = 240;
@@ -53,17 +69,23 @@ static int status_bar_color = 240;
 static int wrap_width = 120;
 static int tab_width = 8;
 static int scroll_speed = 4;
+
 static int show_status = 1;
 static int show_line_numbers = 1;
 static int use_txt_extension_when_absent = 1;
+
+static char left_exit[2] = {'d','f'}, right_exit[2] = {'k','j'};
+
 
 // application global data:
 static int window_rows = 0;
 static int window_columns = 0;
 static char* screen = NULL;
 
-// static char* system_clipboard = NULL;
-// static int system_clipboard_length = 0;
+static char* system_clipboard = NULL;
+static int system_clipboard_length = 0;
+
+
 
 // textbox data:
 static char* tb_data = NULL;
@@ -74,6 +96,8 @@ static int tb_c = 0;
 static int tb_vc = 0;
 static int tb_vs = 0;
 static int tb_vo = 0;
+
+
 
 // current tab data:
 static char message[4096] = {0};
@@ -87,10 +111,15 @@ static int needs_display_update = 0;
 static int lal = 0, lac = 0, lcl = 0, lcc = 0, vcl = 0, 
 	   vcc = 0, vol = 0, voc = 0, vsl = 0, vsc = 0, vdc = 0;
 
+
 // all tab data:
 static struct file_data* buffers = NULL;
 static int buffer_count = 0;
 static int active_buffer = 0;
+
+
+
+
 
 static inline char zero_width(char c) { 
 	return (((unsigned char)c) >> 6) == 2; 
@@ -592,6 +621,18 @@ static inline void store_current_data_to_buffer() {
 	buffers[b].vsc = vsc; 
 	buffers[b].vdc = vdc;
 
+	// buffers[b].alert_prompt_color = alert_prompt_color;
+	// buffers[b].info_prompt_color = info_prompt_color;
+	// buffers[b].default_prompt_color = default_prompt_color;
+	// buffers[b].line_number_color = line_number_color;
+	// buffers[b].status_bar_color = status_bar_color;
+	buffers[b].wrap_width = wrap_width;
+	buffers[b].tab_width = tab_width;
+	buffers[b].scroll_speed = scroll_speed;
+	buffers[b].show_status = show_status;
+	buffers[b].show_line_numbers = show_line_numbers;
+	buffers[b].use_txt_extension_when_absent = use_txt_extension_when_absent;
+
 	memcpy(buffers[b].message, message, sizeof message);
 	memcpy(buffers[b].filename, filename, sizeof filename);
 }
@@ -623,6 +664,18 @@ static inline void load_buffers_data_into_registers() {
 	vsl = this.vsl; 
 	vsc = this.vsc; 
 	vdc = this.vdc;
+
+	// alert_prompt_color = this.alert_prompt_color;
+	// info_prompt_color = this.info_prompt_color;
+	// default_prompt_color = this.default_prompt_color;
+	// line_number_color = this.line_number_color;
+	// status_bar_color = this.status_bar_color;
+	wrap_width = this.wrap_width;
+	tab_width = this.tab_width;
+	scroll_speed = this.scroll_speed;
+	show_status = this.show_status;
+	show_line_numbers = this.show_line_numbers;
+	use_txt_extension_when_absent = this.use_txt_extension_when_absent;
 
 	memcpy(message, this.message, sizeof message);
 	memcpy(filename, this.filename, sizeof filename);
@@ -861,14 +914,17 @@ static inline void jump_line() {
 	char string_number[128] = {0};
 	prompt("line: ", default_prompt_color, string_number, sizeof string_number);
 	int line = atoi(string_number);
+
+	sprintf(message, "UNIMPLEMENTED FUNCTION");
 }
 
 static inline void jump_column() {
 	char string_number[128] = {0};
 	prompt("column: ", default_prompt_color, string_number, sizeof string_number);
 	int column = atoi(string_number);
-}
 
+	sprintf(message, "UNIMPLEMENTED FUNCTION");
+}
 
 static inline void show_buffer_list() {
 	char list[4096] = {0};
@@ -877,8 +933,21 @@ static inline void show_buffer_list() {
 	for (int i = 0; i < buffer_count; i++) {
 		length += sprintf(list + length, "[%d:%s] ", i, buffers[i].filename);
 	}
-	print_above_textbox(list, default_prompt_color);
+	print_above_textbox(list, info_prompt_color);
 	needs_display_update = 0;
+}
+
+static inline int get_numeric_option_value(const char* option) {
+	char string_number[128] = {0};
+	prompt(option, default_prompt_color, string_number, sizeof string_number);
+	int value = atoi(string_number);
+	sprintf(message, "%s set to %d", option, value);
+	return value;
+}
+
+static inline int is_exit_sequence(char c, char p) {
+	return (c == left_exit[1] and p == left_exit[0]) or
+	       (c == right_exit[1] and p == right_exit[0]);
 }
 
 int main(const int argc, const char** argv) {
@@ -901,7 +970,7 @@ loop:
 	needs_display_update = 1;
 
 	if (mode == 0) {
-		if ((c == 'f' and p == 'd') or (c == 'j' and p == 'k')) { /*undo();*/delete(); mode = 1; }
+		if (is_exit_sequence(c, p)) { /*undo();*/delete(); mode = 1; }
 		else if (c == 127) delete();
 		else if (c == 13) insert(10);
 		else if (c == 27) interpret_escape_code();
@@ -912,8 +981,10 @@ loop:
 		if (c == 'q') { if (saved) close_active_buffer(); }
 		else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
 		
-		else if (c == 'e') mode = 0;
-		else if (c == 'a') mode = 2;
+		else if (c == 'f') mode = 0;
+		else if (c == 'a') mode = 1;
+		else if (c == 'e') mode = 2;
+		else if (c == 'p') mode = 3;
 
 		else if (c == 'w') save();
 
@@ -950,13 +1021,17 @@ loop:
 
 	} else if (mode == 2) {
 		
-		if (c == 'q') { }
-		else if (c == 'Q') { }
-		else if (c == 'w') { }
+		if (c == 'q') { if (saved) close_active_buffer(); }
+		else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
+
+		else if (c == 'f') mode = 0;
+		else if (c == 'a') mode = 1;
+		else if (c == 'e') mode = 2;
+		else if (c == 'p') mode = 3;
+
+		else if (c == 'w') save();
 		else if (c == 'W') rename_file();
 
-		else if (c == 'a') mode = 3;
-		else if (c == 'e') mode = 1;
 		// else if (c == 'f') execute_command();
 
 		else if (c == 'E') use_txt_extension_when_absent = not use_txt_extension_when_absent;
@@ -979,20 +1054,34 @@ loop:
 		
 	} else if (mode == 3) {
 
-		if (c == 'e') mode = 1;
+		     if (c == 'f') mode = 0;
+		else if (c == 'a') mode = 1;
+		else if (c == 'e') mode = 2;
+		else if (c == 'p') mode = 3;
 
-		else if (c == 'w') {
-			char string_number[128] = {0};
-			print_above_textbox("(0 sets to window width)", default_prompt_color);
-			prompt("wrap width: ", default_prompt_color, string_number, sizeof string_number);
-			wrap_width = atoi(string_number);	
-			move_top();
+		else if (c == 'w') {			
+			print_above_textbox("(0 sets to window width)", info_prompt_color);
+			wrap_width = get_numeric_option_value("wrap width: "); move_top();
+		} else if (c == 't') { tab_width = get_numeric_option_value("tab width: "); move_top(); } 
+		else if (c == '1') default_prompt_color = get_numeric_option_value("default prompt color: ");
+		else if (c == '2') alert_prompt_color = get_numeric_option_value("alert prompt color: ");
+		else if (c == '3') line_number_color = get_numeric_option_value("line number color: ");
+		else if (c == '4') status_bar_color = get_numeric_option_value("status bar color: ");
+		else if (c == '5') info_prompt_color = get_numeric_option_value("info prompt color: ");
 
-		} else if (c == 't') {
-			char string_number[128] = {0};
-			prompt("tab width: ", default_prompt_color, string_number, sizeof string_number);
-			tab_width = atoi(string_number);
-			move_top();
+		else if (c == '[') {
+			char string[128] = {0};
+			print_above_textbox("(empty string disables exit sequence)", info_prompt_color);
+			prompt("left exit sequence (2 characters): ", default_prompt_color, string, sizeof string);
+			if (strlen(string) == 2) memcpy(left_exit, string, 2); else memset(left_exit, 0, 2);
+			sprintf(message, "left exit sequence set to %d %d", left_exit[0], left_exit[1]);
+
+		} else if (c == ']') {
+			char string[128] = {0};
+			print_above_textbox("(empty string disables exit sequence)", info_prompt_color);
+			prompt("right exit sequence (2 characters): ", default_prompt_color, string, sizeof string);
+			if (strlen(string) == 2) memcpy(right_exit, string, 2); else memset(right_exit, 0, 2);
+			sprintf(message, "right exit sequence set to %d %d", right_exit[0], right_exit[1]);
 		}
 	}
 	p = c;

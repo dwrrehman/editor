@@ -1,21 +1,93 @@
 manual for the ef text editor.
----------------------------------
+==============================
 
 
-	NOTE:	this document is currently not finished.
+--------------------------------------------------------------------
+
+		Section 2: How the editor's modes works 
+
+--------------------------------------------------------------------
 
 
 
-------------------- mode 1: edit mode ---------------------
+This editor is a modal editor, meaning that the various commands/functions 
+of the editor are seperated into multiple "modes". 
+
+there are currently 4 modes in the editor:
+
+
+
+
+	(mode 0) : insert mode :
+
+			used for typing text into the document.
+
+
+	(mode 1) : normal mode : 
+
+			- used for editing existing text, 
+			- moving the cursor around, 
+			- saving the file
+
+
+	(mode 2) : command mode : 
+
+			- used for manipulating buffers, 
+			- opening and closing files,
+			- creating new buffers, 
+			- executing external commands,
+			- undoing/redoing commands, 
+			- toggling display features, simple binary configuration options
+
+	(mode 3) : option mode : 
+
+			- changing various editor-configuration options, such as:
+				- the colors of certain displayed elements.
+				- the wrap width
+				- the tab width
+
+
+the commands available in each mode are given below.
+
+
+
+
+
+
+
+
+
+------------------- mode 0: insert mode ------------------------
+
+
+	all key presses are interpreted as a character 
+	to be inserted into the buffer, except for:
+
+
+		backspace/delete	:    deletes a character behind the cursor
+
+		arrow keys		:    moves the cursor, while in insert mode
+
+		escape-escape		:    enters normal mode (mode 1)
+
+		(left-exit sequence)	:    enters normal mode (mode 1)
+
+		(right-exit sequence)	:    enters normal mode (mode 1)
+
+
+
+------------------- mode 1: normal mode ---------------------
 
 
 MODES:
 ---------
 
 
-	f 	enter insert mode (mode 0)
+	e 	enter insert mode (mode 0)
 	a	enter command mode (mode 2)
-	A	enter option mode (mode 3)
+
+	q	close active buffer
+	Q	force close active buffer (without saving, after prompt confirms)
 
 
 CURSOR MOVEMENT:
@@ -37,7 +109,9 @@ CURSOR MOVEMENT:
 	K	move cursor to top of file
 	L	move cursor to bottom of file
 
-
+	m	jump to column number
+	n	jump to line number
+	
 
 	
 EDITING:
@@ -47,13 +121,24 @@ EDITING:
 	c	copy
 	d	delete text (no copy)
 
-	w 	save file
-	W	rename file
-
-	e	set the anchor to be at the current position of the cursor
+	s	set the anchor to be at the current position of the cursor
 
 
-------------------- mode 1: command mode ---------------------
+OTHER:
+-------------------
+
+	w 	save contents of buffer to file with the given filename.
+		(prompts for a filename, and creates a 
+		 new file, if the filename doesnt exist)
+
+
+	_	clear the current status message. (sets to the empty string)
+
+
+
+
+
+------------------- mode 2: command mode ---------------------
 
 
 
@@ -61,7 +146,12 @@ EDITING:
 MODES:
 ---------
 
-	f 	enter edit mode (mode 1)
+	e 	enter normal mode (mode 1)
+	a 	enter option mode (mode 2)
+
+
+	q	close active buffer
+	Q	force close active buffer (without saving, after prompt confirms)
 
 
 UNDO SYSTEM:
@@ -71,6 +161,7 @@ UNDO SYSTEM:
 	r	redo action
 	U	alteranate undo-tree history branch up
 	R 	alternate undo-tree history branch down
+
 
 TOGGLE OPTIONS:
 -----------------
@@ -85,36 +176,129 @@ BUFFER COMMANDS:
 
 	j	previous buffer
 	;	next buffer
+
 	i	create a new empty buffer
 	o	open a file and use contents as a new buffer
 
+	
 
-
-JUMPING:
-------------
-
-	k	jump column
-	l	jump line
-		
 	
 
 OTHER:
 ---------
 
 
-	e 	execute shell command
+	f 	execute shell command
+
+
+	W	rename file
 
 
 
 
-------------------- mode 1: option mode ---------------------
+
+------------------- mode 2: option mode ---------------------
 
 
 
 
-	w	edit wrap width variable
+	w	edit wrap width numeric variable
 
-	e	edit tab width variable
+	e	edit tab width numeric variable
+
+
+----------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------
+
+		Section 2: How the Status Bar works 
+
+--------------------------------------------------------------------
+
+
+along with displaying the contents, and the line numbers, the editor can optionally
+display a status bar, revealing several useful pieces of information about
+the state of the editor.
+
+
+
+
+
+------------------- example status bar text: -------------------------
+
+
+
+
+	2105145.093922 1 1 3 134 17 file.txt e  read 32b
+
+
+	^~~~~~~~~~~~~~ ^ ^ ^ ^~~ ^~ ^~~~~~~~ ^  ^~~~~~~~
+	#0             1 2 3 #4  #5 #6       #7 #8
+
+
+
+-------------------- meaing of each element: ---------------------------
+
+
+
+
+		#0	: 	the current date and time, at the time of displaying the status.
+				this is only updated on a keypress, so might be outdated,
+				if you havent pressed any keys in a while.
+
+
+		#1	:	this is the mode, that the current buffer is in.
+				can be 0, 1, 2, or 3, corresponding to:
+
+					0: insert mode
+					1: normal mode
+					2: command mode
+					3: option mode
+
+
+		#2	:	the index of the currently active buffer. 
+				always less than the number of buffers.
+
+		#3	:	the total number of buffers currently open.
+
+
+		#4	:	the current line the cursor is on, in the file.
+
+		#5	:	the current column the cursor is on, in the file.
+
+
+		#6	:	the filename of the currently active buffer.
+
+		#7	:	an indicator of whether the file has been edited, 
+				since it was last saved. it will have the values:
+
+					e : edited (i.e., there are some unsaved changes)
+					s : saved  (i.e., all changes thus far have been saved)
+
+
+		#8	:	an optional status message printed by the last command
+				executed, in case it needs to given information, or there was
+				an error. 
+
+		
+
+-----------------------------------------------------------------------------
+		
+
+
+		
+
 
 
 
