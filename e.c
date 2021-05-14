@@ -28,32 +28,41 @@ struct file_data {
 		wrap_width, tab_width, 
 		scroll_speed, show_status, show_line_numbers, 
 		use_txt_extension_when_absent;
-	char message[4096]; 
+	char message[4096];
 	char filename[4096];
 };
 
-struct action {
-	struct file_data data;
-	
-};
+// struct action {
+// 	struct file_data data;
+// };
 
-#define no_action 0
-#define insert_action 1
-#define backspace_action 2
-#define paste_text_action 3
-#define delete_text_action 4
-#define set_anchor_action 5
+// #define no_action 0
+// #define insert_action 1
+// #define backspace_action 2
+// #define paste_text_action 3
+// #define delete_text_action 4
+// #define set_anchor_action 5
 
+// preferences / configurations:
+static int rename_color = 214;
+static int line_number_color = 236;
+static int status_bar_color = 240;
+static int wrap_width = 120;
+static int tab_width = 8;
+static int scroll_speed = 4;
+static int show_status = 1;
+static int show_line_numbers = 1;
+static int use_txt_extension_when_absent = 1;
 
-
-
+// application global data:
 static int window_rows = 0;
 static int window_columns = 0;
 static char* screen = NULL;
 
-static char* system_clipboard = NULL;
-static int system_clipboard_length = 0;
+// static char* system_clipboard = NULL;
+// static int system_clipboard_length = 0;
 
+// textbox data:
 static char* tb_data = NULL;
 static int tb_count = 0;
 static int tb_capacity = 0;
@@ -63,40 +72,19 @@ static int tb_vc = 0;
 static int tb_vs = 0;
 static int tb_vo = 0;
 
+// current tab data:
 static char message[4096] = {0};
 static char filename[4096] = {0};
-static int saved = 0;
-static int mode = 0;
+static int saved = 0, mode = 0;
 static struct line* lines = NULL;
-static int count = 0;
-static int capacity = 0;
+static int count = 0, capacity = 0;
 static int scroll_counter = 0;
 static int line_number_width = 0;
 static int needs_display_update = 0;
-static int lal = 0;
-static int lac = 0;
-static int lcl = 0;
-static int lcc = 0;
-static int vcl = 0;
-static int vcc = 0;
-static int vol = 0;
-static int voc = 0;
-static int vsl = 0;
-static int vsc = 0;
-static int vdc = 0;
+static int lal = 0, lac = 0, lcl = 0, lcc = 0, vcl = 0, 
+	   vcc = 0, vol = 0, voc = 0, vsl = 0, vsc = 0, vdc = 0;
 
-static int rename_color = 214;
-static int line_number_color = 236;
-static int status_bar_color = 240;
-static int wrap_width = 200;
-static int tab_width = 8;
-static int scroll_speed = 4;
-static int show_status = 0;
-static int show_line_numbers = 0;
-static int use_txt_extension_when_absent = 1;
-
-
-
+// all tab data:
 static struct file_data* buffers = NULL;
 static int buffer_count = 0;
 static int active_buffer = 0;
@@ -371,12 +359,12 @@ static inline void get_datetime(char buffer[16]) {
 	strftime(buffer, 15, "%y%m%d%u.%H%M%S", tm_info);
 }
 
-static inline void get_full_datetime(char buffer[32]) {
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	struct tm* time = localtime(&tv.tv_sec);
-	strftime(buffer, 31, "CE%Y%m%d%u.%H%M%S", time);
-}
+// static inline void get_full_datetime(char buffer[32]) {
+// 	struct timeval tv;
+// 	gettimeofday(&tv, NULL);
+// 	struct tm* time = localtime(&tv.tv_sec);
+// 	strftime(buffer, 31, "CE%Y%m%d%u.%H%M%S", time);
+// }
 
 static inline void display() {
 	
@@ -567,29 +555,161 @@ static inline int confirmed(const char* question) {
 	}
 }
 
+
+
+
+static inline void store_current_data_to_buffer() {
+	if (not buffer_count) return;
+
+	const int b = active_buffer;
+	
+	buffers[b].saved = saved;
+	buffers[b].mode = mode;
+
+	buffers[b].scroll_counter = scroll_counter;
+	buffers[b].line_number_width = line_number_width;
+	buffers[b].needs_display_update = needs_display_update;
+
+	buffers[b].capacity = capacity;
+	buffers[b].count = count;
+	buffers[b].lines = lines;
+
+	buffers[b].lal = lal; 
+	buffers[b].lac = lac; 
+	buffers[b].lcl = lcl; 
+	buffers[b].lcc = lcc; 
+	buffers[b].vcl = vcl;
+	buffers[b].vcc = vcc; 
+	buffers[b].vol = vol; 
+	buffers[b].voc = voc; 
+	buffers[b].vsl = vsl; 
+	buffers[b].vsc = vsc; 
+	buffers[b].vdc = vdc;
+
+	memcpy(buffers[b].message, message, sizeof message);
+	memcpy(buffers[b].filename, filename, sizeof filename);
+}
+
+static inline void load_buffers_data_into_registers() {
+	if (not buffer_count) return;
+
+	struct file_data this = buffers[active_buffer];
+	
+	saved = this.saved;
+	mode = this.mode;
+
+	scroll_counter = this.scroll_counter;
+	line_number_width = this.line_number_width;
+	needs_display_update = this.needs_display_update;
+
+	capacity = this.capacity;
+	count = this.count;
+	lines = this.lines;
+
+	lal = this.lal; 
+	lac = this.lac; 
+	lcl = this.lcl; 
+	lcc = this.lcc; 
+	vcl = this.vcl;
+	vcc = this.vcc; 
+	vol = this.vol; 
+	voc = this.voc; 
+	vsl = this.vsl; 
+	vsc = this.vsc; 
+	vdc = this.vdc;
+
+	memcpy(message, this.message, sizeof message);
+	memcpy(filename, this.filename, sizeof filename);
+}
+
+static inline void initialize_current_data_registers() {
+	
+	saved = 1;
+	mode = 0;
+
+	scroll_counter = 0;
+	line_number_width = 0;
+	needs_display_update = 1;
+
+	capacity = 1;
+	count = 1;
+	lines = calloc((size_t) (capacity), sizeof(struct line));
+
+	lal = 0; lac = 0; lcl = 0; lcc = 0; vcl = 0; 
+	vcc = 0; vol = 0; voc = 0; vsl = 0; vsc = 0; vdc = 0;
+
+	memset(message, 0, sizeof message);
+	memset(filename, 0, sizeof filename);
+}
+
+static inline void create_empty_buffer() {
+	store_current_data_to_buffer();
+	buffers = realloc(buffers, sizeof(struct file_data) * (size_t)(buffer_count + 1));
+	buffers[buffer_count] = (struct file_data) {0};
+	initialize_current_data_registers();
+	active_buffer = buffer_count;
+	buffer_count++;
+	store_current_data_to_buffer();
+}
+
+static inline void close_active_buffer() {
+	buffer_count--;
+	memmove(buffers + active_buffer, buffers + active_buffer + 1, 
+		sizeof(struct file_data) * (size_t)(buffer_count - active_buffer));
+	if (active_buffer >= buffer_count) active_buffer = buffer_count - 1;
+	buffers = realloc(buffers, sizeof(struct file_data) * (size_t)(buffer_count));
+	load_buffers_data_into_registers();
+}
+
+static inline void move_to_next_buffer() {
+	store_current_data_to_buffer(); 
+	if (active_buffer) active_buffer--; 
+	load_buffers_data_into_registers();
+}
+
+static inline void move_to_previous_buffer() {
+	store_current_data_to_buffer(); 
+	if (active_buffer < buffer_count - 1) active_buffer++; 
+	load_buffers_data_into_registers();
+}
+
 static inline void open_file(const char* given_filename) {
 	if (not strlen(given_filename)) return;
 	
 	FILE* file = fopen(given_filename, "r");
 	if (not file) {
-		perror("fopen");
-		exit(1);
+		if (not buffer_count) {
+			perror("fopen");
+			exit(1);
+		} else {
+			sprintf(message, "error: fopen: %s", strerror(errno));
+			return;
+		}
 	}
 
 	fseek(file, 0, SEEK_END);        
         size_t length = (size_t) ftell(file);
-	char* buffer = malloc(sizeof(char) * (length + 1));
+	char* buffer = malloc(sizeof(char) * length);
         fseek(file, 0, SEEK_SET);
         fread(buffer, sizeof(char), length, file);
-	buffer[length] = '\0';
-	lines = calloc((size_t) (count = 1), sizeof(struct line));
+
+	create_empty_buffer();
 	for (size_t i = 0; i < length; i++) insert(buffer[i]);
-	move_top();
 	free(buffer);
+	fclose(file);
+
 	strcpy(filename, given_filename);
+	sprintf(message, "read %lub", length);
 	saved = 1;
 	mode = 1;
-	fclose(file);
+	move_top();
+}
+
+static inline void prompt_open() {
+	char new_filename[4096] = {0};
+	prompt("open: ", 196, new_filename, sizeof new_filename);
+	if (not strlen(new_filename)) { sprintf(message, "aborted open"); return; }
+	open_file(new_filename);
 }
 
 static inline void save() {
@@ -686,85 +806,77 @@ static inline void interpret_escape_code() {
 	} 
 }
 
-static inline void undo() {
-    
-    if (not head->parent) return;
-    
-    reverse_action();
-    
-    if (file->head->parent->count == 1) {
-        sprintf(file->message, "undoing %s", action_name(file->head->type));
-    
-    } else {
-        sprintf(file->message, "selected #%d from %d histories: undoing %s",
-                file->head->parent->choice, file->head->parent->count,
-                action_name(file->head->type));
-    }
-    
-    file->head = file->head->parent;
-}
+// static inline void undo() {
 
-static inline void redo() {
+// if (not head->parent) return;
+
+// reverse_action();
+
+// if (file->head->parent->count == 1) {
+// sprintf(file->message, "undoing %s", action_name(file->head->type));
+
+// } else {
+// sprintf(file->message, "selected #%d from %d histories: undoing %s",
+//         file->head->parent->choice, file->head->parent->count,
+//         action_name(file->head->type));
+// }
+
+// file->head = file->head->parent;
+// }
+
+// static inline void redo() {
         
-    if (not file->head->count) return;
+//     if (not file->head->count) return;
     
-    file->head = file->head->children[file->head->choice];
+//     file->head = file->head->children[file->head->choice];
     
-    if (file->head->parent->count == 1) {
-        sprintf(file->message, "redoing %s", action_name(file->head->type));
+//     if (file->head->parent->count == 1) {
+//         sprintf(file->message, "redoing %s", action_name(file->head->type));
         
-    } else {
-        sprintf(file->message, "selected #%d from %d histories: redoing %s",
-                file->head->parent->choice, file->head->parent->count,
-                action_name(file->head->type));
-    }
+//     } else {
+//         sprintf(file->message, "selected #%d from %d histories: redoing %s",
+//                 file->head->parent->choice, file->head->parent->count,
+//                 action_name(file->head->type));
+//     }
     
-    replay_action();
-}
+//     replay_action();
+// }
 
-static inline void alternate_up() {
+// static inline void alternate_up() {
     
-    if (file->head->parent and file->head->parent->choice + 1 < file->head->parent->count) {
-        undo();
-        file->head->choice++;
-        redo();
-    }
-}
+//     if (file->head->parent and file->head->parent->choice + 1 < file->head->parent->count) {
+//         undo();
+//         file->head->choice++;
+//         redo();
+//     }
+// }
 
-static inline void alternate_down() {
-    if (file->head->parent and file->head->parent->choice) {
-        undo();
-        file->head->choice--;
-        redo();
-    }
-}
+// static inline void alternate_down() {
+//     if (file->head->parent and file->head->parent->choice) {
+//         undo();
+//         file->head->choice--;
+//         redo();
+//     }
+// }
 
-static inline void jump_line() {
-	char string_number[128] = {0};
-	prompt("line: ", 214, string_number, sizeof string_number);
-	int line = atoi(string_number);
-}
+// static inline void jump_line() {
+// 	char string_number[128] = {0};
+// 	prompt("line: ", 214, string_number, sizeof string_number);
+// 	int line = atoi(string_number);
+// }
 
-static inline void jump_column() {
-	char string_number[128] = {0};
-	prompt("column: ", 214, string_number, sizeof string_number);
-	int column = atoi(string_number);
-}
+// static inline void jump_column() {
+// 	char string_number[128] = {0};
+// 	prompt("column: ", 214, string_number, sizeof string_number);
+// 	int column = atoi(string_number);
+// }
 
-static inline void create_empty_buffer() {
 
-	buffers = realloc(buffer, sizeof(struct file_data) * (buffer_count + 1));
-	buffers[buffer_count] = (struct file_data) {0};
-
-	lines = calloc((size_t) (count = 1), sizeof(struct line));
-	saved = 1;
-	mode = 0;
-}
 
 int main(const int argc, const char** argv) {
 
 	if (argc == 1) create_empty_buffer();
-	else open_file(argv[1]);
+	else for (int i = 1; i < argc; i++) open_file(argv[i]);
 
 	struct termios terminal = configure_terminal();
 	write(1, "\033[?1049h\033[?1000h", 16);
@@ -781,29 +893,30 @@ loop:
 	read(0, &c, 1);
 	needs_display_update = 1;
 
-	if (c == 27) interpret_escape_code();
-
 	if (mode == 0) {
-		if ((c == 'f' and p == 'd') or (c == 'j' and p == 'k')) { undo(); mode = 1; }
+		if ((c == 'f' and p == 'd') or (c == 'j' and p == 'k')) { /*undo();*/delete(); mode = 1; }
 		else if (c == 127) delete();
 		else if (c == 13) insert(10);
+		else if (c == 27) interpret_escape_code();
 		else insert(c);
 
 	} else if (mode == 1) {
 
-		if (c == 'a') mode = 2;
-		else if (c == 'A') mode = 3;
-		else if (c == 'w') save();
-		else if (c == 'W') rename_file();
-		else if (c == 'e') anchor();
+		if (c == 'q') { if (saved) close_active_buffer(); }
+		else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
+		
 		else if (c == 'f') mode = 0;
+		else if (c == 'a') mode = 2;
+
+		else if (c == 'w') save();
 
 		else if (c == 'r') {}
 		else if (c == 'u') {}
 		
-		else if (c == 'v') paste();
-		else if (c == 'c') copy();
-		else if (c == 'd') cut();
+		// else if (c == 'e') anchor();
+		// else if (c == 'v') paste();
+		// else if (c == 'c') copy();
+		// else if (c == 'd') cut();
 
 		else if (c == 'j') move_left(1);
 		else if (c == ';') move_right(1);
@@ -821,34 +934,40 @@ loop:
 		else if (c == 'K') move_top();
 		else if (c == 'L') move_bottom();
 
+		else if (c == 27) interpret_escape_code();
+
 	} else if (mode == 2) {
 		
-		if (c == 'q') { if (saved) goto done; }
-		else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) goto done; }
+		if (c == 'q') { }
+		else if (c == 'Q') { }
+		else if (c == 'w') { }
+		else if (c == 'W') rename_file();
 
-		if (c == 'a') mode = 3;
-		else if (c == 'w') {}
-		else if (c == 'e') execute_command();
+		else if (c == 'a') mode = 3;
 		else if (c == 'f') mode = 1;
+		// else if (c == 'e') execute_command();
 
 		else if (c == 'E') use_txt_extension_when_absent = not use_txt_extension_when_absent;
 		else if (c == 's') show_status = not show_status;
 		else if (c == 'd') show_line_numbers = not show_line_numbers;
 
-		else if (c == 'j') { if (active) active--; }
-            	else if (c == ';') { if (active < buffer_count - 1) active++; }
-		else if (c == 'o') open_using_prompt();
+		else if (c == 'j') move_to_next_buffer();
+            	else if (c == ';') move_to_previous_buffer();
+
+		else if (c == 'o') prompt_open();
             	else if (c == 'i') create_empty_buffer();
 
-		else if (c == 'l') jump_line();
-		else if (c == 'k') jump_column();
+		// else if (c == 'l') jump_line();
+		// else if (c == 'k') jump_column();
 
-		else if (c == 'u') undo();
-		else if (c == 'r') redo();
-		else if (c == 'U') alternate_up();
-		else if (c == 'R') alternate_down();
+		// else if (c == 'u') undo();
+		// else if (c == 'r') redo();
+		// else if (c == 'U') alternate_up();
+		// else if (c == 'R') alternate_down();
 		
 		else if (c == ':') memset(message, 0, sizeof message);
+
+		else if (c == 27) interpret_escape_code();
 		
 	} else if (mode == 3) {
 
@@ -869,10 +988,10 @@ loop:
 		}
 	}
 	p = c;
-	goto loop;
-done:
+	if (buffer_count) goto loop;
 	write(1, "\033[?1049l\033[?1000l", 16);	
 	tcsetattr(0, TCSAFLUSH, &terminal);
-	free(system_clipboard);
+	free(buffers); //todo: free lines in each buffer, and lines reg.
+	// free(system_clipboard);
 }
 
