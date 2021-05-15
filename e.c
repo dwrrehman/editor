@@ -965,15 +965,11 @@ static inline int is_exit_sequence(char c, char p) {
 	       (c == right_exit[1] and p == right_exit[0]);
 }
 
-
 static inline void paste() {
-	// if (not use_system_clipboard) return;
-	// char buffer[128] = {0};
-	
 	FILE* file = popen("pbpaste", "r");
 	int c = 0;
 	while ((c = fgetc(file)) != EOF) insert((char)c);
-	sprintf(message, "pasted at [%d %d] from system clipboard", lcl, lcc);
+	sprintf(message, "pasted from system clipboard");
 	pclose(file);
 }
 
@@ -1012,12 +1008,10 @@ cursor_first:
 	goto done;
 cursor_first_c: 
 	fwrite(lines[lcl].data + lcc, 1, (size_t)(lac - lcc), file);
-
 done:
-	sprintf(message, "copied [%d %d : %d %d] to system clipboard", lal,lac, lcl,lcc);
+	sprintf(message, "copied to system clipboard");
 	pclose(file);
 }
-
 
 static inline void cut() {
 	if (lal < lcl) goto anchor_first;
@@ -1025,16 +1019,20 @@ static inline void cut() {
 	if (lac < lcc) goto anchor_first;
 	if (lcc < lac) goto cursor_first;
 cursor_first:;
-	int line_temp = lal, column_temp = lac;
-	lal = lcl; lac = lcc; lcl = line_temp; lcc = column_temp;
-anchor_first:
+	int line = lcl, column = lcc;
+	while (lcl < lal or lcc < lac) move_right(0);
+	lal = line; lac = column;
+anchor_first: 
 	while (lal < lcl or lac < lcc) delete();
-	sprintf(message, "deleted text [%d %d : %d %d]", lal, lac,  lcl, lcc);
-}     // { lal = lcl;  lac = lcc; }
+}
+
+
+// lal = lcl; lac = lcc; lcl = line_temp; lcc = column_temp;
+
 
 static inline void anchor() {
 	lal = lcl;  lac = lcc;
-	sprintf(message, "set anchor %d %d", lal, lac);
+	sprintf(message, "set anchor %d %d", lal + 1, lac + 1);
 }
 
 int main(const int argc, const char** argv) {
@@ -1074,7 +1072,6 @@ loop:
 
 		else if (c == 'v') paste();
 		else if (c == 'c') copy();
-
 		else if (c == 'd') cut();
 
 		else if (c == 'r') {}
