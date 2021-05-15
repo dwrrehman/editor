@@ -971,14 +971,13 @@ static inline void paste() {
 	// char buffer[128] = {0};
 	
 	FILE* file = popen("pbpaste", "r");
-	int c;
+	int c = 0;
 	while ((c = fgetc(file)) != EOF) insert((char)c);
-	sprintf(message, "pasted from system clipboard");
+	sprintf(message, "pasted at [%d %d] from system clipboard", lcl, lcc);
 	pclose(file);
 }
 
 static inline void copy() {
-
 
 	FILE* file = popen("pbcopy", "w");
 
@@ -987,7 +986,6 @@ static inline void copy() {
 	if (lac < lcc) goto anchor_first_c;
 	if (lcc < lac) goto cursor_first_c;
 	goto done;
-
 anchor_first:;
 	int line = lal, column = lac;
 	while (line < lcl) {
@@ -1014,92 +1012,37 @@ cursor_first:
 	goto done;
 cursor_first_c: 
 	fwrite(lines[lcl].data + lcc, 1, (size_t)(lac - lcc), file);
-	goto done;
+
 done:
-	sprintf(message, "copied [%d %d -> %d %d] to system clipboard", lal,lac, lcl,lcc);
+	sprintf(message, "copied [%d %d : %d %d] to system clipboard", lal,lac, lcl,lcc);
 	pclose(file);
 }
 
 
-
-// oijweofijwefoijw
-// weofijwoefijwoefijowfeijf
-// wefowoeijfw
-
-
-// oijweofijwefoijwweofijwo
-
-// 		while (column < lines[line].count) {
-
-			
-// 			column++;
-// 		}
-
-
-
-
-
-// loop:
-// 	if (line == lcl and column >= lcc) goto done;
-// 	if (line == lcl and column < lcc) 
-// 	}
-	
-	// if (not use_system_clipboard) return;
-
-	// char buffer[128] = "hello there from space.";
-	// size_t buffer_length = (size_t) strlen(buffer);
-
-	// fwrite(buffer, 1, buffer_length, file);
-
-	
-
-
-
-
-
-
-
+static inline void cut() {
+	if (lal < lcl) goto anchor_first;
+	if (lcl < lal) goto cursor_first;
+	if (lac < lcc) goto anchor_first;
+	if (lcc < lac) goto cursor_first;
+cursor_first:;
+	int line_temp = lal, column_temp = lac;
+	lal = lcl; lac = lcc; lcl = line_temp; lcc = column_temp;
+anchor_first:
+	while (lal < lcl or lac < lcc) delete();
+	sprintf(message, "deleted text [%d %d : %d %d]", lal, lac,  lcl, lcc);
+}     // { lal = lcl;  lac = lcc; }
 
 static inline void anchor() {
-	lal = lcl; 
-	lac = lcc; 
+	lal = lcl;  lac = lcc;
 	sprintf(message, "set anchor %d %d", lal, lac);
 }
 
-
 int main(const int argc, const char** argv) {
-
-	// paste();
-	// printf("\n\ncopying things to clipboard!!\n\n");
-	// copy();
-	// exit(1);
-
 	if (argc == 1) create_empty_buffer();
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
-
-
-
-
-	// adjust_window_size();
-	// move_top();
-	// anchor();
-	// move_down();
-	// move_right(1);
-	// copy();
-	// exit(1);
-
-
-
-
-
-
-
 	struct termios terminal = configure_terminal();
 	write(1, "\033[?1049h\033[?1000h", 16);
 	char p = 0, c = 0;
-
-	adjust_window_size();
-	needs_display_update = 1;
 loop:	
 	if (needs_display_update) {
 		adjust_window_size();
@@ -1125,12 +1068,14 @@ loop:
 		else if (c == 'e') mode = 2;
 		else if (c == 't') mode = 3;
 
-		else if (c == 'w') save();
+		else if (c == 'w') save();   // s?
+
 		else if (c == 'a') anchor();
+
 		else if (c == 'v') paste();
 		else if (c == 'c') copy();
 
-		// else if (c == 'd') cut();
+		else if (c == 'd') cut();
 
 		else if (c == 'r') {}
 		else if (c == 'u') {}
@@ -1230,4 +1175,55 @@ loop:
 	free(buffers); //todo: free lines in each buffer, and lines reg.
 	// free(system_clipboard);
 }
+
+
+
+
+
+
+
+// 		while (column < lines[line].count) {
+
+			
+// 			column++;
+// 		}
+
+
+// loop:
+// 	if (line == lcl and column >= lcc) goto done;
+// 	if (line == lcl and column < lcc) 
+// 	}
+	
+	// if (not use_system_clipboard) return;
+
+	// char buffer[128] = "hello there from space.";
+	// size_t buffer_length = (size_t) strlen(buffer);
+
+	// fwrite(buffer, 1, buffer_length, file);
+
+	
+
+
+
+
+
+
+
+
+
+
+
+// paste();
+	// printf("\n\ncopying things to clipboard!!\n\n");
+	// copy();
+	// exit(1);
+
+	// adjust_window_size();
+	// move_top();
+	// anchor();
+	// move_down();
+	// move_right(1);
+	// copy();
+	// exit(1);
+
 
