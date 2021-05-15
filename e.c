@@ -1,25 +1,25 @@
-#include <iso646.h>    // Daniel Warren Riaz Rehman's minimalist terminal-based text editor.
-#include <termios.h>   //
-#include <stdio.h>     //     designed with reliability, minimalism, 
-#include <stdlib.h>    //     simplicity, and ergonimics in mind.
-#include <string.h>    //
-#include <unistd.h>    //          written on 2101177.005105
-#include <sys/ioctl.h> //         finished on 2101181.131817
-#include <ctype.h>
-#include <time.h>
-#include <math.h>
-#include <sys/time.h>
-#include <errno.h>
+#include <iso646.h>    //  Daniel Warren Riaz Rehman's minimalist 
+#include <termios.h>   //        terminal-based text editor 
+#include <stdio.h>     //
+#include <stdlib.h>    //     Designed with reliability, minimalism, 
+#include <string.h>    //     simplicity, and ergonimics in mind.
+#include <unistd.h>    //
+#include <sys/ioctl.h> //          written on 2101177.005105
+#include <ctype.h>     //           edited on 2105156.003715
+#include <time.h>      //
+#include <math.h>      //
+#include <sys/time.h>  //        tentatively named:   "ef".
+#include <errno.h>     //
+
 
 // current implementing:     copy-paste,  undo-tree, 
 // --------------------------------------------------------
 
 
 //        multiple buffers   :   completed.
+//	  copy-paste         :   completed.
 
 
-
-//	  copy-paste         :   incomplete.
 
 //	  undo-tree          :   incomplete.
 
@@ -27,38 +27,68 @@
 // --------------------------------------------------------
 
 
+
+//TODO:    consider making the editor use     size_t's    instead of     int's.....    for generality!  hmm..
+
+//		 consdier typdef'ing it!!!
+
+
+// typedef nat ssize_t;   //  candidate?...
+
+
 struct line { char* data; int count, capacity; };
 
 
 struct file_data {
 	struct line* lines;
+	struct action* root;
+	struct action* head;
 	int 
 		saved, mode, 
 		count, capacity, 
+
 		scroll_counter, line_number_width, needs_display_update, 
-		lcl, lcc, 	vcl, vcc,  	vol, voc, 	vsl, vsc, 	vdc,     lal,  lac,
+
+		lcl, lcc, 	vcl, vcc,  	vol, voc, 	
+		vsl, vsc, 	vdc,    	lal,  lac,
+
 		line_number_color, status_bar_color, alert_prompt_color, 
 		info_prompt_color, default_prompt_color, 
+
 		wrap_width, tab_width, 
 		scroll_speed, show_status, show_line_numbers, 
 		use_txt_extension_when_absent, padding0;
+
 	char message[4096];
 	char filename[4096];
 };
 
-// struct action {
-// 	struct file_data data;
-// };
+struct action {
+	struct action** children;
+	struct action* parent;
+	int type;
+	int choice;
+	int count;
+	int padding0;
+	struct file_data data;
+};
 
-// #define no_action 0
-// #define insert_action 1
-// #define backspace_action 2
-// #define paste_text_action 3
-// #define delete_text_action 4
-// #define set_anchor_action 5
-
-
-
+enum {
+	no_action,
+	insert_action,
+	backspace_action,
+	paste_text_action,
+	delete_text_action,
+	set_anchor_action,
+};
+/*
+#define no_action 0
+#define insert_action 1
+#define backspace_action 2
+#define paste_text_action 3
+#define delete_text_action 4
+#define set_anchor_action 5
+*/
 
 // preferences and configurations:
 static int alert_prompt_color = 196;
@@ -86,7 +116,6 @@ static char* screen = NULL;
 // static char* clipboard = NULL;
 // static int clipboard_length = 0;
 
-
 // textbox data:
 static char* tb_data = NULL;
 static int tb_count = 0;
@@ -109,6 +138,9 @@ static int line_number_width = 0;
 static int needs_display_update = 0;
 static int lcl = 0, lcc = 0, vcl = 0, vcc = 0, vol = 0, 
            voc = 0, vsl = 0, vsc = 0, vdc = 0, lal = 0, lac = 0;
+
+static struct action* root = NULL;
+static struct action* head = NULL;
 
 
 // all tab data:
@@ -632,6 +664,9 @@ static inline void store_current_data_to_buffer() {
 	buffers[b].show_line_numbers = show_line_numbers;
 	buffers[b].use_txt_extension_when_absent = use_txt_extension_when_absent;
 
+	buffers[b].head = head;
+	buffers[b].root = root;
+
 	memcpy(buffers[b].message, message, sizeof message);
 	memcpy(buffers[b].filename, filename, sizeof filename);
 }
@@ -678,6 +713,9 @@ static inline void load_buffers_data_into_registers() {
 	show_line_numbers = this.show_line_numbers;
 	use_txt_extension_when_absent = this.use_txt_extension_when_absent;
 
+	head = this.head;
+	root = this.root;
+
 	memcpy(message, this.message, sizeof message);
 	memcpy(filename, this.filename, sizeof filename);
 }
@@ -696,19 +734,22 @@ static inline void initialize_current_data_registers() {
 	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
 	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
 
+
+	//TODO: make these initial default_values read from a config file or something.. 
 	alert_prompt_color = 196;
 	info_prompt_color = 45;
 	default_prompt_color = 214;
 	line_number_color = 236;
 	status_bar_color = 245;
-
 	wrap_width = 120;
 	tab_width = 8;
 	scroll_speed = 4;
-
 	show_status = 1;
 	show_line_numbers = 1;
 	use_txt_extension_when_absent = 1;
+
+	root = calloc(1, sizeof(struct action));     // TODO: how do you init this var?
+	head = root;
 
 	memset(message, 0, sizeof message);
 	memset(filename, 0, sizeof filename);
@@ -781,13 +822,12 @@ static inline void prompt_open() {
 static inline void save() {
 
 	if (not strlen(filename)) {
+	prompt_filename:
 		prompt("save as: ", default_prompt_color, filename, sizeof filename);
 		if (not strlen(filename)) { sprintf(message, "aborted save"); return; }
 		if (not strrchr(filename, '.') and use_txt_extension_when_absent) strcat(filename, ".txt");
 		if (file_exists(filename) and not confirmed("file already exists, overwrite")) {
-			strcpy(filename, "");
-			sprintf(message, "aborted save");
-			return;
+			strcpy(filename, ""); goto prompt_filename;
 		}
 	}
 
@@ -822,11 +862,12 @@ static inline void save() {
 
 static inline void rename_file() {
 	char new[4096] = {0};
+prompt_filename:
 	prompt("rename to: ", default_prompt_color, new, sizeof new);
 	if (not strlen(new)) { sprintf(message, "aborted rename"); return; }
 
 	if (file_exists(new) and not confirmed("file already exists, overwrite")) {
-		sprintf(message, "aborted rename"); return;
+		strcpy(new, ""); goto prompt_filename;
 	}
 
 	if (rename(filename, new)) sprintf(message, "error: %s", strerror(errno));
@@ -872,63 +913,116 @@ static inline void interpret_escape_code() {
 	} 
 }
 
-// static inline void undo() {
 
-// if (not head->parent) return;
 
-// reverse_action();
 
-// if (file->head->parent->count == 1) {
-// sprintf(file->message, "undoing %s", action_name(file->head->type));
 
-// } else {
-// sprintf(file->message, "selected #%d from %d histories: undoing %s",
-//         file->head->parent->choice, file->head->parent->count,
-//         action_name(file->head->type));
-// }
 
-// file->head = file->head->parent;
-// }
 
-// static inline void redo() {
-        
-//     if (not file->head->count) return;
-    
-//     file->head = file->head->children[file->head->choice];
-    
-//     if (file->head->parent->count == 1) {
-//         sprintf(file->message, "redoing %s", action_name(file->head->type));
-        
-//     } else {
-//         sprintf(file->message, "selected #%d from %d histories: redoing %s",
-//                 file->head->parent->choice, file->head->parent->count,
-//                 action_name(file->head->type));
-//     }
-    
-//     replay_action();
-// }
 
-// static inline void alternate_up() {
-    
-//     if (file->head->parent and file->head->parent->choice + 1 < file->head->parent->count) {
-//         undo();
-//         file->head->choice++;
-//         redo();
-//     }
-// }
 
-// static inline void alternate_down() {
-//     if (file->head->parent and file->head->parent->choice) {
-//         undo();
-//         file->head->choice--;
-//         redo();
-//     }
-// }
+
+
+
+
+static inline void replay_action() {
+	
+
+}
+
+
+static inline void reverse_action() {
+	// based on head->type    i thikn..
+
+
+
+	//TODO: unimplemented.
+
+
+}
+
+
+static inline void undo() {
+
+	sprintf(message, "UNIMPLEMENTED FUNCTION");
+
+	if (not head->parent) return;
+
+	reverse_action();
+
+	if (head->parent->count == 1) {
+		sprintf(message, "undoing action#%d", head->type);
+
+	} else {
+		sprintf(message, "selected #%d from %d histories: undoing action#%d",
+        	head->parent->choice, head->parent->count, head->type);
+	}
+
+	head = head->parent;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static inline void redo() {
+
+	sprintf(message, "UNIMPLEMENTED FUNCTION");
+
+	if (not head->count) return;
+
+	head = head->children[head->choice];
+
+	if (head->parent->count == 1) {
+		sprintf(message, "redoing action#%d", head->type);
+
+	} else {
+		sprintf(message, "selected #%d from %d histories: redoing action#%d",
+			head->parent->choice, head->parent->count, head->type);
+	}
+
+	replay_action();
+}
+
+
+static inline void alternate_up() {
+	if (head->parent and head->parent->choice + 1 < head->parent->count) {
+		undo();
+		head->choice++;
+		redo();
+	}
+}
+
+static inline void alternate_down() {
+	if (head->parent and head->parent->choice) {
+		undo();
+		head->choice--;
+		redo();
+	}
+}
+
+
+
+
+
 
 static inline void jump_line() {
 	char string_number[128] = {0};
 	prompt("line: ", default_prompt_color, string_number, sizeof string_number);
 	int line = atoi(string_number);
+
+	//TODO: implement me
+
+		//   go to line,col:       line,0              //    ...lcc instead of 0?.....
 
 	sprintf(message, "UNIMPLEMENTED FUNCTION");
 }
@@ -938,8 +1032,21 @@ static inline void jump_column() {
 	prompt("column: ", default_prompt_color, string_number, sizeof string_number);
 	int column = atoi(string_number);
 
+	//TODO: implement me
+	
+	//   go to line,col:       lcl, column
+
 	sprintf(message, "UNIMPLEMENTED FUNCTION");
 }
+
+
+
+
+
+
+
+
+
 
 static inline void show_buffer_list() {
 	char list[4096] = {0};
@@ -1026,12 +1133,8 @@ anchor_first:
 	while (lal < lcl or lac < lcc) delete();
 }
 
-
-// lal = lcl; lac = lcc; lcl = line_temp; lcc = column_temp;
-
-
 static inline void anchor() {
-	lal = lcl;  lac = lcc;
+	lal = lcl; lac = lcc;
 	sprintf(message, "set anchor %d %d", lal + 1, lac + 1);
 }
 
@@ -1126,10 +1229,10 @@ loop:
             	else if (c == 'i') create_empty_buffer();
 		else if (c == 'l') show_buffer_list();
 
-		// else if (c == 'u') undo();
-		// else if (c == 'r') redo();
-		// else if (c == 'U') alternate_up();
-		// else if (c == 'R') alternate_down();
+		else if (c == 'u') undo();
+		else if (c == 'r') redo();
+		else if (c == 'U') alternate_up();
+		else if (c == 'R') alternate_down();
 		
 		else if (c == 27) interpret_escape_code();
 		
@@ -1170,8 +1273,24 @@ loop:
 	write(1, "\033[?1049l\033[?1000l", 16);	
 	tcsetattr(0, TCSAFLUSH, &terminal);
 	free(buffers); //todo: free lines in each buffer, and lines reg.
-	// free(system_clipboard);
+	// free(clipboard);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1224,3 +1343,268 @@ loop:
 	// exit(1);
 
 
+
+
+
+
+
+
+/*
+
+
+
+
+
+
+// experimenting with implementing an undo system.
+// undoing and redoing action, insert and delete, on a simple textbox.
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <termios.h>
+#include <unistd.h>
+#include <string.h>
+
+enum action_type {
+    no_action,
+    insert_action,
+    delete_action,
+    paste_action,
+    action_count
+};
+
+struct action {
+    size_t type;
+    size_t choice;
+    size_t count;
+    struct action** children;
+    struct action* parent;
+    uint8_t* text;
+    size_t length;
+};
+
+static char message[4096] = {0};
+
+static struct termios terminal = {0};
+
+static inline void restore_terminal() {
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) < 0) {
+        perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal))");
+        abort();
+    }
+}
+
+static inline void configure_terminal() {
+    if (tcgetattr(STDIN_FILENO, &terminal) < 0) {
+        perror("tcgetattr(STDIN_FILENO, &terminal)");
+        abort();
+    }
+    
+    atexit(restore_terminal);
+    struct termios raw = terminal;
+    raw.c_lflag &= ~(ECHO | ICANON);
+    
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) < 0) {
+        perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)");
+        abort();
+    }
+}
+
+static inline uint8_t read_byte_from_stdin() {
+    uint8_t c = 0;
+    read(STDIN_FILENO, &c, 1);
+    return c;
+}
+
+static inline const char* stringify_action(size_t type) {
+    if (type == no_action) return "(none)";
+    else if (type == insert_action) return "insert";
+    else if (type == delete_action) return "delete";
+    else if (type == paste_action) return "paste";
+    else abort();
+}
+
+static inline void display_undo_tree(struct action* root, int d, struct action* head) {
+    if (!root) { printf("%*c(NULL)\n", 2 * d, ' '); return; }
+    if (root == head) printf("%*c[HEAD]\n", 2 * d, ' ');
+    printf("%*ctype = %s, count = %lu, data = %p\n", 2 * d,' ',
+           stringify_action(root->type), root->count, root->text);
+    for (size_t i = 0; i < root->count; i++) {
+        printf("%*cchild #%lu:\n", 2 * (d + 1), ' ', i);
+        display_undo_tree(root->children[i], d + 1, head);
+    }
+}
+
+static inline void insert(char c, char* text, size_t* length, struct action** head) {
+    text[(*length)++] = c;
+    
+    struct action* new = calloc(1, sizeof(struct action));
+    new->type = insert_action;
+    new->parent = *head;
+    new->text = malloc(1);
+    new->length = 1;
+    new->text[0] = c;
+    
+    (*head)->children = realloc((*head)->children, sizeof(struct action*) * ((*head)->count + 1));
+    (*head)->choice = (*head)->count;
+    (*head)->children[(*head)->count++] = new;
+    *head = new;
+}
+
+static inline void delete(char* text, size_t* length, struct action** head) {
+    if (!*length) return;
+    char c = text[--*length];
+    
+    struct action* new = calloc(1, sizeof(struct action));
+    new->type = delete_action;
+    new->parent = *head;
+    new->text = malloc(1);
+    new->length = 1;
+    new->text[0] = c;
+
+    (*head)->children = realloc((*head)->children, sizeof(struct action*) * ((*head)->count + 1));
+    (*head)->choice = (*head)->count;
+    (*head)->children[(*head)->count++] = new;
+    *head = new;
+}
+
+static inline void paste(const char* string, char* text, size_t* length, struct action** head) {
+    for (size_t i = 0; i < strlen(string); i++)
+        text[(*length)++] = string[i];
+    
+    struct action* new = calloc(1, sizeof(struct action));
+    new->type = paste_action;
+    new->parent = *head;
+    new->length = strlen(string);
+    new->text = malloc(new->length);
+    for (size_t i = 0; i < new->length; i++)
+        new->text[i] = string[i];
+
+    (*head)->children = realloc((*head)->children, sizeof(struct action*) * ((*head)->count + 1));
+    (*head)->choice = (*head)->count;
+    (*head)->children[(*head)->count++] = new;
+    *head = new;
+}
+
+static inline void perform_action(struct action* action,  char* text, size_t* length) {
+    if (action->type == no_action) {}
+    else if (action->type == delete_action) *length -= action->length;
+    else if (action->type == insert_action) {
+        for (size_t i = 0; i < action->length; i++)
+            text[(*length)++] = action->text[i];
+    } else if (action->type == paste_action) {
+        for (size_t i = 0; i < action->length; i++)
+            text[(*length)++] = action->text[i];
+    } else abort();
+}
+
+static inline void reverse_action(struct action* action, char* text, size_t* length) {
+    if (action->type == no_action) return;
+    else if (action->type == delete_action) {
+        for (size_t i = 0; i < action->length; i++)
+            text[(*length)++] = action->text[i];
+    } else if (action->type == insert_action) *length -= action->length;
+    else if (action->type == paste_action) *length -= action->length;
+    else abort();
+}
+    
+static inline void undo(char* text, size_t* length, struct action** head) {
+    if (!(*head)->parent) return;
+        
+    reverse_action(*head, text, length);
+    
+    if ((*head)->parent->count == 1) {
+        sprintf(message, "undoing %s\n", stringify_action((*head)->type));
+    
+    } else {
+        sprintf(message, "selected #%lu from %lu histories: undoing %s",
+                (*head)->parent->choice, (*head)->parent->count,
+                stringify_action((*head)->type));
+    }
+    
+    *head = (*head)->parent;
+}
+
+static inline void redo(char* text, size_t* length, struct action** head) {
+    if (!(*head)->count) return;
+    
+    *head = (*head)->children[(*head)->choice];
+    
+    if ((*head)->parent->count == 1) {
+        sprintf(message, "redoing %s", stringify_action((*head)->type));
+        
+    } else {
+        sprintf(message, "selected #%lu from %lu histories: redoing %s",
+                (*head)->parent->choice, (*head)->parent->count,
+                stringify_action((*head)->type));
+    }
+    
+    perform_action(*head, text, length);
+}
+
+static inline void alternate_up(char* text, size_t* length, struct action** head) {
+    if ((*head)->parent &&
+        (*head)->parent->choice + 1 < (*head)->parent->count) {
+        undo(text, length, head);
+        (*head)->choice++;
+        redo(text, length, head);
+    }
+}
+
+static inline void alternate_down(char* text, size_t* length, struct action** head) {
+    if ((*head)->parent &&
+        (*head)->parent->choice) {
+        undo(text, length, head);
+        (*head)->choice--;
+        redo(text, length, head);
+    }
+}
+
+int main() {
+    configure_terminal();
+    char* text = malloc(4096);
+    size_t length = 0;
+    struct action* tree = calloc(1, sizeof(struct action));
+    struct action* head = tree;
+    
+    while (1) {
+        //display_undo_tree(tree, 0, head);
+        printf("\033[H\033[2J");
+        printf("text:\n\n\t\t\"%.*s\"\n\n", (int) length, text);
+        printf("\n\tmessage: %s\n\n", message);
+        printf("action: ");
+        fflush(stdout);
+        uint8_t c = read_byte_from_stdin();
+        
+        if (c == 27) break;
+        else if (c == '0') memset(message, 0, sizeof message);
+        else if (c == 'U') undo(text, &length, &head);
+        else if (c == 'R') redo(text, &length, &head);
+        else if (c == 'W') alternate_up(text, &length, &head);
+        else if (c == 'E') alternate_down(text, &length, &head);
+        else if (c == 'P') paste("daniel", text, &length, &head);
+        else if (c == 127) delete(text, &length, &head);
+        else insert(c, text, &length, &head);
+    }
+    restore_terminal();
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+*/
