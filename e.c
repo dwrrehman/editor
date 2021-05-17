@@ -149,7 +149,6 @@ static int buffer_count = 0;
 static int active_buffer = 0;
 
 
-
 static inline char zero_width(char c) { 
 	return (((unsigned char)c) >> 6) == 2; 
 }
@@ -348,7 +347,154 @@ static inline void move_up_10() {
 	for (int i = 0; i < 10; i++) move_up();
 }
 
-static inline void insert(char c) {
+
+
+
+
+
+
+
+
+// -------------------------- stash functions ------------------------
+
+
+
+static inline void store_current_data_to_buffer() {
+	if (not buffer_count) return;
+
+	const int b = active_buffer;
+	
+	buffers[b].saved = saved;
+	buffers[b].mode = mode;
+
+	buffers[b].scroll_counter = scroll_counter;
+	buffers[b].line_number_width = line_number_width;
+	buffers[b].needs_display_update = needs_display_update;
+
+	buffers[b].capacity = capacity;
+	buffers[b].count = count;
+	buffers[b].lines = lines;
+
+	buffers[b].lcl = lcl; 
+	buffers[b].lcc = lcc; 
+	buffers[b].vcl = vcl;
+	buffers[b].vcc = vcc; 
+	buffers[b].vol = vol; 
+	buffers[b].voc = voc; 
+	buffers[b].vsl = vsl; 
+	buffers[b].vsc = vsc; 
+	buffers[b].vdc = vdc;
+	buffers[b].lal = lal;
+	buffers[b].lac = lac;
+
+	buffers[b].alert_prompt_color = alert_prompt_color;
+	buffers[b].info_prompt_color = info_prompt_color;
+	buffers[b].default_prompt_color = default_prompt_color;
+	buffers[b].line_number_color = line_number_color;
+	buffers[b].status_bar_color = status_bar_color;
+
+	buffers[b].wrap_width = wrap_width;
+	buffers[b].tab_width = tab_width;
+	buffers[b].scroll_speed = scroll_speed;
+	buffers[b].show_status = show_status;
+	buffers[b].show_line_numbers = show_line_numbers;
+	buffers[b].use_txt_extension_when_absent = use_txt_extension_when_absent;
+
+	buffers[b].head = head;
+	buffers[b].root = root;
+
+	memcpy(buffers[b].message, message, sizeof message);
+	memcpy(buffers[b].filename, filename, sizeof filename);
+}
+
+static inline void load_buffer_data_into_registers() {
+	if (not buffer_count) return;
+
+	struct file_data this = buffers[active_buffer];
+	
+	saved = this.saved;
+	mode = this.mode;
+
+	scroll_counter = this.scroll_counter;
+	line_number_width = this.line_number_width;
+	needs_display_update = this.needs_display_update;
+
+	capacity = this.capacity;
+	count = this.count;
+	lines = this.lines;
+
+	lcl = this.lcl; 
+	lcc = this.lcc;
+	vcl = this.vcl;
+	vcc = this.vcc;
+	vol = this.vol; 
+	voc = this.voc; 
+	vsl = this.vsl; 
+	vsc = this.vsc; 
+	vdc = this.vdc;
+
+	lal = this.lal;
+	lac = this.lac;
+
+	alert_prompt_color = this.alert_prompt_color;
+	info_prompt_color = this.info_prompt_color;
+	default_prompt_color = this.default_prompt_color;
+	line_number_color = this.line_number_color;
+	status_bar_color = this.status_bar_color;
+
+	wrap_width = this.wrap_width;
+	tab_width = this.tab_width;
+	scroll_speed = this.scroll_speed;
+	show_status = this.show_status;
+	show_line_numbers = this.show_line_numbers;
+	use_txt_extension_when_absent = this.use_txt_extension_when_absent;
+
+	head = this.head;
+	root = this.root;
+
+	memcpy(message, this.message, sizeof message);
+	memcpy(filename, this.filename, sizeof filename);
+}
+
+
+
+
+
+
+
+
+
+
+
+// ------------------ pre-tense retreivers and givers ---------------
+
+static inline void record_precondition(struct file_data* out) { // get current state;
+	store_current_data_to_buffer();
+	*out = buffers[active_buffer];
+}
+
+static inline void require_precondition(struct file_data* precond) {   // set current state, based on a precondition.
+	buffers[active_buffer] = *precond;
+	load_buffer_data_into_registers();
+}
+
+// static inline void jot_postcondition() {
+
+// }
+
+// static inline void get_postcondition() {
+
+// }
+
+
+
+
+
+
+
+
+static inline void insert(char c) {  //, int should_record     
+			//   0 means do nothing, 1 means record action,  2 means append to previous action.
 	struct line* this = lines + lcl;
 	if (c == 10) {
 		int rest = this->count - lcc;
@@ -371,6 +517,32 @@ static inline void insert(char c) {
 	if (zero_width(c)) lcc++; 
 	else move_right(1);
 	saved = 0;
+
+	// if (not should_record) return;
+
+
+
+	// --------- record action --------------
+	
+	// struct action* new = calloc(1, sizeof(struct action));
+    
+ //    struct action* new = calloc(1, sizeof(struct action));
+ //    new->type = insert_action;
+ //    new->parent = *head;
+ //    new->text = malloc(1);
+ //    new->length = 1;
+ //    new->text[0] = c;
+    
+ //    (*head)->children = realloc((*head)->children, sizeof(struct action*) * ((*head)->count + 1));
+ //    (*head)->choice = (*head)->count;
+ //    (*head)->children[(*head)->count++] = new;
+ //    *head = new;
+
+
+
+
+
+
 }
 
 static inline void delete() {
@@ -623,102 +795,7 @@ static inline int confirmed(const char* question) {
 	}
 }
 
-static inline void store_current_data_to_buffer() {
-	if (not buffer_count) return;
 
-	const int b = active_buffer;
-	
-	buffers[b].saved = saved;
-	buffers[b].mode = mode;
-
-	buffers[b].scroll_counter = scroll_counter;
-	buffers[b].line_number_width = line_number_width;
-	buffers[b].needs_display_update = needs_display_update;
-
-	buffers[b].capacity = capacity;
-	buffers[b].count = count;
-	buffers[b].lines = lines;
-
-	buffers[b].lcl = lcl; 
-	buffers[b].lcc = lcc; 
-	buffers[b].vcl = vcl;
-	buffers[b].vcc = vcc; 
-	buffers[b].vol = vol; 
-	buffers[b].voc = voc; 
-	buffers[b].vsl = vsl; 
-	buffers[b].vsc = vsc; 
-	buffers[b].vdc = vdc;
-	buffers[b].lal = lal;
-	buffers[b].lac = lac;
-
-	// buffers[b].alert_prompt_color = alert_prompt_color;
-	// buffers[b].info_prompt_color = info_prompt_color;
-	// buffers[b].default_prompt_color = default_prompt_color;
-	// buffers[b].line_number_color = line_number_color;
-	// buffers[b].status_bar_color = status_bar_color;
-
-	buffers[b].wrap_width = wrap_width;
-	buffers[b].tab_width = tab_width;
-	buffers[b].scroll_speed = scroll_speed;
-	buffers[b].show_status = show_status;
-	buffers[b].show_line_numbers = show_line_numbers;
-	buffers[b].use_txt_extension_when_absent = use_txt_extension_when_absent;
-
-	buffers[b].head = head;
-	buffers[b].root = root;
-
-	memcpy(buffers[b].message, message, sizeof message);
-	memcpy(buffers[b].filename, filename, sizeof filename);
-}
-
-static inline void load_buffers_data_into_registers() {
-	if (not buffer_count) return;
-
-	struct file_data this = buffers[active_buffer];
-	
-	saved = this.saved;
-	mode = this.mode;
-
-	scroll_counter = this.scroll_counter;
-	line_number_width = this.line_number_width;
-	needs_display_update = this.needs_display_update;
-
-	capacity = this.capacity;
-	count = this.count;
-	lines = this.lines;
-
-	lcl = this.lcl; 
-	lcc = this.lcc; 
-	vcl = this.vcl;
-	vcc = this.vcc; 
-	vol = this.vol; 
-	voc = this.voc; 
-	vsl = this.vsl; 
-	vsc = this.vsc; 
-	vdc = this.vdc;
-
-	lal = this.lal;
-	lac = this.lac;
-
-	// alert_prompt_color = this.alert_prompt_color;
-	// info_prompt_color = this.info_prompt_color;
-	// default_prompt_color = this.default_prompt_color;
-	// line_number_color = this.line_number_color;
-	// status_bar_color = this.status_bar_color;
-
-	wrap_width = this.wrap_width;
-	tab_width = this.tab_width;
-	scroll_speed = this.scroll_speed;
-	show_status = this.show_status;
-	show_line_numbers = this.show_line_numbers;
-	use_txt_extension_when_absent = this.use_txt_extension_when_absent;
-
-	head = this.head;
-	root = this.root;
-
-	memcpy(message, this.message, sizeof message);
-	memcpy(filename, this.filename, sizeof filename);
-}
 
 static inline void initialize_current_data_registers() {
 	
@@ -771,19 +848,19 @@ static inline void close_active_buffer() {
 		sizeof(struct file_data) * (size_t)(buffer_count - active_buffer));
 	if (active_buffer >= buffer_count) active_buffer = buffer_count - 1;
 	buffers = realloc(buffers, sizeof(struct file_data) * (size_t)(buffer_count));
-	load_buffers_data_into_registers();
+	load_buffer_data_into_registers();
 }
 
 static inline void move_to_next_buffer() {
 	store_current_data_to_buffer(); 
 	if (active_buffer) active_buffer--; 
-	load_buffers_data_into_registers();
+	load_buffer_data_into_registers();
 }
 
 static inline void move_to_previous_buffer() {
 	store_current_data_to_buffer(); 
 	if (active_buffer < buffer_count - 1) active_buffer++; 
-	load_buffers_data_into_registers();
+	load_buffer_data_into_registers();
 }
 
 static inline void open_file(const char* given_filename) {
@@ -942,6 +1019,39 @@ static inline void reverse_action() {
 }
 
 
+// static inline void perform_action(struct action* action,  char* text, size_t* length) {
+//     if (action->type == no_action) {}
+//     else if (action->type == delete_action) *length -= action->length;
+//     else if (action->type == insert_action) {
+//         for (size_t i = 0; i < action->length; i++)
+//             text[(*length)++] = action->text[i];
+//     } else if (action->type == paste_action) {
+//         for (size_t i = 0; i < action->length; i++)
+//             text[(*length)++] = action->text[i];
+//     } else abort();
+// }
+
+// static inline void reverse_action(struct action* action, char* text, size_t* length) {
+//     if (action->type == no_action) return;
+//     else if (action->type == delete_action) {
+//         for (size_t i = 0; i < action->length; i++)
+//             text[(*length)++] = action->text[i];
+//     } else if (action->type == insert_action) *length -= action->length;
+//     else if (action->type == paste_action) *length -= action->length;
+//     else abort();
+// }
+
+
+
+
+
+
+
+
+
+
+
+
 static inline void undo() {
 
 	sprintf(message, "UNIMPLEMENTED FUNCTION");
@@ -960,18 +1070,6 @@ static inline void undo() {
 
 	head = head->parent;
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 static inline void redo() {
@@ -1013,31 +1111,41 @@ static inline void alternate_down() {
 
 
 
-
-
 static inline void jump_line() {
 	char string_number[128] = {0};
 	prompt("line: ", default_prompt_color, string_number, sizeof string_number);
 	int line = atoi(string_number);
-
-	//TODO: implement me
-
-		//   go to line,col:       line,0              //    ...lcc instead of 0?.....
-
-	sprintf(message, "UNIMPLEMENTED FUNCTION");
+	if (not line) return; line--;
+	if (line >= count) line = count - 1;
+	move_begin();
+	while (lcl < line) move_down();
+	while (lcl > line) move_up();
+	sprintf(message, "jumped to %d %d", lcl + 1, lcc + 1);
 }
 
 static inline void jump_column() {
 	char string_number[128] = {0};
 	prompt("column: ", default_prompt_color, string_number, sizeof string_number);
 	int column = atoi(string_number);
+	if (not column) return; column--;
+	if (column > lines[lcl].count) column = lines[lcl].count;
+	while (lcc < column) move_right(1);
+	while (lcc > column) move_left(1);
+	sprintf(message, "jumped to %d %d", lcl + 1, lcc + 1);
+}
 
-	//TODO: implement me
+
+
+//TODO: implement me
+
+		//   go to line,col:       line,0              //    ...lcc instead of 0?.....
+
+//TODO: implement me
 	
 	//   go to line,col:       lcl, column
 
-	sprintf(message, "UNIMPLEMENTED FUNCTION");
-}
+
+
 
 
 
@@ -1296,6 +1404,9 @@ loop:
 
 
 
+// -------------------------------- dead code -----------------------------
+
+
 
 
 // 		while (column < lines[line].count) {
@@ -1345,11 +1456,38 @@ loop:
 
 
 
+// ----------------------------------- end of dead code --------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
 
 /*
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1594,17 +1732,15 @@ int main() {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 */
+
+
+
+
+
+
+
+
+
+
+
