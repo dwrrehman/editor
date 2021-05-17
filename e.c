@@ -1365,19 +1365,19 @@ loop:
 
 		else if (c == 'w') {			
 			print_above_textbox("(0 sets to window width)", info_prompt_color);
-			get_numeric_option_value(wrap_width, "wrap width: "); 
+			get_numeric_option_value(&wrap_width, "wrap width: "); 
 			recalculate_position();
 
 		} else if (c == 't') {
-			get_numeric_option_value(tab_width, "tab width: "); 
+			get_numeric_option_value(&tab_width, "tab width: "); 
 			recalculate_position();
 		}
 
-		else if (c == '1') get_numeric_option_value(default_prompt_color, "default prompt color: ");
-		else if (c == '2') get_numeric_option_value(alert_prompt_color, "alert prompt color: ");
-		else if (c == '3') get_numeric_option_value(line_number_color, "line number color: ");
-		else if (c == '4') get_numeric_option_value(status_bar_color, "status bar color: ");
-		else if (c == '5') get_numeric_option_value(info_prompt_color, "info prompt color: ");
+		else if (c == '1') get_numeric_option_value(&default_prompt_color, "default prompt color: ");
+		else if (c == '2') get_numeric_option_value(&alert_prompt_color, "alert prompt color: ");
+		else if (c == '3') get_numeric_option_value(&line_number_color, "line number color: ");
+		else if (c == '4') get_numeric_option_value(&status_bar_color, "status bar color: ");
+		else if (c == '5') get_numeric_option_value(&info_prompt_color, "info prompt color: ");
 
 		else if (c == '[') {
 			char string[128] = {0};
