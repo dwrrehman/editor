@@ -791,7 +791,7 @@ static inline int confirmed(const char* question) {
 		
 		if (not strncmp(response, "yes", 4)) return 1;
 		else if (not strncmp(response, "no", 3)) return 0;
-		else print_above_textbox("please type \"yes\" or \"no\".", 214L);
+		else print_above_textbox("please type \"yes\" or \"no\".", default_prompt_color);
 	}
 }
 
@@ -1140,21 +1140,6 @@ static inline void prompt_jump_column() {
 	sprintf(message, "jumped to %d %d", lcl + 1, lcc + 1);
 }
 
-
-
-//TODO: implement me
-
-		//   go to line,col:       line,0              //    ...lcc instead of 0?.....
-
-//TODO: implement me
-	
-	//   go to line,col:       lcl, column
-
-
-
-
-
-
 static inline void recalculate_position() {
 	int save_lcl = lcl, save_lcc = lcc;
 	move_top();
@@ -1162,7 +1147,6 @@ static inline void recalculate_position() {
 	jump_line(save_lcl);
 	jump_column(save_lcc);
 }
-	
 
 static inline void show_buffer_list() {
 	char list[4096] = {0};
@@ -1194,6 +1178,10 @@ static inline int is_exit_sequence(char c, char p) {
 
 static inline void paste() {
 	FILE* file = popen("pbpaste", "r");
+	if (not file) {
+		sprintf(message, "error: paste: popen(): %s", strerror(errno));
+		return;
+	}
 	int c = 0;
 	while ((c = fgetc(file)) != EOF) insert((char)c);
 	sprintf(message, "pasted from system clipboard");
@@ -1203,6 +1191,10 @@ static inline void paste() {
 static inline void copy() {
 
 	FILE* file = popen("pbcopy", "w");
+	if (not file) {
+		sprintf(message, "error: copy: popen(): %s", strerror(errno));
+		return;
+	}
 
 	if (lal < lcl) goto anchor_first;
 	if (lcl < lal) goto cursor_first;
@@ -1285,11 +1277,10 @@ loop:
 		else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
 		
 		else if (c == 'f') mode = 0;
-		// else if (c == 'a') mode = 1;    // NOP.
 		else if (c == 'e') mode = 2;
 		else if (c == 't') mode = 3;
 
-		else if (c == 'w') save();   // s?
+		else if (c == 'w') save();  
 
 		else if (c == 'a') anchor();
 
@@ -1330,7 +1321,7 @@ loop:
 
 		else if (c == 'f') mode = 0;
 		else if (c == 'a') mode = 1;
-		else if (c == 'e') mode = 2;
+		// else if (c == 'e') mode = 2;
 		else if (c == 't') mode = 3;
 
 		else if (c == 'w') save();
@@ -1353,6 +1344,8 @@ loop:
 		else if (c == 'r') redo();
 		else if (c == 'U') alternate_up();
 		else if (c == 'R') alternate_down();
+
+		else if (c == 'M') get_numeric_option_value(&mode, "mode: ");
 		
 		else if (c == 27) interpret_escape_code();
 		
@@ -1361,9 +1354,10 @@ loop:
 		     if (c == 'f') mode = 0;
 		else if (c == 'a') mode = 1;
 		else if (c == 'e') mode = 2;
-		else if (c == 't') mode = 3;
 
-		else if (c == 'w') {			
+		// else if (c == 't') mode = 3;
+
+		else if (c == 'w') {
 			print_above_textbox("(0 sets to window width)", info_prompt_color);
 			get_numeric_option_value(&wrap_width, "wrap width: "); 
 			recalculate_position();
@@ -1393,6 +1387,9 @@ loop:
 			if (strlen(string) == 2) memcpy(right_exit, string, 2); else memset(right_exit, 0, 2);
 			sprintf(message, "right exit sequence set to %d %d", right_exit[0], right_exit[1]);
 		}
+	} else {
+		sprintf(message, "error: unknown mode %d, reverting to mode 1", mode);
+		mode = 1;
 	}
 	p = c;
 	if (buffer_count) goto loop;
