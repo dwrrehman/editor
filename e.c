@@ -1109,28 +1109,34 @@ static inline void alternate_down() {
 }
 
 
+static inline void jump_line(int line) {
+	while (lcl < line) move_down();
+	while (lcl > line) move_up();
+}
 
+static inline void jump_column(int column) {
+	while (lcc < column) move_right(1);
+	while (lcc > column) move_left(1);
+}
 
-static inline void jump_line() {
+static inline void prompt_jump_line() {
 	char string_number[128] = {0};
 	prompt("line: ", default_prompt_color, string_number, sizeof string_number);
 	int line = atoi(string_number);
 	if (not line) return; line--;
 	if (line >= count) line = count - 1;
 	move_begin();
-	while (lcl < line) move_down();
-	while (lcl > line) move_up();
+	jump_column(line);
 	sprintf(message, "jumped to %d %d", lcl + 1, lcc + 1);
 }
 
-static inline void jump_column() {
+static inline void prompt_jump_column() {
 	char string_number[128] = {0};
 	prompt("column: ", default_prompt_color, string_number, sizeof string_number);
 	int column = atoi(string_number);
 	if (not column) return; column--;
 	if (column > lines[lcl].count) column = lines[lcl].count;
-	while (lcc < column) move_right(1);
-	while (lcc > column) move_left(1);
+	jump_column(column);
 	sprintf(message, "jumped to %d %d", lcl + 1, lcc + 1);
 }
 
@@ -1149,12 +1155,13 @@ static inline void jump_column() {
 
 
 
-
-
-
-
-
-
+static inline void recalculate_position() {
+	move_top();
+	adjust_window_size();
+	jump_line(lcl);
+	jump_column(lcc);
+}
+	
 
 static inline void show_buffer_list() {
 	char list[4096] = {0};
@@ -1304,8 +1311,8 @@ loop:
 		else if (c == 'K') move_top();
 		else if (c == 'L') move_bottom();
 
-		else if (c == 'n') jump_line();
-		else if (c == 'm') jump_column();
+		else if (c == 'n') prompt_jump_line();
+		else if (c == 'm') prompt_jump_column();
 
 		else if (c == '_') memset(message, 0, sizeof message);
 
@@ -1353,8 +1360,14 @@ loop:
 
 		else if (c == 'w') {			
 			print_above_textbox("(0 sets to window width)", info_prompt_color);
-			wrap_width = get_numeric_option_value("wrap width: "); move_top();
-		} else if (c == 't') { tab_width = get_numeric_option_value("tab width: "); move_top(); } 
+			wrap_width = get_numeric_option_value("wrap width: "); 
+			recalculate_position();
+
+		} else if (c == 't') {
+			tab_width = get_numeric_option_value("tab width: "); 
+			recalculate_position();
+		}
+
 		else if (c == '1') default_prompt_color = get_numeric_option_value("default prompt color: ");
 		else if (c == '2') alert_prompt_color = get_numeric_option_value("alert prompt color: ");
 		else if (c == '3') line_number_color = get_numeric_option_value("line number color: ");
