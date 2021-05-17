@@ -1156,10 +1156,11 @@ static inline void prompt_jump_column() {
 
 
 static inline void recalculate_position() {
+	int save_lcl = lcl, save_lcc = lcc;
 	move_top();
 	adjust_window_size();
-	jump_line(lcl);
-	jump_column(lcc);
+	jump_line(save_lcl);
+	jump_column(save_lcc);
 }
 	
 
@@ -1174,12 +1175,16 @@ static inline void show_buffer_list() {
 	needs_display_update = 0;
 }
 
-static inline int get_numeric_option_value(const char* option) {
+static inline void get_numeric_option_value(int* variable, const char* option) {
 	char string_number[128] = {0};
 	prompt(option, default_prompt_color, string_number, sizeof string_number);
-	int value = atoi(string_number);
-	sprintf(message, "%s set to %d", option, value);
-	return value;
+	if (not strlen(string_number)) {	
+		sprintf(message, "aborted, %s remained set to %d", option, *variable);
+		return;
+	}
+
+	*variable = atoi(string_number);
+	sprintf(message, "%s set to %d", option, *variable);
 }
 
 static inline int is_exit_sequence(char c, char p) {
@@ -1360,19 +1365,19 @@ loop:
 
 		else if (c == 'w') {			
 			print_above_textbox("(0 sets to window width)", info_prompt_color);
-			wrap_width = get_numeric_option_value("wrap width: "); 
+			get_numeric_option_value(wrap_width, "wrap width: "); 
 			recalculate_position();
 
 		} else if (c == 't') {
-			tab_width = get_numeric_option_value("tab width: "); 
+			get_numeric_option_value(tab_width, "tab width: "); 
 			recalculate_position();
 		}
 
-		else if (c == '1') default_prompt_color = get_numeric_option_value("default prompt color: ");
-		else if (c == '2') alert_prompt_color = get_numeric_option_value("alert prompt color: ");
-		else if (c == '3') line_number_color = get_numeric_option_value("line number color: ");
-		else if (c == '4') status_bar_color = get_numeric_option_value("status bar color: ");
-		else if (c == '5') info_prompt_color = get_numeric_option_value("info prompt color: ");
+		else if (c == '1') get_numeric_option_value(default_prompt_color, "default prompt color: ");
+		else if (c == '2') get_numeric_option_value(alert_prompt_color, "alert prompt color: ");
+		else if (c == '3') get_numeric_option_value(line_number_color, "line number color: ");
+		else if (c == '4') get_numeric_option_value(status_bar_color, "status bar color: ");
+		else if (c == '5') get_numeric_option_value(info_prompt_color, "info prompt color: ");
 
 		else if (c == '[') {
 			char string[128] = {0};
