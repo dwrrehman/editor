@@ -369,13 +369,13 @@ static inline void move_word_right() {
 	));
 }
 
-static inline void move_down_10() {
-	for (int i = 0; i < 10; i++) move_down();
-}
+// static inline void move_down_10() {
+// 	for (int i = 0; i < 10; i++) move_down();
+// }
 
-static inline void move_up_10() {
-	for (int i = 0; i < 10; i++) move_up();
-}
+// static inline void move_up_10() {
+// 	for (int i = 0; i < 10; i++) move_up();
+// }
 
 
 
@@ -1058,18 +1058,6 @@ static inline void interpret_escape_code() {
 	} 
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
 static inline void replay_action() {
 
 	require_logical_state(&head->pre);
@@ -1078,32 +1066,26 @@ static inline void replay_action() {
 
 	else if (head->type == delete_action) {
 		delete(0);
-		
 
 	} else if (head->type == insert_action) {
 		
 		for (int i = 0; i < head->length; i++) 
 			insert(head->text[i], 0);
 
-
 	} else if (head->type == paste_text_action) {
 		
 		for (int i = 0; i < head->length; i++) 
 			insert(head->text[i], 0);
-
 
 	} else if (head->type == cut_text_action) {
 
 		while (lcc != head->pre.lcc or lcl != head->pre.lcl)
 			delete(0);
 	}
-		
-	require_logical_state(&head->post);   //  ???? do we need to say this now?         sure... why not.
 
-		// technically speaking we shouldnt need to, though..? idk.. 
+	require_logical_state(&head->post); 
 
 }
-
 
 static inline void reverse_action() {
 	
@@ -1130,44 +1112,13 @@ static inline void reverse_action() {
 
 		for (int i = 0; i < head->length; i++) 
 			insert(head->text[i], 0);
-		
-	
+
 	}
 		
-	require_logical_state(&head->pre);   //  ???? do we need to say this now?         sure... why not.
-
-		// technically speaking we shouldnt need to, though..? idk..
+	require_logical_state(&head->pre);  
 }
 
-
-// static inline void perform_action(struct action* action,  char* text, size_t* length) {
-//     if (action->type == no_action) {}
-//     else if (action->type == delete_action) *length -= action->length;
-//     else if (action->type == insert_action) {
-//         for (size_t i = 0; i < action->length; i++)
-//             text[(*length)++] = action->text[i];
-//     } else if (action->type == paste_action) {
-//         for (size_t i = 0; i < action->length; i++)
-//             text[(*length)++] = action->text[i];
-//     } else abort();
-// }
-
-// static inline void reverse_action(struct action* action, char* text, size_t* length) {
-//     if (action->type == no_action) return;
-//     else if (action->type == delete_action) {
-//         for (size_t i = 0; i < action->length; i++)
-//             text[(*length)++] = action->text[i];
-//     } else if (action->type == insert_action) *length -= action->length;
-//     else if (action->type == paste_action) *length -= action->length;
-//     else abort();
-// }
-
-
-
-
-
 static inline void undo() {
-
 
 	if (not head->parent) return;
 
@@ -1183,7 +1134,6 @@ static inline void undo() {
 
 	head = head->parent;
 }
-
 
 static inline void redo() {
 
@@ -1201,7 +1151,6 @@ static inline void redo() {
 
 	replay_action();
 }
-
 
 static inline void alternate_up() {
 	if (head->parent and head->parent->choice + 1 < head->parent->count) {
@@ -1449,7 +1398,6 @@ static inline void cut() {
 	int deleted_length = 0;
 	char* deleted_string = get_selection(&deleted_length);
 
-
 	if (lal < lcl) goto anchor_first;
 	if (lcl < lal) goto cursor_first;
 	if (lac < lcc) goto anchor_first;
@@ -1461,7 +1409,6 @@ cursor_first:;
 anchor_first: 
 
 	while (lal < lcl or lac < lcc) delete(0);
-
 
 	record_logical_state(&new_action->post);
 
@@ -1495,6 +1442,10 @@ loop:
 	read(0, &c, 1);
 	needs_display_update = 1;
 
+	// char number_string[32] = {0};
+	// int number_length = 0;
+	// int number = 0;
+
 	if (mode == 0) {
 		if (is_exit_sequence(c, p)) { undo(); mode = 1; }
 		else if (c == 127) delete(1);
@@ -1527,23 +1478,27 @@ loop:
 		else if (c == 'o') move_up();
 		else if (c == 'i') move_down();
 
-		else if (c == 'k') move_begin();
-		else if (c == 'l') move_end();
+		else if (c == 'k') move_word_left();
+		else if (c == 'l') move_word_right();
 
-		else if (c == 'J') move_word_left();
-		else if (c == ':') move_word_right();
-		else if (c == 'I') move_down_10();
-		else if (c == 'O') move_up_10();
+		else if (c == 'J') move_begin();
+		else if (c == ':') move_end();
+		else if (c == 'I') move_bottom();
+		else if (c == 'O') move_top();
 
-		else if (c == 'K') move_top();
-		else if (c == 'L') move_bottom();
-
-		else if (c == 'n') prompt_jump_line();
-		else if (c == 'm') prompt_jump_column();
+		else if (c == 'K') prompt_jump_column();
+		else if (c == 'L') prompt_jump_line();
 
 		else if (c == '_') memset(message, 0, sizeof message);
 
 		else if (c == 27) interpret_escape_code();
+
+		// if (isdigit(c) and number_length < 32) number_string[number_length++] = c;
+		// else number_length = 0;
+
+		// else if (c == 'm') record_new_action; // define macro.
+
+		// else if (c == 'n') perform_previous_action_several_times.
 
 	} else if (mode == 2) {
 		
@@ -1564,16 +1519,12 @@ loop:
 
 		else if (c == 'j') move_to_next_buffer();
             	else if (c == ';') move_to_previous_buffer();
-
 		else if (c == 'o') prompt_open();
             	else if (c == 'i') create_empty_buffer();
+
 		else if (c == 'l') show_buffer_list();
 
-		else if (c == 'u') undo();
-		else if (c == 'r') redo();
-		else if (c == 'U') alternate_up();
-		else if (c == 'R') alternate_down();
-
+		// else if (c == 'n') get_numeric_option_value(&number, "number: ");
 		else if (c == 'm') get_numeric_option_value(&mode, "mode: ");
 		
 		else if (c == 27) interpret_escape_code();
@@ -1583,8 +1534,6 @@ loop:
 		     if (c == 'f') mode = 0;
 		else if (c == 'a') mode = 1;
 		else if (c == 'e') mode = 2;
-
-
 
 		else if (c == 'w') {
 			print_above_textbox("(0 sets to window width)", info_prompt_color);
