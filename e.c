@@ -369,21 +369,8 @@ static inline void move_word_right() {
 	));
 }
 
-// static inline void move_down_10() {
-// 	for (int i = 0; i < 10; i++) move_down();
-// }
-
-// static inline void move_up_10() {
-// 	for (int i = 0; i < 10; i++) move_up();
-// }
-
-
-
-
 
 // -------------------------- stash functions ------------------------
-
-
 
 static inline void store_current_data_to_buffer() {
 	if (not buffer_count) return;
@@ -852,7 +839,7 @@ static inline void prompt(const char* prompt_message, int color, char* out, int 
 }
 
 static inline void print_above_textbox(char* write_message, int color) {
-	int length = sprintf(screen, "\033[%d;1H\033[38;5;%dm%s\033[m", window_rows - 1, color, write_message);
+	int length = sprintf(screen, "\033[%d;1H\033[K\033[38;5;%dm%s\033[m", window_rows - 1, color, write_message);
 	write(1, screen, (size_t) length);
 }
 
@@ -1127,44 +1114,12 @@ static inline void redo() {
 static inline void alternate_up() {
 	if (head and head->choice + 1 < head->count) head->choice++;
 	sprintf(message, "switched to history #%d from %d histories", head->choice, head->count);
-		
-	// if (not head->parent) return;
 }
 
 static inline void alternate_down() {
 	if (head and head->choice) head->choice--;
 	sprintf(message, "switched to history #%d from %d histories", head->choice, head->count);
-
-	// if (not head->parent) return;
-
-	// if ((*head)->parent->choice + 1 < (*head)->parent->count) {
- //        undo(text, length, head);
- //        (*head)->choice++;
- //        redo(text, length, head);
- //    }
 }
-
-// static inline void alternate_up(char* text, size_t* length, struct action** head) {
-//     if ((*head)->parent &&
-//         (*head)->parent->choice + 1 < (*head)->parent->count) {
-//         undo(text, length, head);
-//         (*head)->choice++;
-//         redo(text, length, head);
-//     }
-// }
-
-// static inline void alternate_down(char* text, size_t* length, struct action** head) {
-//     if ((*head)->parent &&
-//         (*head)->parent->choice) {
-//         undo(text, length, head);
-//         (*head)->choice--;
-//         redo(text, length, head);
-//     }
-// }
-
-
-
-
 
 static inline void jump_line(int line) {
 	while (lcl < line) move_down();
@@ -1566,7 +1521,9 @@ loop:
 			prompt("right exit sequence (2 characters): ", default_prompt_color, string, sizeof string);
 			if (strlen(string) == 2) memcpy(right_exit, string, 2); else memset(right_exit, 0, 2);
 			sprintf(message, "right exit sequence set to %d %d", right_exit[0], right_exit[1]);
-		}
+
+		} else if (c == 27) interpret_escape_code();
+		
 	} else {
 		sprintf(message, "error: unknown mode %d, reverting to mode 1", mode);
 		mode = 1;
