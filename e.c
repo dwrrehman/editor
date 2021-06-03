@@ -37,11 +37,14 @@ struct file_data {
 	struct line* lines;
 	struct action* root;
 	struct action* head;
+	char* macro;
 	int 
 		saved, mode, 
 		count, capacity, 
 
 		scroll_counter, line_number_width, needs_display_update, 
+		number_length, number,
+		macro_length, macro_capacity, recording,
 
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 	
 		vsl, vsc, 	vdc,    	lal,  lac,
@@ -51,8 +54,9 @@ struct file_data {
 
 		wrap_width, tab_width, 
 		scroll_speed, show_status, show_line_numbers, 
-		use_txt_extension_when_absent, padding0;
+		use_txt_extension_when_absent;
 
+	char number_string[32];
 	char message[4096];
 	char filename[4096];
 };
@@ -82,7 +86,6 @@ struct action {
 
 enum action_type {
 	no_action,
-	set_anchor_action,
 	insert_action,
 	delete_action,
 	paste_text_action,
@@ -91,7 +94,6 @@ enum action_type {
 
 static const char* action_spellings[] = {
 	"nothing",
-	"anchor set",
 	"insert",
 	"delete",
 	"paste text",
@@ -146,6 +148,15 @@ static int line_number_width = 0;
 static int needs_display_update = 0;
 static int lcl = 0, lcc = 0, vcl = 0, vcc = 0, vol = 0, 
            voc = 0, vsl = 0, vsc = 0, vdc = 0, lal = 0, lac = 0;
+
+static char number_string[32] = {0};
+static int number_length = 0;
+static int number = 1;
+
+static char* macro = NULL;
+static int macro_length = 0;
+static int macro_capacity = 0;
+static int recording = 0;
 
 static struct action* root = NULL;
 static struct action* head = NULL;
@@ -391,6 +402,14 @@ static inline void store_current_data_to_buffer() {
 	buffers[b].lal = lal;
 	buffers[b].lac = lac;
 
+	memcpy(buffers[b].number_string, number_string, sizeof number_string);
+	buffers[b].number_length = number_length;
+	buffers[b].number = number;
+	buffers[b].macro = macro;
+	buffers[b].macro_length = macro_length;
+	buffers[b].macro_capacity = macro_capacity;
+	buffers[b].recording = recording;
+
 	buffers[b].alert_prompt_color = alert_prompt_color;
 	buffers[b].info_prompt_color = info_prompt_color;
 	buffers[b].default_prompt_color = default_prompt_color;
@@ -436,9 +455,16 @@ static inline void load_buffer_data_into_registers() {
 	vsl = this.vsl; 
 	vsc = this.vsc; 
 	vdc = this.vdc;
-
 	lal = this.lal;
 	lac = this.lac;
+
+	memcpy(number_string, this.number_string, sizeof number_string);
+	number_length = this.number_length;
+	number = this.number;
+	macro = this.macro;
+	macro_length = this.macro_length;
+	macro_capacity = this.macro_capacity;
+	recording = this.recording;
 
 	alert_prompt_color = this.alert_prompt_color;
 	info_prompt_color = this.info_prompt_color;
@@ -518,7 +544,6 @@ static inline void insert(char c, int should_record) {
 	//   0 means do nothing, 1 means record action. 
 	//      		(but, append to previous action, 
 	//  			if c is a unprintable unicode character.)
-
 
 	struct action* new_action = NULL;
 
@@ -725,14 +750,17 @@ static inline void display() {
 
 		char datetime[16] = {0};
 		get_datetime(datetime);
-		int status_length = sprintf(screen + length, " %s %d %d %d %d %d %s %c  %s",
+		int status_length = sprintf(screen + length, " %s %d %d %d %d %d %s %c  %s  %d %d %d",
 			datetime, 
 			mode, 
 			active_buffer, buffer_count,
 			lcl + 1, lcc + 1, 
 			filename, 
 			saved ? 's' : 'e', 
-			message
+			message,
+			recording, 
+			macro_length,
+			number
 		);
 		length += status_length;
 
@@ -1399,15 +1427,14 @@ static inline void anchor() {
 }
 
 int main(const int argc, const char** argv) {
+
 	if (argc == 1) create_empty_buffer();
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
+
 	struct termios terminal = configure_terminal();
 	write(1, "\033[?1049h\033[?1000h", 16);
 	char p = 0, c = 0;
-
-	char number_string[32] = {0};
-	int number_length = 0;
-	int number = 1;
+	int playback_position = 0;
 
 loop:	
 	if (needs_display_update) {
@@ -1416,6 +1443,8 @@ loop:
 	}
 	read(0, &c, 1);
 	needs_display_update = 1;
+
+interpret_char:
 
 	if (mode == 0) {
 		if (is_exit_sequence(c, p)) { undo(); mode = 1; }
@@ -1428,12 +1457,14 @@ loop:
 
 		for (int _ = 0; _ < number; _++) {
 
-			if (c == 'q') { if (saved) close_active_buffer(); }
+			if (c == 32) {/* do nothing. */}
+
+			else if (c == 'q') { if (saved) close_active_buffer(); }
 			else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
 			
 			else if (c == 'f') mode = 0;
+		//	else if (c == 'a') mode = 1;
 			else if (c == 'e') mode = 2;
-			else if (c == 't') mode = 3;
 
 			else if (c == 'w') save();  
 			
@@ -1441,8 +1472,6 @@ loop:
 			else if (c == 'v') paste();
 			else if (c == 'c') copy();
 			else if (c == 'd') cut();
-
-			else if (c == 's') { /*what do we do here?...*/ }
 
 			else if (c == 'u') undo();
 			else if (c == 'r') redo();
@@ -1468,16 +1497,9 @@ loop:
 			else if (c == '_') memset(message, 0, sizeof message);
 			else if (c == 27) interpret_escape_code();
 
-			// else if (c == 'm') record_new_action; // define macro.
-			// else if (c == 'n') {
-			// 	for (int i = 0; i < number; i++) {
-			// 		replay_action();
-			// 	}
-			// }
-
-			// else if (c == 'N') {
-			// 	sprintf(message, "number: %d", number);
-			// }
+			else if (c == 'm') recording = not recording;
+			else if (c == 'p') playback_position = 1;
+			else if (c == 'y') macro_length = 0;
 		}
 		
 		if (isdigit(c) and number_length < 31) number_string[number_length++] = c; 
@@ -1493,12 +1515,12 @@ loop:
 
 		else if (c == 'f') mode = 0;
 		else if (c == 'a') mode = 1;
-		else if (c == 't') mode = 3;
+	//	else if (c == 'e') mode = 2;
 
 		else if (c == 'w') save();
 		else if (c == 'W') rename_file();
 
-		// else if (c == 'f') execute_command();
+		else if (c == 'e') { /* execute_shell_command(); */ } 
 
 		else if (c == 's') show_status = not show_status; 
 		else if (c == 'd') show_line_numbers = not show_line_numbers;
@@ -1531,8 +1553,6 @@ loop:
 			recalculate_position();
 		}
 
-		else if (c == 'm') get_numeric_option_value(&mode, "mode: ");
-
 		else if (c == 'e') get_numeric_option_value(&use_txt_extension_when_absent, "use txt extension when absent: ");
 
 		else if (c == '1') get_numeric_option_value(&default_prompt_color, "default prompt color: ");
@@ -1561,7 +1581,24 @@ loop:
 		sprintf(message, "error: unknown mode %d, reverting to mode 1", mode);
 		mode = 1;
 	}
+
+	if (c == '\\') get_numeric_option_value(&mode, "mode: ");      // applies to all modes.
+
 	p = c;
+
+	if (recording) {
+		if (macro_length + 1 >= macro_capacity) 
+			macro = realloc(macro, (size_t) (macro_capacity = 2 * (macro_capacity + 1)));
+			macro[macro_length++] = c;
+	}
+
+	if (playback_position) {
+		if (playback_position < macro_length) {
+			c = macro[playback_position++];
+			goto interpret_char;
+		} else playback_position = 0;
+	}
+
 	if (buffer_count) goto loop;
 	write(1, "\033[?1049l\033[?1000l", 16);	
 	tcsetattr(0, TCSAFLUSH, &terminal);
@@ -1569,3 +1606,168 @@ loop:
 	// free(clipboard);
 }
 
+
+
+
+
+/*
+
+
+
+
+so bassically, the fund prob is thta 
+
+
+	we need an interpreter 
+			
+
+				at leastttt for mode 1. 
+
+
+					ie, a function we can call, to execute a given character.
+
+					....over and over agaain.
+
+					thaats the key.
+
+				
+	
+
+
+
+
+
+
+
+
+
+		oh wait!
+
+
+
+
+			okay, nvm, actually i want to do something totaally differnet from 
+
+
+				having a function which executes things according to a given mode. 
+
+
+
+
+
+
+
+
+		i mean, it will be basically be the same, but just more free and general!
+
+
+
+
+
+					its my syntax flexible undo command system!
+
+
+						its so amazing!
+			and can be so great, if i do it well!
+
+
+
+
+				i just need to design things right lol.
+
+
+				ie, the native command spellings, so that we dont NECCESSARILY leverage things like that .
+
+
+
+
+
+							andddd yessss, i do think im going to keep the notion of modes..?
+						i mean, 
+
+
+							...maybe not, idk... 
+
+
+
+
+
+
+
+				i do think that 
+
+
+					for MANY MANY MANY commands, 
+
+
+
+
+					them being a single chracter,    that you press once, 
+
+
+
+					to execute that commaand, 
+
+
+							IS INCREDIDIBLYYYYYYYY POWERFULLLLLL
+
+
+
+
+					and so i dont want to loose that brevity for those. 
+
+
+
+
+				although things like 
+
+
+
+					idk... status bar toggle, line numbers, 
+					etc, 
+
+
+
+	there are lots like that, that im okay will NOT being a single letter. they are honestly just taking up space. 
+
+
+
+
+
+				so yeah. 
+
+
+
+
+	lets do that now.
+
+
+
+	man this is one heck of a change!
+
+
+
+
+	i love it though
+
+
+cool
+i have to dig up that old piece of code now
+lol
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+*/
