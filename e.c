@@ -1407,7 +1407,7 @@ int main(const int argc, const char** argv) {
 
 	char number_string[32] = {0};
 	int number_length = 0;
-	int number = 0;
+	int number = 1;
 
 loop:	
 	if (needs_display_update) {
@@ -1426,63 +1426,65 @@ loop:
 
 	} else if (mode == 1) {
 
-		if (c == 'q') { if (saved) close_active_buffer(); }
-		else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
-		
-		else if (c == 'f') mode = 0;
-		else if (c == 'e') mode = 2;
-		else if (c == 't') mode = 3;
+		for (int _ = 0; _ < number; _++) {
 
-		else if (c == 'w') save();  
-		
-		else if (c == 'a') anchor();
-		else if (c == 'v') paste();
-		else if (c == 'c') copy();
-		else if (c == 'd') cut();
+			if (c == 'q') { if (saved) close_active_buffer(); }
+			else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
+			
+			else if (c == 'f') mode = 0;
+			else if (c == 'e') mode = 2;
+			else if (c == 't') mode = 3;
 
-		else if (c == 's') { /*what do we do here?...*/ }
+			else if (c == 'w') save();  
+			
+			else if (c == 'a') anchor();
+			else if (c == 'v') paste();
+			else if (c == 'c') copy();
+			else if (c == 'd') cut();
 
-		else if (c == 'u') undo();
-		else if (c == 'r') redo();
-		else if (c == 'U') alternate_up();
-		else if (c == 'R') alternate_down();
+			else if (c == 's') { /*what do we do here?...*/ }
 
-		else if (c == 'j') move_left(1);
-		else if (c == ';') move_right(1);
-		else if (c == 'o') move_up();
-		else if (c == 'i') move_down();
+			else if (c == 'u') undo();
+			else if (c == 'r') redo();
+			else if (c == 'U') alternate_up();
+			else if (c == 'R') alternate_down();
 
-		else if (c == 'k') move_word_left();
-		else if (c == 'l') move_word_right();
+			else if (c == 'j') move_left(1);
+			else if (c == ';') move_right(1);
+			else if (c == 'o') move_up();
+			else if (c == 'i') move_down();
 
-		else if (c == 'J') move_begin();
-		else if (c == ':') move_end();
-		else if (c == 'I') move_bottom();
-		else if (c == 'O') move_top();
+			else if (c == 'k') move_word_left();
+			else if (c == 'l') move_word_right();
 
-		else if (c == 'K') prompt_jump_column();
-		else if (c == 'L') prompt_jump_line();
+			else if (c == 'J') move_begin();
+			else if (c == ':') move_end();
+			else if (c == 'I') move_bottom();
+			else if (c == 'O') move_top();
 
-		else if (c == '_') memset(message, 0, sizeof message);
-		else if (c == 27) interpret_escape_code();
+			else if (c == 'K') prompt_jump_column();
+			else if (c == 'L') prompt_jump_line();
 
-		// else if (c == 'm') record_new_action; // define macro.
-		else if (c == 'n') {
-			for (int i = 0; i < number; i++) {
-				replay_action();
-			}
+			else if (c == '_') memset(message, 0, sizeof message);
+			else if (c == 27) interpret_escape_code();
+
+			// else if (c == 'm') record_new_action; // define macro.
+			// else if (c == 'n') {
+			// 	for (int i = 0; i < number; i++) {
+			// 		replay_action();
+			// 	}
+			// }
+
+			// else if (c == 'N') {
+			// 	sprintf(message, "number: %d", number);
+			// }
 		}
-
-		else if (c == 'N') {
-			sprintf(message, "debug: number is %d", number);			
-		}
 		
-
-		if (isdigit(c) and number_length < 31) {
-			number_string[number_length++] = c;
-			number_string[number_length] = 0;
-			number = atoi(number_string);
-		} else number_length = 0;
+		if (isdigit(c) and number_length < 31) number_string[number_length++] = c; 
+		else number_length = 0;
+		number_string[number_length] = 0;
+		int n = atoi(number_string);
+		number = n ? n : 1;
 
 	} else if (mode == 2) {
 		
