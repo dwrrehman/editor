@@ -82,9 +82,9 @@ the commands available in each mode are given below.
 MODES:
 ---------
 
-
-	e 	enter insert mode (mode 0)
-	a	enter command mode (mode 2)
+	f 	enter insert mode (mode 0)
+	e	enter command mode (mode 2)
+	t	enter option mode (mode 3)
 
 	q	close active buffer
 	Q	force close active buffer (without saving, after prompt confirms)
@@ -98,19 +98,17 @@ CURSOR MOVEMENT:
 	i	move cursor down
 	o	move cursor up
 	
-	J	move cursor a word to the left
-	:	move cursor a word to the right
-	I	move cursor 10 lines down
-	O	move cursor 10 lines up
+	J	move cursor to beginning of line
+	:	move cursor to end of line
 
-	k	move cursor to beginning of line
-	l	move cursor to end of line
+	k	move cursor a word to the left
+	l	move cursor a word to the right
 
-	K	move cursor to top of file
-	L	move cursor to bottom of file
+	O	move cursor to top of file
+	I	move cursor to bottom of file
 
-	m	jump to column number
-	n	jump to line number
+	K	jump to column number
+	L	jump to line number
 	
 
 	
@@ -121,7 +119,7 @@ EDITING:
 	c	copy
 	d	delete text (no copy)
 
-	s	set the anchor to be at the current position of the cursor
+	a	set the anchor to be at the current position of the cursor
 
 
 OTHER:
@@ -145,9 +143,9 @@ OTHER:
 
 MODES:
 ---------
-
-	e 	enter normal mode (mode 1)
-	a 	enter option mode (mode 2)
+	f	enter insert mode (mode 0)
+	a 	enter normal mode (mode 1)
+	t 	enter option mode (mode 3)
 
 
 	q	close active buffer
@@ -204,7 +202,7 @@ OTHER:
 
 	w	edit wrap width numeric variable
 
-	e	edit tab width numeric variable
+	t	edit tab width numeric variable
 
 
 ----------------------------------------------------------------------

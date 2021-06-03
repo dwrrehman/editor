@@ -1022,7 +1022,7 @@ static inline void interpret_escape_code() {
 			for (int i = 0; i < 4; i++) {
 				read(0, &c, 1);
 			}
-		}
+		} 
 		else if (c == 77) {
 			read(0, &c, 1);
 			if (c == 97) {
@@ -1048,24 +1048,74 @@ static inline void replay_action() {
 	require_logical_state(&head->pre);
 	if (head->type == no_action) return;
 	else if (head->type == insert_action or head->type == paste_text_action) {
-		for (int i = 0; i < head->length; i++) insert(head->text[i], 0);
 
-	} else if (head->type == delete_action or head->type == cut_text_action) {
-		while (lcc > head->post.lcc or lcl > head->post.lcl) delete(0);
+		for (int i = 0; i < head->length; i++) 
+			insert(head->text[i], 0);
+
+	} else if (head->type == delete_action) delete(0); 
+
+	else if (head->type == cut_text_action) {
+
+	// 	if (lal < lcl) goto anchor_first;
+	// 	if (lcl < lal) goto cursor_first;
+	// 	if (lac < lcc) goto anchor_first;
+	// 	if (lcc < lac) goto cursor_first;
+	// 	goto done;
+
+	// cursor_first:
+	// 	while (lcc > head->post.lcc or lcl > head->post.lcl) delete(0);
+	// 	goto done;
+
+	// anchor_first:
+	// 	while (lcc > head->post.lcc or lcl > head->post.lcl) delete(0);
+	// done:	;
+
+		if (lal < lcl) goto anchor_first;
+		if (lcl < lal) goto cursor_first;
+		if (lac < lcc) goto anchor_first;
+		if (lcc < lac) goto cursor_first;
+	cursor_first:;
+		int line = lcl, column = lcc;
+		while (lcl < lal or lcc < lac) move_right(0);
+		lal = line; lac = column;
+	anchor_first:
+		while (lal < lcl or lac < lcc) delete(0);
+
 	}
 	require_logical_state(&head->post); 
 }
 
 static inline void reverse_action() {
+
 	require_logical_state(&head->post);
+
+
 	if (head->type == no_action) return;
-	else if (head->type == insert_action or head->type == paste_text_action) {
+
+	else if (head->type == insert_action) delete(0);
+
+	else if (head->type == paste_text_action) {
+
 		while (lcc > head->pre.lcc or lcl > head->pre.lcl) delete(0);
 
+	// 	if (lal < lcl) goto anchor_first;
+	// 	if (lcl < lal) goto cursor_first;
+	// 	if (lac < lcc) goto anchor_first;
+	// 	if (lcc < lac) goto cursor_first;
+	// cursor_first:;
+	// 	int line = lcl, column = lcc;
+	// 	while (lcl < lal or lcc < lac) move_right(0);
+	// 	lal = line; lac = column;
+	// anchor_first:
+	// 	while (lal < lcl or lac < lcc) delete(0);
+
+
 	} else if (head->type == delete_action or head->type == cut_text_action) {
-		for (int i = 0; i < head->length; i++) insert(head->text[i], 0);
-	}	
-	require_logical_state(&head->pre);  
+		for (int i = 0; i < head->length; i++)
+			insert(head->text[i], 0);
+	}
+	
+	require_logical_state(&head->pre);
 }
 
 static inline void undo() {
@@ -1379,6 +1429,11 @@ int main(const int argc, const char** argv) {
 	struct termios terminal = configure_terminal();
 	write(1, "\033[?1049h\033[?1000h", 16);
 	char p = 0, c = 0;
+
+	char number_string[32] = {0};
+	int number_length = 0;
+	int number = 0;
+
 loop:	
 	if (needs_display_update) {
 		adjust_window_size();
@@ -1386,10 +1441,6 @@ loop:
 	}
 	read(0, &c, 1);
 	needs_display_update = 1;
-
-	// char number_string[32] = {0};
-	// int number_length = 0;
-	// int number = 0;
 
 	if (mode == 0) {
 		if (is_exit_sequence(c, p)) { undo(); mode = 1; }
@@ -1408,10 +1459,13 @@ loop:
 		else if (c == 't') mode = 3;
 
 		else if (c == 'w') save();  
+		
 		else if (c == 'a') anchor();
 		else if (c == 'v') paste();
 		else if (c == 'c') copy();
 		else if (c == 'd') cut();
+
+		else if (c == 's') { /*what do we do here?...*/ }
 
 		else if (c == 'u') undo();
 		else if (c == 'r') redo();
@@ -1435,15 +1489,25 @@ loop:
 		else if (c == 'L') prompt_jump_line();
 
 		else if (c == '_') memset(message, 0, sizeof message);
-
 		else if (c == 27) interpret_escape_code();
 
-		// if (isdigit(c) and number_length < 32) number_string[number_length++] = c;
-		// else number_length = 0;
-
 		// else if (c == 'm') record_new_action; // define macro.
+		else if (c == 'n') {
+			for (int i = 0; i < number; i++) {
+				replay_action();
+			}
+		}
 
-		// else if (c == 'n') perform_previous_action_several_times.
+		else if (c == 'N') {
+			sprintf(message, "debug: number is %d", number);			
+		}
+		
+
+		if (isdigit(c) and number_length < 31) {
+			number_string[number_length++] = c;
+			number_string[number_length] = 0;
+			number = atoi(number_string);
+		} else number_length = 0;
 
 	} else if (mode == 2) {
 		
@@ -1461,11 +1525,6 @@ loop:
 
 		else if (c == 's') show_status = not show_status; 
 		else if (c == 'd') show_line_numbers = not show_line_numbers;
-
-		else if (c == 'u') undo();
-		else if (c == 'r') redo();
-		else if (c == 'U') alternate_up();
-		else if (c == 'R') alternate_down();
 
 		else if (c == 'j') move_to_next_buffer();
             	else if (c == ';') move_to_previous_buffer();
@@ -1532,364 +1591,4 @@ loop:
 	free(buffers); //todo: free lines in each buffer, and lines reg.
 	// free(clipboard);
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// -------------------------------- dead code -----------------------------
-
-
-
-
-// 		while (column < lines[line].count) {
-
-			
-// 			column++;
-// 		}
-
-
-// loop:
-// 	if (line == lcl and column >= lcc) goto done;
-// 	if (line == lcl and column < lcc) 
-// 	}
-	
-	// if (not use_system_clipboard) return;
-
-	// char buffer[128] = "hello there from space.";
-	// size_t buffer_length = (size_t) strlen(buffer);
-
-	// fwrite(buffer, 1, buffer_length, file);
-
-	
-
-
-
-
-
-
-
-
-
-
-
-// paste();
-	// printf("\n\ncopying things to clipboard!!\n\n");
-	// copy();
-	// exit(1);
-
-	// adjust_window_size();
-	// move_top();
-	// anchor();
-	// move_down();
-	// move_right(1);
-	// copy();
-	// exit(1);
-
-
-
-
-// ----------------------------------- end of dead code --------------------------
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-
-
-
-
-
-
-
-
-	
-
-
-
-
-
-
-
-
-
-
-// experimenting with implementing an undo system.
-// undoing and redoing action, insert and delete, on a simple textbox.
-
-#include <stdlib.h>
-#include <stdio.h>
-#include <termios.h>
-#include <unistd.h>
-#include <string.h>
-
-enum action_type {
-    no_action,
-    insert_action,
-    delete_action,
-    paste_action,
-    action_count
-};
-
-struct action {
-    size_t type;
-    size_t choice;
-    size_t count;
-    struct action** children;
-    struct action* parent;
-    uint8_t* text;
-    size_t length;
-};
-
-static char message[4096] = {0};
-
-static struct termios terminal = {0};
-
-static inline void restore_terminal() {
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal) < 0) {
-        perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal))");
-        abort();
-    }
-}
-
-static inline void configure_terminal() {
-    if (tcgetattr(STDIN_FILENO, &terminal) < 0) {
-        perror("tcgetattr(STDIN_FILENO, &terminal)");
-        abort();
-    }
-    
-    atexit(restore_terminal);
-    struct termios raw = terminal;
-    raw.c_lflag &= ~(ECHO | ICANON);
-    
-    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) < 0) {
-        perror("tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)");
-        abort();
-    }
-}
-
-static inline uint8_t read_byte_from_stdin() {
-    uint8_t c = 0;
-    read(STDIN_FILENO, &c, 1);
-    return c;
-}
-
-static inline const char* stringify_action(size_t type) {
-    if (type == no_action) return "(none)";
-    else if (type == insert_action) return "insert";
-    else if (type == delete_action) return "delete";
-    else if (type == paste_action) return "paste";
-    else abort();
-}
-
-static inline void display_undo_tree(struct action* root, int d, struct action* head) {
-    if (!root) { printf("%*c(NULL)\n", 2 * d, ' '); return; }
-    if (root == head) printf("%*c[HEAD]\n", 2 * d, ' ');
-    printf("%*ctype = %s, count = %lu, data = %p\n", 2 * d,' ',
-           stringify_action(root->type), root->count, root->text);
-    for (size_t i = 0; i < root->count; i++) {
-        printf("%*cchild #%lu:\n", 2 * (d + 1), ' ', i);
-        display_undo_tree(root->children[i], d + 1, head);
-    }
-}
-
-static inline void insert(char c, char* text, size_t* length, struct action** head) {
-    text[(*length)++] = c;
-    
-    struct action* new = calloc(1, sizeof(struct action));
-    new->type = insert_action;
-    new->parent = *head;
-    new->text = malloc(1);
-    new->length = 1;
-    new->text[0] = c;
-    
-    (*head)->children = realloc((*head)->children, sizeof(struct action*) * ((*head)->count + 1));
-    (*head)->choice = (*head)->count;
-    (*head)->children[(*head)->count++] = new;
-    *head = new;
-}
-
-static inline void delete(char* text, size_t* length, struct action** head) {
-    if (!*length) return;
-    char c = text[--*length];
-    
-    struct action* new = calloc(1, sizeof(struct action));
-    new->type = delete_action;
-    new->parent = *head;
-    new->text = malloc(1);
-    new->length = 1;
-    new->text[0] = c;
-
-    (*head)->children = realloc((*head)->children, sizeof(struct action*) * ((*head)->count + 1));
-    (*head)->choice = (*head)->count;
-    (*head)->children[(*head)->count++] = new;
-    *head = new;
-}
-
-static inline void paste(const char* string, char* text, size_t* length, struct action** head) {
-    for (size_t i = 0; i < strlen(string); i++)
-        text[(*length)++] = string[i];
-    
-    struct action* new = calloc(1, sizeof(struct action));
-    new->type = paste_action;
-    new->parent = *head;
-    new->length = strlen(string);
-    new->text = malloc(new->length);
-    for (size_t i = 0; i < new->length; i++)
-        new->text[i] = string[i];
-
-    (*head)->children = realloc((*head)->children, sizeof(struct action*) * ((*head)->count + 1));
-    (*head)->choice = (*head)->count;
-    (*head)->children[(*head)->count++] = new;
-    *head = new;
-}
-
-static inline void perform_action(struct action* action,  char* text, size_t* length) {
-    if (action->type == no_action) {}
-    else if (action->type == delete_action) *length -= action->length;
-    else if (action->type == insert_action) {
-        for (size_t i = 0; i < action->length; i++)
-            text[(*length)++] = action->text[i];
-    } else if (action->type == paste_action) {
-        for (size_t i = 0; i < action->length; i++)
-            text[(*length)++] = action->text[i];
-    } else abort();
-}
-
-static inline void reverse_action(struct action* action, char* text, size_t* length) {
-    if (action->type == no_action) return;
-    else if (action->type == delete_action) {
-        for (size_t i = 0; i < action->length; i++)
-            text[(*length)++] = action->text[i];
-    } else if (action->type == insert_action) *length -= action->length;
-    else if (action->type == paste_action) *length -= action->length;
-    else abort();
-}
-    
-static inline void undo(char* text, size_t* length, struct action** head) {
-    if (!(*head)->parent) return;
-        
-    reverse_action(*head, text, length);
-    
-    if ((*head)->parent->count == 1) {
-        sprintf(message, "undoing %s\n", stringify_action((*head)->type));
-    
-    } else {
-        sprintf(message, "selected #%lu from %lu histories: undoing %s",
-                (*head)->parent->choice, (*head)->parent->count,
-                stringify_action((*head)->type));
-    }
-    
-    *head = (*head)->parent;
-}
-
-static inline void redo(char* text, size_t* length, struct action** head) {
-    if (!(*head)->count) return;
-    
-    *head = (*head)->children[(*head)->choice];
-    
-    if ((*head)->parent->count == 1) {
-        sprintf(message, "redoing %s", stringify_action((*head)->type));
-        
-    } else {
-        sprintf(message, "selected #%lu from %lu histories: redoing %s",
-                (*head)->parent->choice, (*head)->parent->count,
-                stringify_action((*head)->type));
-    }
-    
-    perform_action(*head, text, length);
-}
-
-static inline void alternate_up(char* text, size_t* length, struct action** head) {
-    if ((*head)->parent &&
-        (*head)->parent->choice + 1 < (*head)->parent->count) {
-        undo(text, length, head);
-        (*head)->choice++;
-        redo(text, length, head);
-    }
-}
-
-static inline void alternate_down(char* text, size_t* length, struct action** head) {
-    if ((*head)->parent &&
-        (*head)->parent->choice) {
-        undo(text, length, head);
-        (*head)->choice--;
-        redo(text, length, head);
-    }
-}
-
-int main() {
-    configure_terminal();
-    char* text = malloc(4096);
-    size_t length = 0;
-    struct action* tree = calloc(1, sizeof(struct action));
-    struct action* head = tree;
-    
-    while (1) {
-        //display_undo_tree(tree, 0, head);
-        printf("\033[H\033[2J");
-        printf("text:\n\n\t\t\"%.*s\"\n\n", (int) length, text);
-        printf("\n\tmessage: %s\n\n", message);
-        printf("action: ");
-        fflush(stdout);
-        uint8_t c = read_byte_from_stdin();
-        
-        if (c == 27) break;
-        else if (c == '0') memset(message, 0, sizeof message);
-        else if (c == 'U') undo(text, &length, &head);
-        else if (c == 'R') redo(text, &length, &head);
-        else if (c == 'W') alternate_up(text, &length, &head);
-        else if (c == 'E') alternate_down(text, &length, &head);
-        else if (c == 'P') paste("daniel", text, &length, &head);
-        else if (c == 127) delete(text, &length, &head);
-        else insert(c, text, &length, &head);
-    }
-    restore_terminal();
-}
-
-
-
-
-
-
-*/
-
-
-
-
-
-
-
-
-
-
 
