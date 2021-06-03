@@ -1045,30 +1045,18 @@ static inline void interpret_escape_code() {
 }
 
 static inline void replay_action() {
+
 	require_logical_state(&head->pre);
+
 	if (head->type == no_action) return;
+
 	else if (head->type == insert_action or head->type == paste_text_action) {
 
-		for (int i = 0; i < head->length; i++) 
-			insert(head->text[i], 0);
+		for (int i = 0; i < head->length; i++) insert(head->text[i], 0);
 
 	} else if (head->type == delete_action) delete(0); 
 
 	else if (head->type == cut_text_action) {
-
-	// 	if (lal < lcl) goto anchor_first;
-	// 	if (lcl < lal) goto cursor_first;
-	// 	if (lac < lcc) goto anchor_first;
-	// 	if (lcc < lac) goto cursor_first;
-	// 	goto done;
-
-	// cursor_first:
-	// 	while (lcc > head->post.lcc or lcl > head->post.lcl) delete(0);
-	// 	goto done;
-
-	// anchor_first:
-	// 	while (lcc > head->post.lcc or lcl > head->post.lcl) delete(0);
-	// done:	;
 
 		if (lal < lcl) goto anchor_first;
 		if (lcl < lal) goto cursor_first;
@@ -1080,15 +1068,14 @@ static inline void replay_action() {
 		lal = line; lac = column;
 	anchor_first:
 		while (lal < lcl or lac < lcc) delete(0);
-
 	}
+
 	require_logical_state(&head->post); 
 }
 
 static inline void reverse_action() {
 
 	require_logical_state(&head->post);
-
 
 	if (head->type == no_action) return;
 
@@ -1097,18 +1084,6 @@ static inline void reverse_action() {
 	else if (head->type == paste_text_action) {
 
 		while (lcc > head->pre.lcc or lcl > head->pre.lcl) delete(0);
-
-	// 	if (lal < lcl) goto anchor_first;
-	// 	if (lcl < lal) goto cursor_first;
-	// 	if (lac < lcc) goto anchor_first;
-	// 	if (lcc < lac) goto cursor_first;
-	// cursor_first:;
-	// 	int line = lcl, column = lcc;
-	// 	while (lcl < lal or lcc < lac) move_right(0);
-	// 	lal = line; lac = column;
-	// anchor_first:
-	// 	while (lal < lcl or lac < lcc) delete(0);
-
 
 	} else if (head->type == delete_action or head->type == cut_text_action) {
 		for (int i = 0; i < head->length; i++)
@@ -1533,7 +1508,7 @@ loop:
 
 		else if (c == 'l') show_buffer_list();
 
-		// else if (c == 'n') get_numeric_option_value(&number, "number: ");
+		else if (c == 'n') get_numeric_option_value(&number, "number: ");
 		else if (c == 'm') get_numeric_option_value(&mode, "mode: ");
 		
 		else if (c == 27) interpret_escape_code();
