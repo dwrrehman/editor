@@ -1079,7 +1079,7 @@ static inline void replay_action() {
 
 	} else if (head->type == cut_text_action) {
 
-		while (lcc != head->pre.lcc or lcl != head->pre.lcl)
+		while (lcc != head->post.lcc or lcl != head->post.lcl)
 			delete(0);
 	}
 
@@ -1153,20 +1153,46 @@ static inline void redo() {
 }
 
 static inline void alternate_up() {
-	if (head->parent and head->parent->choice + 1 < head->parent->count) {
-		undo();
-		head->choice++;
-		redo();
-	}
+	if (head and head->choice + 1 < head->count) head->choice++;
+	sprintf(message, "switched to history #%d from %d histories", head->choice, head->count);
+		
+	// if (not head->parent) return;
 }
 
 static inline void alternate_down() {
-	if (head->parent and head->parent->choice) {
-		undo();
-		head->choice--;
-		redo();
-	}
+	if (head and head->choice) head->choice--;
+	sprintf(message, "switched to history #%d from %d histories", head->choice, head->count);
+
+	// if (not head->parent) return;
+
+	// if ((*head)->parent->choice + 1 < (*head)->parent->count) {
+ //        undo(text, length, head);
+ //        (*head)->choice++;
+ //        redo(text, length, head);
+ //    }
 }
+
+// static inline void alternate_up(char* text, size_t* length, struct action** head) {
+//     if ((*head)->parent &&
+//         (*head)->parent->choice + 1 < (*head)->parent->count) {
+//         undo(text, length, head);
+//         (*head)->choice++;
+//         redo(text, length, head);
+//     }
+// }
+
+// static inline void alternate_down(char* text, size_t* length, struct action** head) {
+//     if ((*head)->parent &&
+//         (*head)->parent->choice) {
+//         undo(text, length, head);
+//         (*head)->choice--;
+//         redo(text, length, head);
+//     }
+// }
+
+
+
+
 
 static inline void jump_line(int line) {
 	while (lcl < line) move_down();
