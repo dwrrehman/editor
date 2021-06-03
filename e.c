@@ -544,7 +544,7 @@ static inline void insert(char c, int should_record) {
 
 	struct action* new_action = NULL;
 
-	if (should_record) {
+	if (should_record and not zero_width(c)) {
 		new_action = calloc(1, sizeof(struct action));
 		record_logical_state(&new_action->pre);
 	}
@@ -568,11 +568,20 @@ static inline void insert(char c, int should_record) {
 		this->data[lcc] = c;
 		this->count++;
 	}
+
 	if (zero_width(c)) lcc++; 
 	else move_right(1);
+
 	saved = 0;
 
-	if (not should_record) return;      // assume yes, for now.
+	if (not should_record) return;
+
+	if (zero_width(c)) {
+		head->text = realloc(head->text, (size_t) head->length + 1);
+		head->text[head->length++] = c;
+		record_logical_state(&head->post);
+		return;
+	}
 
 	record_logical_state(&new_action->post);
 
@@ -581,7 +590,6 @@ static inline void insert(char c, int should_record) {
 
 	new_action->text = malloc(1);
 	new_action->text[0] = c;
-
 	new_action->length = 1;
     
 	head->children = realloc(head->children, sizeof(struct action*) * (size_t) (head->count + 1));
@@ -621,7 +629,7 @@ static inline void delete(int should_record) {
 
 		deleted_length = 1;
 		deleted_string = malloc(1);
-		deleted_string[0] = '\n';
+		deleted_string[0] = 10;
 
 	} else {
 		int save = lcc;
@@ -1059,62 +1067,26 @@ static inline void interpret_escape_code() {
 }
 
 static inline void replay_action() {
-
 	require_logical_state(&head->pre);
-
 	if (head->type == no_action) return;
+	else if (head->type == insert_action or head->type == paste_text_action) {
+		for (int i = 0; i < head->length; i++) insert(head->text[i], 0);
 
-	else if (head->type == delete_action) {
-		delete(0);
-
-	} else if (head->type == insert_action) {
-		
-		for (int i = 0; i < head->length; i++) 
-			insert(head->text[i], 0);
-
-	} else if (head->type == paste_text_action) {
-		
-		for (int i = 0; i < head->length; i++) 
-			insert(head->text[i], 0);
-
-	} else if (head->type == cut_text_action) {
-
-		while (lcc != head->post.lcc or lcl != head->post.lcl)
-			delete(0);
+	} else if (head->type == delete_action or head->type == cut_text_action) {
+		while (lcc > head->post.lcc or lcl > head->post.lcl) delete(0);
 	}
-
 	require_logical_state(&head->post); 
-
 }
 
 static inline void reverse_action() {
-	
 	require_logical_state(&head->post);
-
 	if (head->type == no_action) return;
+	else if (head->type == insert_action or head->type == paste_text_action) {
+		while (lcc > head->pre.lcc or lcl > head->pre.lcl) delete(0);
 
-	else if (head->type == delete_action) {
-
-		for (int i = 0; i < head->length; i++) 
-			insert(head->text[i], 0);
-
-	} else if (head->type == insert_action) {
-
-		delete(0);
-
-
-	} else if (head->type == paste_text_action) {
-		while (lcc != head->pre.lcc or lcl != head->pre.lcl)
-			delete(0);
-
-
-	} else if (head->type == cut_text_action) {
-
-		for (int i = 0; i < head->length; i++) 
-			insert(head->text[i], 0);
-
-	}
-		
+	} else if (head->type == delete_action or head->type == cut_text_action) {
+		for (int i = 0; i < head->length; i++) insert(head->text[i], 0);
+	}	
 	require_logical_state(&head->pre);  
 }
 
