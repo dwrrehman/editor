@@ -11,31 +11,24 @@
 #include <sys/time.h>  //        tentatively named:   "ef".
 #include <errno.h>     //
 
-
 // --------------------------------------------------------
 // current implementing:     undo-tree, 
 // --------------------------------------------------------
-
-//	  undo-tree          :   in progress.
-
 
 //	  local clipboard    : unimplemented.    (feature)                (multiple clipboards?!... yes.)
 
 //	  escape once for exit : unimplemented    (bug fix)
 
-
-
 // ------------------------ done ----------------------------
 
 //        multiple buffers   :   completed.
 //	  copy-paste         :   completed.
-
+//	  undo-tree          :   completed.
 
 // --------------------------------------------------------
 
 //TODO:    consider making the editor use     size_t's    instead of     int's.....    for generality!  hmm..
 //		 consdier typdef'ing it!!!
-
 // typedef nat ssize_t;   //  candidate?...
 
 struct line { char* data; int count, capacity; };
@@ -175,7 +168,6 @@ static inline char visual(char c) {
 static inline int file_exists(const char* f) {
     return access(f, F_OK) != -1;
 }
-
 
 static inline void get_datetime(char buffer[16]) {
 	struct timeval tv;
@@ -368,7 +360,6 @@ static inline void move_word_right() {
 		)
 	));
 }
-
 
 // -------------------------- stash functions ------------------------
 
@@ -621,13 +612,13 @@ static inline void delete(int should_record) {
 	} else {
 		int save = lcc;
 		move_left(1);
-		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
-		this->count -= save - lcc;
 
 		deleted_length = save - lcc;
 		deleted_string = malloc((size_t) deleted_length);
 		memcpy(deleted_string, this->data + lcc, (size_t) deleted_length);
 
+		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
+		this->count -= save - lcc;
 	}
 	saved = 0;
 	
@@ -1210,7 +1201,7 @@ static inline void paste() {
 		insert((char)c, 0);
 	}
 
-	sprintf(message, "pasted from system clipboard");
+	sprintf(message, "pasted %db from system clipboard", length);
 	pclose(file);
 
 	record_logical_state(&new_action->post);
@@ -1359,8 +1350,7 @@ cursor_first:;
 	int line = lcl, column = lcc;
 	while (lcl < lal or lcc < lac) move_right(0);
 	lal = line; lac = column;
-anchor_first: 
-
+anchor_first:
 	while (lal < lcl or lac < lcc) delete(0);
 
 	record_logical_state(&new_action->post);
@@ -1374,6 +1364,8 @@ anchor_first:
 	head->choice = head->count;
 	head->children[head->count++] = new_action;
 	head = new_action;
+
+	sprintf(message, "deleted %db", deleted_length);
 }
 
 static inline void anchor() {
@@ -1469,6 +1461,11 @@ loop:
 
 		else if (c == 's') show_status = not show_status; 
 		else if (c == 'd') show_line_numbers = not show_line_numbers;
+
+		else if (c == 'u') undo();
+		else if (c == 'r') redo();
+		else if (c == 'U') alternate_up();
+		else if (c == 'R') alternate_down();
 
 		else if (c == 'j') move_to_next_buffer();
             	else if (c == ';') move_to_previous_buffer();
