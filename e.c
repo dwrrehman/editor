@@ -11,6 +11,9 @@
 #include <sys/time.h>  //        tentatively named:   "ef".
 #include <errno.h>     //
 
+#define fuzz 1
+
+
 // --------------------------------------------------------
 // current implementing:     undo-tree, 
 // --------------------------------------------------------
@@ -37,14 +40,16 @@ struct file_data {
 	struct line* lines;
 	struct action* root;
 	struct action* head;
-	char* macro;
+	// char* macro;
 	int 
 		saved, mode, 
 		count, capacity, 
 
 		scroll_counter, line_number_width, needs_display_update, 
-		number_length, number,
-		macro_length, macro_capacity, recording,
+		// number_length, number,
+		// macro_length, macro_capacity, recording,
+
+		padding0,
 
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 	
 		vsl, vsc, 	vdc,    	lal,  lac,
@@ -56,7 +61,7 @@ struct file_data {
 		scroll_speed, show_status, show_line_numbers, 
 		use_txt_extension_when_absent;
 
-	char number_string[32];
+	// char number_string[32];
 	char message[4096];
 	char filename[4096];
 };
@@ -149,14 +154,14 @@ static int needs_display_update = 0;
 static int lcl = 0, lcc = 0, vcl = 0, vcc = 0, vol = 0, 
            voc = 0, vsl = 0, vsc = 0, vdc = 0, lal = 0, lac = 0;
 
-static char number_string[32] = {0};
-static int number_length = 0;
-static int number = 1;
+// static char number_string[32] = {0};
+// static int number_length = 0;
+// static int number = 1;
 
-static char* macro = NULL;
-static int macro_length = 0;
-static int macro_capacity = 0;
-static int recording = 0;
+// static char* macro = NULL;
+// static int macro_length = 0;
+// static int macro_capacity = 0;
+// static int recording = 0;
 
 static struct action* root = NULL;
 static struct action* head = NULL;
@@ -269,15 +274,15 @@ visual_just_line_up: vcl--;
 	}
 	if (change_desired) vdc = vcc;
 }
-												
+											
 static inline void move_right(int change_desired) {
+	if (lcl >= count) return;
 	if (lcc >= lines[lcl].count) {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0; 
 		vcl++;  vcc = 0; voc = 0; vsc = 0;
 		if (vsl < window_rows - 1 - show_status) vsl++; 
 		else vol++;
-
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
 			do {
@@ -402,13 +407,13 @@ static inline void store_current_data_to_buffer() {
 	buffers[b].lal = lal;
 	buffers[b].lac = lac;
 
-	memcpy(buffers[b].number_string, number_string, sizeof number_string);
-	buffers[b].number_length = number_length;
-	buffers[b].number = number;
-	buffers[b].macro = macro;
-	buffers[b].macro_length = macro_length;
-	buffers[b].macro_capacity = macro_capacity;
-	buffers[b].recording = recording;
+	// memcpy(buffers[b].number_string, number_string, sizeof number_string);
+	// buffers[b].number_length = number_length;
+	// buffers[b].number = number;
+	// buffers[b].macro = macro;
+	// buffers[b].macro_length = macro_length;
+	// buffers[b].macro_capacity = macro_capacity;
+	// buffers[b].recording = recording;
 
 	buffers[b].alert_prompt_color = alert_prompt_color;
 	buffers[b].info_prompt_color = info_prompt_color;
@@ -458,13 +463,13 @@ static inline void load_buffer_data_into_registers() {
 	lal = this.lal;
 	lac = this.lac;
 
-	memcpy(number_string, this.number_string, sizeof number_string);
-	number_length = this.number_length;
-	number = this.number;
-	macro = this.macro;
-	macro_length = this.macro_length;
-	macro_capacity = this.macro_capacity;
-	recording = this.recording;
+	// memcpy(number_string, this.number_string, sizeof number_string);
+	// number_length = this.number_length;
+	// number = this.number;
+	// macro = this.macro;
+	// macro_length = this.macro_length;
+	// macro_capacity = this.macro_capacity;
+	// recording = this.recording;
 
 	alert_prompt_color = this.alert_prompt_color;
 	info_prompt_color = this.info_prompt_color;
@@ -567,7 +572,11 @@ static inline void insert(char c, int should_record) {
 	} else {
 		if (this->count + 1 > this->capacity) 
 			this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
+		
+
+		// FATAL: negative size param=-1.    our lcc is becoming invalid, from redo.
 		memmove(this->data + lcc + 1, this->data + lcc, (size_t) (this->count - lcc));
+
 		this->data[lcc] = c;
 		this->count++;
 	}
@@ -671,10 +680,10 @@ static inline void adjust_window_size() {
 	if (window.ws_row != window_rows or window.ws_col != window_columns) {
 		window_rows = window.ws_row;
 		window_columns = window.ws_col;
-		screen = realloc(screen, sizeof(char) * (size_t) (window_rows * window_columns * 4));
+		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));
 	}
 
-	if (not wrap_width) wrap_width = window_columns - 1;
+	if (not wrap_width) wrap_width = window_columns - 1 - line_number_width;
 }
 
 static inline void display() {
@@ -758,9 +767,9 @@ static inline void display() {
 			filename, 
 			saved ? 's' : 'e', 
 			message,
-			recording, 
-			macro_length,
-			number
+			0,// recording, 
+			0,// macro_length,
+			0// number
 		);
 		length += status_length;
 
@@ -773,7 +782,8 @@ static inline void display() {
 	}
     
 	length += sprintf(screen + length, "\033[%d;%dH\033[?25h", vsl + 1, vsc + 1 + line_number_width);
-	write(1, screen, (size_t) length);
+
+	if (not fuzz) write(1, screen, (size_t) length);
 }
 
 static inline void textbox_move_left() {
@@ -824,10 +834,13 @@ static inline void textbox_display(const char* prompt, int prompt_color) {
 		screen[length++] = ' ';
 
 	length += sprintf(screen + length, "\033[%d;%dH\033[?25h", window_rows, tb_vs + 1 + tb_prompt_length);
-	write(1, screen, (size_t) length);
+	if (not fuzz) write(1, screen, (size_t) length);
 }
 
 static inline void prompt(const char* prompt_message, int color, char* out, int out_size) {
+
+	if (fuzz) return;
+
 	tb_prompt_length = (int) strlen(prompt_message);
 	do {
 		adjust_window_size();
@@ -859,10 +872,13 @@ static inline void prompt(const char* prompt_message, int color, char* out, int 
 
 static inline void print_above_textbox(char* write_message, int color) {
 	int length = sprintf(screen, "\033[%d;1H\033[K\033[38;5;%dm%s\033[m", window_rows - 1, color, write_message);
-	write(1, screen, (size_t) length);
+	if (not fuzz) write(1, screen, (size_t) length);
 }
 
 static inline int confirmed(const char* question) {
+
+	if (fuzz) return 1;	
+
 	char prompt_message[4096] = {0};
 	sprintf(prompt_message, "%s? (yes/no): ", question);
 
@@ -875,8 +891,6 @@ static inline int confirmed(const char* question) {
 		else print_above_textbox("please type \"yes\" or \"no\".", default_prompt_color);
 	}
 }
-
-
 
 static inline void initialize_current_data_registers() {
 	
@@ -891,6 +905,15 @@ static inline void initialize_current_data_registers() {
 
 	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
 	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
+
+	// memset(number_string, 0, sizeof number_string);
+	// number_length = 0;
+	// number = 1;
+
+	// macro = NULL;
+	// macro_length = 0;
+	// macro_capacity = 0;
+	// recording = 0;
 
 	//TODO: make these initial default_values read from a config file or something.. 
 	alert_prompt_color = 196;
@@ -944,6 +967,8 @@ static inline void move_to_previous_buffer() {
 }
 
 static inline void open_file(const char* given_filename) {
+	if (fuzz) return;
+
 	if (not strlen(given_filename)) return;
 	
 	FILE* file = fopen(given_filename, "r");
@@ -1036,6 +1061,10 @@ prompt_filename:
 
 static inline void interpret_escape_code() {
 	char c = 0;
+
+	if (fuzz) return;
+
+	
 	read(0, &c, 1);         // make this a timedout read? so that if there are no more characters to be read, 
 				// we simply treat it as the user JUST pressing the escape key ONCE. instead of twice...
 
@@ -1080,7 +1109,7 @@ static inline void replay_action() {
 
 	else if (head->type == insert_action or head->type == paste_text_action) {
 
-		for (int i = 0; i < head->length; i++) insert(head->text[i], 0);
+		for (int i = 0; i < head->length; i++) insert(head->text[i], 0);     // here.
 
 	} else if (head->type == delete_action) delete(0); 
 
@@ -1286,7 +1315,10 @@ static inline void copy() {
 anchor_first:;
 	int line = lal, column = lac;
 	while (line < lcl) {
+
+		// Applying Zero offset to Null pointer.	
 		fwrite(lines[line].data + column, 1, (size_t)(lines[line].count - column), file);
+
 		fputc(10, file);
 		line++;
 		column = 0;
@@ -1334,7 +1366,14 @@ local_anchor_first:;
 			string = realloc(string, (size_t)
 			(s_capacity = 2 * (s_capacity + length + (lines[line].count - column) + 1)));
 
+
+		// Applying zero offset to null pointer.
+
+		// Negative size param=-4.      (from cut)
+
 		memcpy(string + length, lines[line].data + column, (size_t)(lines[line].count - column));
+
+
 		length += lines[line].count - column;
 		string[length++] = 10;
 
@@ -1364,7 +1403,10 @@ local_cursor_first:
 			string = realloc(string, (size_t) 
 			(s_capacity = 2 * (s_capacity + length + (lines[line].count - column) + 1)));
 
+		
+		// Applying Zero offset to null pointer.
 		memcpy(string + length, lines[line].data + column, (size_t)(lines[line].count - column));
+
 		length += lines[line].count - column;
 		string[length++] = 10;
 
@@ -1424,27 +1466,50 @@ anchor_first:
 static inline void anchor() {
 	lal = lcl; lac = lcc;
 	sprintf(message, "set anchor %d %d", lal + 1, lac + 1);
+
 }
 
-int main(const int argc, const char** argv) {
 
-	if (argc == 1) create_empty_buffer();
-	else for (int i = 1; i < argc; i++) open_file(argv[i]);
 
-	struct termios terminal = configure_terminal();
-	write(1, "\033[?1049h\033[?1000h", 16);
+
+
+
+// int main(const int argc, const char** argv) {
+
+	// if (argc == 1) create_empty_buffer();
+	// else for (int i = 1; i < argc; i++) open_file(argv[i]);
+
+static inline void editor(const uint8_t* input, const size_t size) {
+
+	size_t input_index = 0;
+
+	// for fuzz testing:
+	create_empty_buffer();
+
+	struct termios terminal;
+
+	if (not fuzz) {
+		terminal = configure_terminal();
+		write(1, "\033[?1049h\033[?1000h", 16);
+	}
+
 	char p = 0, c = 0;
-	int playback_position = 0;
+	// int playback_position = 0;
 
-loop:	
+loop:
 	if (needs_display_update) {
 		adjust_window_size();
 		display();
 	}
-	read(0, &c, 1);
+
+	// read(0, &c, 1);
+
+	// for fuzz testing:
+	if (input_index == size) goto exit_editor;
+	c = (char) input[input_index++];
+	
 	needs_display_update = 1;
 
-interpret_char:
 
 	if (mode == 0) {
 		if (is_exit_sequence(c, p)) { undo(); mode = 1; }
@@ -1455,28 +1520,27 @@ interpret_char:
 
 	} else if (mode == 1) {
 
-		for (int _ = 0; _ < number; _++) {
+		// for (int _ = 0; _ < number; _++) {
 
 			if (c == 32) {/* do nothing. */}
 
-			else if (c == 'q') { if (saved) close_active_buffer(); }
-			else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
+			// else if (c == 'q') { if (saved) close_active_buffer(); }
+			// else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
 			
 			else if (c == 'f') mode = 0;
-		//	else if (c == 'a') mode = 1;
 			else if (c == 'e') mode = 2;
 
-			else if (c == 'w') save();  
+			// else if (c == 'w') save();
 			
-			else if (c == 'a') anchor();
-			else if (c == 'v') paste();
-			else if (c == 'c') copy();
-			else if (c == 'd') cut();
+			// else if (c == 'a') anchor();
+			// else if (c == 'v') paste();
+			// else if (c == 'c') copy();
+			// else if (c == 'd') cut();
 
-			else if (c == 'u') undo();
-			else if (c == 'r') redo();
-			else if (c == 'U') alternate_up();
-			else if (c == 'R') alternate_down();
+			// else if (c == 'u') undo();
+			// else if (c == 'r') redo();
+			// else if (c == 'U') alternate_up();
+			// else if (c == 'R') alternate_down();
 
 			else if (c == 'j') move_left(1);
 			else if (c == ';') move_right(1);
@@ -1491,49 +1555,49 @@ interpret_char:
 			else if (c == 'I') move_bottom();
 			else if (c == 'O') move_top();
 
-			else if (c == 'K') prompt_jump_column();
-			else if (c == 'L') prompt_jump_line();
+			// else if (c == 'K') prompt_jump_column();
+			// else if (c == 'L') prompt_jump_line();
 
-			else if (c == '_') memset(message, 0, sizeof message);
-			else if (c == 27) interpret_escape_code();
+			// else if (c == '_') memset(message, 0, sizeof message);
+			// else if (c == 27) interpret_escape_code();
 
-			else if (c == 'm') recording = not recording;
-			else if (c == 'p') playback_position = 1;
-			else if (c == 'y') macro_length = 0;
-		}
+			// else if (c == 'm') recording = not recording;
+			// else if (c == 'p') playback_position = 1;
+			// else if (c == 'y') macro_length = 0;
+		// }
 		
-		if (isdigit(c) and number_length < 31) number_string[number_length++] = c; 
-		else number_length = 0;
-		number_string[number_length] = 0;
-		int n = atoi(number_string);
-		number = n ? n : 1;
+		// if (isdigit(c) and number_length < 31) number_string[number_length++] = c; 
+		// else number_length = 0;
+		// number_string[number_length] = 0;
+		// int n = atoi(number_string);
+		// number = n ? n : 1;
 
 	} else if (mode == 2) {
-		
-		if (c == 'q') { if (saved) close_active_buffer(); }
-		else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
+		if (c == 32) {/* do nothing. */}		
+
+		// if (c == 'q') { if (saved) close_active_buffer(); }
+		// else if (c == 'Q') { if (saved or confirmed("discard unsaved changes")) close_active_buffer(); }
 
 		else if (c == 'f') mode = 0;
 		else if (c == 'a') mode = 1;
-	//	else if (c == 'e') mode = 2;
 
-		else if (c == 'w') save();
-		else if (c == 'W') rename_file();
+		// else if (c == 'w') save();
+		// else if (c == 'W') rename_file();
 
-		else if (c == 'e') { /* execute_shell_command(); */ } 
+		// else if (c == 'e') { /* execute_shell_command(); */ } 
 
-		else if (c == 's') show_status = not show_status; 
-		else if (c == 'd') show_line_numbers = not show_line_numbers;
+		// else if (c == 's') show_status = not show_status; 
+		// else if (c == 'd') show_line_numbers = not show_line_numbers;
 
-		else if (c == 'j') move_to_next_buffer();
-            	else if (c == ';') move_to_previous_buffer();
-		else if (c == 'o') prompt_open();
-            	else if (c == 'i') create_empty_buffer();
+		// else if (c == 'j') move_to_next_buffer();
+  //           	else if (c == ';') move_to_previous_buffer();
+		// else if (c == 'o') prompt_open();
+  //           	else if (c == 'i') create_empty_buffer();
 
-		else if (c == 'l') show_buffer_list();
+		// else if (c == 'l') show_buffer_list();
 
-		else if (c == 'n') get_numeric_option_value(&number, "number: ");
-		else if (c == 'm') get_numeric_option_value(&mode, "mode: ");
+		// else if (c == 'n') get_numeric_option_value(&number, "number: ");
+		// else if (c == 'm') get_numeric_option_value(&mode, "mode: ");
 		
 		else if (c == 27) interpret_escape_code();
 		
@@ -1543,68 +1607,191 @@ interpret_char:
 		else if (c == 'a') mode = 1;
 		else if (c == 'e') mode = 2;
 
-		else if (c == 'w') {
-			print_above_textbox("(0 sets to window width)", info_prompt_color);
-			get_numeric_option_value(&wrap_width, "wrap width: "); 
-			recalculate_position();
+		// else if (c == 'w') {
+		// 	print_above_textbox("(0 sets to window width)", info_prompt_color);
+		// 	get_numeric_option_value(&wrap_width, "wrap width: "); 
+		// 	recalculate_position();
 
-		} else if (c == 't') {
-			get_numeric_option_value(&tab_width, "tab width: "); 
-			recalculate_position();
-		}
+		// } else if (c == 't') {
+		// 	get_numeric_option_value(&tab_width, "tab width: "); 
+		// 	recalculate_position();
+		// }
 
-		else if (c == 'e') get_numeric_option_value(&use_txt_extension_when_absent, "use txt extension when absent: ");
+		// else if (c == 'e') get_numeric_option_value(&use_txt_extension_when_absent, "use txt extension when absent: ");
+		// else if (c == '1') get_numeric_option_value(&default_prompt_color, "default prompt color: ");
+		// else if (c == '2') get_numeric_option_value(&alert_prompt_color, "alert prompt color: ");
+		// else if (c == '3') get_numeric_option_value(&line_number_color, "line number color: ");
+		// else if (c == '4') get_numeric_option_value(&status_bar_color, "status bar color: ");
+		// else if (c == '5') get_numeric_option_value(&info_prompt_color, "info prompt color: ");
 
-		else if (c == '1') get_numeric_option_value(&default_prompt_color, "default prompt color: ");
-		else if (c == '2') get_numeric_option_value(&alert_prompt_color, "alert prompt color: ");
-		else if (c == '3') get_numeric_option_value(&line_number_color, "line number color: ");
-		else if (c == '4') get_numeric_option_value(&status_bar_color, "status bar color: ");
-		else if (c == '5') get_numeric_option_value(&info_prompt_color, "info prompt color: ");
+		// else if (c == '[') {
+		// 	char string[128] = {0};
+		// 	print_above_textbox("(empty string disables exit sequence)", info_prompt_color);
+		// 	prompt("left exit sequence (2 characters): ", default_prompt_color, string, sizeof string);
+		// 	if (strlen(string) == 2) memcpy(left_exit, string, 2); else memset(left_exit, 0, 2);
+		// 	sprintf(message, "left exit sequence set to %d %d", left_exit[0], left_exit[1]);
 
-		else if (c == '[') {
-			char string[128] = {0};
-			print_above_textbox("(empty string disables exit sequence)", info_prompt_color);
-			prompt("left exit sequence (2 characters): ", default_prompt_color, string, sizeof string);
-			if (strlen(string) == 2) memcpy(left_exit, string, 2); else memset(left_exit, 0, 2);
-			sprintf(message, "left exit sequence set to %d %d", left_exit[0], left_exit[1]);
+		// } else if (c == ']') {
+		// 	char string[128] = {0};
+		// 	print_above_textbox("(empty string disables exit sequence)", info_prompt_color);
+		// 	prompt("right exit sequence (2 characters): ", default_prompt_color, string, sizeof string);
+		// 	if (strlen(string) == 2) memcpy(right_exit, string, 2); else memset(right_exit, 0, 2);
+		// 	sprintf(message, "right exit sequence set to %d %d", right_exit[0], right_exit[1]);
 
-		} else if (c == ']') {
-			char string[128] = {0};
-			print_above_textbox("(empty string disables exit sequence)", info_prompt_color);
-			prompt("right exit sequence (2 characters): ", default_prompt_color, string, sizeof string);
-			if (strlen(string) == 2) memcpy(right_exit, string, 2); else memset(right_exit, 0, 2);
-			sprintf(message, "right exit sequence set to %d %d", right_exit[0], right_exit[1]);
-
-		} else if (c == 27) interpret_escape_code();
+		// } else if (c == 27) interpret_escape_code();
 		
 	} else {
 		sprintf(message, "error: unknown mode %d, reverting to mode 1", mode);
 		mode = 1;
 	}
 
-	if (c == '\\') get_numeric_option_value(&mode, "mode: ");      // applies to all modes.
+	// if (c == '\\') get_numeric_option_value(&mode, "mode: ");      // applies to all modes.
 
 	p = c;
 
-	if (recording) {
-		if (macro_length + 1 >= macro_capacity) 
-			macro = realloc(macro, (size_t) (macro_capacity = 2 * (macro_capacity + 1)));
-			macro[macro_length++] = c;
-	}
+	// if (recording) {
+	// 	if (macro_length + 1 >= macro_capacity) {
+	// 		macro = realloc(macro, (size_t) (macro_capacity = 2 * (macro_capacity + 1)));
+	// 		macro[macro_length++] = c;
+	// 	}
+	// }
 
-	if (playback_position) {
-		if (playback_position < macro_length) {
-			c = macro[playback_position++];
-			goto interpret_char;
-		} else playback_position = 0;
-	}
+	// if (playback_position) {
+	// 	if (playback_position < macro_length) {
+	// 		c = macro[playback_position++];
+	// 		goto interpret_char;
+	// 	} else playback_position = 0;
+	// }
 
 	if (buffer_count) goto loop;
-	write(1, "\033[?1049l\033[?1000l", 16);	
-	tcsetattr(0, TCSAFLUSH, &terminal);
-	free(buffers); //todo: free lines in each buffer, and lines reg.
-	// free(clipboard);
+
+
+
+exit_editor:
+	if (not fuzz) {
+		write(1, "\033[?1049l\033[?1000l", 16);	
+		tcsetattr(0, TCSAFLUSH, &terminal);
+	}
+
+
+	free(buffers);
+	// for (int b = 0; b < buffer_count) {
+		///TODO: go over each bufer, and free the data, there.
+	// }
+
+	for (int line = 0; line < count; line++) {
+		free(lines[line].data);
+		lines[line].data = NULL;
+	}
+
+	free(lines);
+	free(tb_data);
+	free(screen);
+
+
+
+
+	// todo: traverse the tree, and free each node....     hard...
+
+	free(root);
+
+	// for (int i = 0; i < 
+
+	// free(head);
+
+
+
+
+
+	alert_prompt_color = 196;
+	info_prompt_color = 45;
+	default_prompt_color = 214;
+	line_number_color = 236;
+	status_bar_color = 245;
+
+	wrap_width = 0; // default to window width.
+	tab_width = 8;
+	scroll_speed = 4;
+
+	show_status = 1;
+	show_line_numbers = 1;
+	use_txt_extension_when_absent = 1;
+
+	window_rows = 0;
+	window_columns = 0;
+	screen = NULL;
+
+	tb_data = NULL;
+	tb_count = 0;
+	tb_capacity = 0;
+	tb_prompt_length = 0;
+	tb_c = 0;
+	tb_vc = 0;
+	tb_vs = 0;
+	tb_vo = 0;
+
+
+	// static char message[4096] = {0};
+	// static char filename[4096] = {0};
+	saved = 0;
+	mode = 0;
+
+	
+	lines = NULL;
+
+	count = 0;
+	capacity = 0;
+
+	scroll_counter = 0;
+
+	line_number_width = 0;
+	needs_display_update = 0;
+
+	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0;
+	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
+
+
+	// static char number_string[32] = {0};
+	// static int number_length = 0;
+	// static int number = 1;
+
+	// static char* macro = NULL;
+	// static int macro_length = 0;
+	// static int macro_capacity = 0;
+	// static int recording = 0;
+
+
+	
+
+	root = NULL;
+	head = NULL;
+
+	buffers = NULL;
+	buffer_count = 0;
+	active_buffer = 0;
+
 }
+
+int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
+	// printf("\n[%lu] : { ", size);
+ // 	for (size_t i = 0; i < size; i++) {
+	// 	printf("%02hhx(%c) ", input[i], input[i] > 32 ? input[i] : 32);
+	// }
+	// printf("}\n\n");
+	editor(input, size);
+	return 0;  // Non-zero return values are reserved for future use.
+}
+
+
+
+// This editor has a HUGE memory leak. we need to fix this.
+
+
+
+
+
+
+///TODO: we sshould probably like... make the editro not use pointers for our undo tree. 
 
 
 
@@ -1614,158 +1801,35 @@ interpret_char:
 
 
 
+	okay, so there arae like several systems, thata i have to completely redo. 
 
-so bassically, the fund prob is thta 
 
 
-	we need an interpreter 
-			
 
-				at leastttt for mode 1. 
+		- i need to make my own copy-past clipboard internally, or find a cross platform way to do that. 
 
+		- i need to make the command system more uniform, robust, and able to say numeric repitiosns, and macros, ie, have an interpreterr for commands, in a given mode. 
 
-					ie, a function we can call, to execute a given character.
+		- i need to make my undo tree ds not be pointer based, but be index based, to be more reliable, deconstructable, more performant, etc. 
 
-					....over and over agaain.
 
-					thaats the key.
+		- i need to COMPLETLEY redo the cut/copy/get_selection code. its so bad and ugly, and code-smelly
 
-				
-	
 
+		- i need to redo how i am doing multiple buffers, possibly... theres alot of duplication... and i really dont like it... 
+			i mean, it kinda makes sense, its just wayyy too much management, because of the fact that the neccessary amount of state of the system is like changing, as we implement new features...
 
 
+		- i need to make sure there are LITERALLY NO memory leaks.
 
+				this should be easy, like its not that hard.
 
 
+		- i need to add a minimalist mode. 
 
+		- i need to make the final architecture of this thing like, BUILT to do fuzz testing. i'm always going to need it. 
 
-
-		oh wait!
-
-
-
-
-			okay, nvm, actually i want to do something totaally differnet from 
-
-
-				having a function which executes things according to a given mode. 
-
-
-
-
-
-
-
-
-		i mean, it will be basically be the same, but just more free and general!
-
-
-
-
-
-					its my syntax flexible undo command system!
-
-
-						its so amazing!
-			and can be so great, if i do it well!
-
-
-
-
-				i just need to design things right lol.
-
-
-				ie, the native command spellings, so that we dont NECCESSARILY leverage things like that .
-
-
-
-
-
-							andddd yessss, i do think im going to keep the notion of modes..?
-						i mean, 
-
-
-							...maybe not, idk... 
-
-
-
-
-
-
-
-				i do think that 
-
-
-					for MANY MANY MANY commands, 
-
-
-
-
-					them being a single chracter,    that you press once, 
-
-
-
-					to execute that commaand, 
-
-
-							IS INCREDIDIBLYYYYYYYY POWERFULLLLLL
-
-
-
-
-					and so i dont want to loose that brevity for those. 
-
-
-
-
-				although things like 
-
-
-
-					idk... status bar toggle, line numbers, 
-					etc, 
-
-
-
-	there are lots like that, that im okay will NOT being a single letter. they are honestly just taking up space. 
-
-
-
-
-
-				so yeah. 
-
-
-
-
-	lets do that now.
-
-
-
-	man this is one heck of a change!
-
-
-
-
-	i love it though
-
-
-cool
-i have to dig up that old piece of code now
-lol
-
-
-
-
-
-
-
-
-
-
-
-
+		- 
 
 
 

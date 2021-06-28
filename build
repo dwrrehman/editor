@@ -8,7 +8,10 @@ elif [ "clean" = "$1" ]; then
 	rm -rf editor.dSYM
 
 elif [ "" = "$1" ]; then 
-	clang -g -O0 -Weverything -Wno-poison-system-directories -fsanitize=address,undefined e.c -o editor -ferror-limit=5
+	clang -g -O0 -Weverything -Wno-poison-system-directories -fsanitize=address,undefined e.c -o editor
+
+elif [ "fuzz" = "$1" ]; then 
+	clang -g -O0 -Weverything -Wno-poison-system-directories -fsanitize=fuzzer,address,undefined e.c -o editor
 else 
 	echo "build: unknown target: $1"
 fi
