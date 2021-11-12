@@ -167,7 +167,8 @@ enum action_type {
 
 
 
-/////good/////
+// bad: not neccessary, really. 
+
 static const char* action_spellings[] = {
 	"nothing",
 	"insert",
@@ -175,6 +176,10 @@ static const char* action_spellings[] = {
 	"paste text",
 	"cut text",
 };
+
+
+
+
 
 // preferences and configurations:       //TODO: read these in from a file! (found at the home dir.)
 
@@ -1705,7 +1710,7 @@ local_done:
 
 
 // ---------------- BAD -----------------
-/////good/////
+
 static inline void cut() { 
 
 	struct action* new_action = calloc(1, sizeof(struct action));
