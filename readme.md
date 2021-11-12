@@ -20,10 +20,18 @@ It's features and behavior are loosely based on that of TextEdit, as well as Vim
 
  - Uses an undo tree system
 
+ - Line numbers
+
+ - Copy/paste 
+
+ - Multiple buffers
+
 
 ### Other notes:
 
  - VT100 terminal based
+
+ - source code is currently only 2,000 lines of code. 
 
  - No syntax highlighting, ever
 

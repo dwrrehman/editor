@@ -11,16 +11,57 @@
 #include <sys/time.h>  //        tentatively named:   "ef".
 #include <errno.h>     //
 
-#define fuzz 1
+//  Daniel Warren Riaz Rehman's minimalist 
+//        terminal-based text editor 
+//
+//     Designed with reliability, minimalism, 
+//     simplicity, and ergonimics in mind.
+//
+//          written on 2101177.005105
+//           edited on 2105156.003715
+//
+//
+//        tentatively named:   "ef".
+//
+
+
+
+
+
+
+
+
+/// vet each of these includes, and see if we need them. 
+
+
+
+
+
+
+
+
+
+// #define fuzz 1
 
 
 // --------------------------------------------------------
 // current implementing:     undo-tree, 
 // --------------------------------------------------------
 
-//	  local clipboard    : unimplemented.    (feature)                (multiple clipboards?!... yes.)
 
-//	  escape once for exit : unimplemented    (bug fix)
+//	  local clipboard    : unimplemented.       (feature)                (multiple clipboards?!... yes.)
+
+
+//	  escape once for exit : unimplemented       (bug fix)
+
+
+//        implement word wrap!! : unimplemented.    (feature)
+
+//        minimalist mode?   : unimplemented.        (feature)      
+
+
+
+
 
 // ------------------------ done ----------------------------
 
@@ -32,9 +73,26 @@
 
 //TODO:    consider making the editor use     size_t's    instead of     int's.....    for generality!  hmm..
 //		 consdier typdef'ing it!!!
+
+
+
+
+
+
 // typedef nat ssize_t;   //  candidate?...
 
+
+
+
+
+
+/////good/////
 struct line { char* data; int count, capacity; };
+
+
+
+// ---------------- BAD -----------------
+/////good/////
 
 struct file_data {
 	struct line* lines;
@@ -67,6 +125,9 @@ struct file_data {
 };
 
 
+
+
+/////good/////
 struct logical_state {
 	int 
 		saved, 
@@ -76,6 +137,10 @@ struct logical_state {
 		vsl, vsc, 	vdc,    	lal,  lac
 	;
 };
+
+
+
+// ---------------- BAD -----------------
 
 struct action {
 	struct action** children;
@@ -89,6 +154,9 @@ struct action {
 	struct logical_state post;
 };
 
+
+
+/////good/////
 enum action_type {
 	no_action,
 	insert_action,
@@ -97,6 +165,9 @@ enum action_type {
 	cut_text_action,
 };
 
+
+
+/////good/////
 static const char* action_spellings[] = {
 	"nothing",
 	"insert",
@@ -106,6 +177,11 @@ static const char* action_spellings[] = {
 };
 
 // preferences and configurations:       //TODO: read these in from a file! (found at the home dir.)
+
+
+
+	// all state. 
+
 static int alert_prompt_color = 196;
 static int info_prompt_color = 45;
 static int default_prompt_color = 214;
@@ -123,17 +199,28 @@ static int use_txt_extension_when_absent = 1;
 static char left_exit[2] = {'d','f'}, right_exit[2] = {'k','j'};
 
 
+
+
+
 // application global data:
 static int window_rows = 0;
-static int window_columns = 0;
+static int window_columns = 0;    // all registers.
 static char* screen = NULL;
+
+
+
+
+
+// state:
 
 // static char* clipboard = NULL;               // editor-local non system clipboard, unimplemented, for now.
 // static int clipboard_length = 0;
 
+
+
 // textbox data:
-static char* tb_data = NULL;
-static int tb_count = 0;
+static char* tb_data = NULL; // all registers.
+static int tb_count = 0;      
 static int tb_capacity = 0;
 static int tb_prompt_length = 0;
 static int tb_c = 0;
@@ -142,17 +229,20 @@ static int tb_vs = 0;
 static int tb_vo = 0;
 
 
+
+
 // current buffer's data:
-static char message[4096] = {0};
-static char filename[4096] = {0};
-static int saved = 0, mode = 0;
-static struct line* lines = NULL;
-static int count = 0, capacity = 0;
-static int scroll_counter = 0;
-static int line_number_width = 0;
-static int needs_display_update = 0;
-static int lcl = 0, lcc = 0, vcl = 0, vcc = 0, vol = 0, 
-           voc = 0, vsl = 0, vsc = 0, vdc = 0, lal = 0, lac = 0;
+static char message[4096] = {0}; // state
+static char filename[4096] = {0}; // state
+static int saved = 0, mode = 0; // state
+static struct line* lines = NULL; // register
+static int count = 0, capacity = 0; // register
+static int scroll_counter = 0; // state
+static int line_number_width = 0; // state
+static int needs_display_update = 0; // state
+
+static int lcl = 0, lcc = 0, vcl = 0, vcc = 0, vol = 0,          //    all registers.
+           voc = 0, vsl = 0, vsc = 0, vdc = 0, lal = 0, lac = 0; //
 
 // static char number_string[32] = {0};
 // static int number_length = 0;
@@ -163,34 +253,62 @@ static int lcl = 0, lcc = 0, vcl = 0, vcc = 0, vol = 0,
 // static int macro_capacity = 0;
 // static int recording = 0;
 
+
+
+// ---------------- BAD -----------------
+
 static struct action* root = NULL;
 static struct action* head = NULL;
 
 
+
+
+/////good/////
 // all buffer's data:
 static struct file_data* buffers = NULL;
 static int buffer_count = 0;
 static int active_buffer = 0;
 
 
+
+
+
+// -------------------------------------- functions ---------------------------------------------------------
+
+
+
+
+
+
+/////good/////
 static inline char zero_width(char c) { 
 	return (((unsigned char)c) >> 6) == 2; 
 }
 
+
+/////good/////
 static inline char visual(char c) { 
 	return (((unsigned char)c) >> 6) != 2; 
 }
 
+
+/////good/////
 static inline int file_exists(const char* f) {
     return access(f, F_OK) != -1;
 }
 
+
+
+/////good/////
 static inline void get_datetime(char buffer[16]) {
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	struct tm* tm_info = localtime(&tv.tv_sec);
 	strftime(buffer, 15, "%y%m%d%u.%H%M%S", tm_info);
 }
+
+
+/////good/////
 
 // static inline void get_full_datetime(char buffer[32]) {
 // 	struct timeval tv;
@@ -199,6 +317,9 @@ static inline void get_datetime(char buffer[16]) {
 // 	strftime(buffer, 31, "CE%Y%m%d%u.%H%M%S", time);
 // }
 
+
+
+/////good/////
 static inline struct termios configure_terminal() {
 	struct termios terminal = {0};
 	tcgetattr(0, &terminal);
@@ -215,6 +336,8 @@ static inline struct termios configure_terminal() {
 	return terminal;
 }
 
+// ---------------- BAD -----------------
+/////good/////
 static inline void compute_vcc() {
 	vcc = 0;
 	for (int c = 0; c < lcc; c++) {
@@ -229,6 +352,8 @@ static inline void compute_vcc() {
 	}
 }
 
+// ---------------- BAD -----------------
+/////good/////
 static inline void move_left(int change_desired) {
 	if (not lcc) {
 		if (not lcl) return;
@@ -274,7 +399,10 @@ visual_just_line_up: vcl--;
 	}
 	if (change_desired) vdc = vcc;
 }
-											
+
+
+// ---------------- BAD -----------------
+/////good/////										
 static inline void move_right(int change_desired) {
 	if (lcl >= count) return;
 	if (lcc >= lines[lcl].count) {
@@ -311,6 +439,10 @@ static inline void move_right(int change_desired) {
 	if (change_desired) vdc = vcc;
 }
 
+
+
+// ---------------- BAD -----------------
+/////good/////
 static inline void move_up() {
 	if (not vcl) {
 		lcl = 0; lcc = 0;
@@ -326,6 +458,9 @@ static inline void move_up() {
 	else { vsc = vcc; voc = 0; }
 }
 
+
+// ---------------- BAD -----------------
+/////good/////
 static inline void move_down() {
 	int line_target = vcl + 1;
 	while (vcl < line_target) { 
@@ -336,14 +471,22 @@ static inline void move_down() {
 	if (vcc != vdc and lcc and lines[lcl].data[lcc - 1] != '\t') move_left(0);
 }
 
+
+
+/////good/////
 static inline void move_begin() {
 	while (vcc) move_left(1);
 }
 
+
+
+/////good/////
 static inline void move_end() {
 	while (lcc < lines[lcl].count and vcc < wrap_width) move_right(1); 
 }
 
+
+/////good/////
 static inline void move_top() {
 	lcl = 0; lcc = 0;
 	vcl = 0; vcc = 0;
@@ -352,11 +495,15 @@ static inline void move_top() {
 	vdc = 0;
 }
 
+
+/////good/////
 static inline void move_bottom() {
 	while (lcl < count - 1 or lcc < lines[lcl].count) move_down(); 
 	vdc = vcc;
 }
 
+
+/////good/////
 static inline void move_word_left() {
 	do move_left(1);
 	while (not(
@@ -367,6 +514,8 @@ static inline void move_word_left() {
 	));
 }
 
+
+/////good/////
 static inline void move_word_right() {
 	do move_right(1);
 	while (not(
@@ -378,6 +527,9 @@ static inline void move_word_right() {
 }
 
 // -------------------------- stash functions ------------------------
+
+
+// ---------------- BAD -----------------
 
 static inline void store_current_data_to_buffer() {
 	if (not buffer_count) return;
@@ -434,6 +586,9 @@ static inline void store_current_data_to_buffer() {
 	memcpy(buffers[b].message, message, sizeof message);
 	memcpy(buffers[b].filename, filename, sizeof filename);
 }
+
+
+// ---------------- BAD -----------------
 
 static inline void load_buffer_data_into_registers() {
 	if (not buffer_count) return;
@@ -493,7 +648,9 @@ static inline void load_buffer_data_into_registers() {
 
 // ------------------ pre-condition getters and setters ---------------
 
-static inline void record_logical_state(struct logical_state* pcond_out) { // get current state, fill into given pcond.
+// ---------------- BAD -----------------
+/////good/////
+static inline void record_logical_state(struct logical_state* pcond_out) { // get current state, fill into given pre/post-condtion.
 	
 	struct logical_state* p = pcond_out; // respelling.
 
@@ -519,7 +676,9 @@ static inline void record_logical_state(struct logical_state* pcond_out) { // ge
 	p->lac = lac;
 }
 
-static inline void require_logical_state(struct logical_state* pcond_in) {   // set current state, based on a precondition.
+// ---------------- BAD -----------------
+/////good/////
+static inline void require_logical_state(struct logical_state* pcond_in) {   // set current state, based on a pre/post-condition.
 	
 	struct logical_state* p = pcond_in; // respelling.
 
@@ -545,10 +704,12 @@ static inline void require_logical_state(struct logical_state* pcond_in) {   // 
 	lac = p->lac;
 }
 
+// ---------------- BAD -----------------
+/////good/////
 static inline void insert(char c, int should_record) { 
-	//   0 means do nothing, 1 means record action. 
-	//      		(but, append to previous action, 
-	//  			if c is a unprintable unicode character.)
+	//   0 means do nothing,       1 means record action. 
+	//      		       (but, append to previous action, 
+	//  			          if c is a unprintable unicode character.)
 
 	struct action* new_action = NULL;
 
@@ -573,18 +734,20 @@ static inline void insert(char c, int should_record) {
 		if (this->count + 1 > this->capacity) 
 			this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
 		
+		// // our lcc is becoming invalid, from redo. this might fix it.    :/  .....hmmm
+		// if (lcc > this->count) lcc = this->count;
 
-		// FATAL: negative size param=-1.    our lcc is becoming invalid, from redo.
 		memmove(this->data + lcc + 1, this->data + lcc, (size_t) (this->count - lcc));
 
 		this->data[lcc] = c;
 		this->count++;
 	}
-
+	
 	if (zero_width(c)) lcc++; 
 	else move_right(1);
 
 	saved = 0;
+
 
 	if (not should_record) return;
 
@@ -610,6 +773,9 @@ static inline void insert(char c, int should_record) {
 	head = new_action;
 }
 
+
+// ---------------- BAD -----------------
+/////good/////
 static inline void delete(int should_record) {
 
 	struct action* new_action = NULL;
@@ -654,6 +820,7 @@ static inline void delete(int should_record) {
 		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
 		this->count -= save - lcc;
 	}
+
 	saved = 0;
 	
 	if (not should_record) return;
@@ -671,6 +838,8 @@ static inline void delete(int should_record) {
 	head = new_action;
 }
 
+
+/////good/////
 static inline void adjust_window_size() {
 	struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
@@ -686,6 +855,8 @@ static inline void adjust_window_size() {
 	if (not wrap_width) wrap_width = window_columns - 1 - line_number_width;
 }
 
+
+/////good/////
 static inline void display() {
 	
 	int length = 9; 
@@ -786,6 +957,9 @@ static inline void display() {
 	if (not fuzz) write(1, screen, (size_t) length);
 }
 
+
+
+/////good/////
 static inline void textbox_move_left() {
 	if (not tb_c) return;
 	do tb_c--; while (tb_c and zero_width(tb_data[tb_c]));
@@ -793,6 +967,8 @@ static inline void textbox_move_left() {
 	if (tb_vs) tb_vs--; else if (tb_vo) tb_vo--;
 }
 
+
+/////good/////
 static inline void textbox_move_right() {
 	if (tb_c >= tb_count) return;
 	tb_vc++; 
@@ -800,6 +976,8 @@ static inline void textbox_move_right() {
 	do tb_c++; while (tb_c < tb_count and zero_width(tb_data[tb_c]));
 }
 
+
+/////good/////
 static inline void textbox_insert(char c) {
 	if (tb_count + 1 > tb_capacity) 
 		tb_data = realloc(tb_data, (size_t)(tb_capacity = 8 * (tb_capacity + 1)));
@@ -809,6 +987,8 @@ static inline void textbox_insert(char c) {
 	if (zero_width(c)) tb_c++; else textbox_move_right();
 }
 
+
+/////good/////
 static inline void textbox_delete() {
 	if (not tb_c) return;
 	int save = tb_c;
@@ -817,6 +997,8 @@ static inline void textbox_delete() {
 	tb_count -= save - tb_c;
 }
 
+
+/////good/////
 static inline void textbox_display(const char* prompt, int prompt_color) {
 	int length = sprintf(screen, "\033[?25l\033[%d;1H\033[38;5;%dm%s\033[m", window_rows, prompt_color, prompt);
 	int col = 0, vc = 0, sc = tb_prompt_length;
@@ -837,6 +1019,16 @@ static inline void textbox_display(const char* prompt, int prompt_color) {
 	if (not fuzz) write(1, screen, (size_t) length);
 }
 
+
+/////good/////
+static inline void print_above_textbox(char* write_message, int color) {
+	int length = sprintf(screen, "\033[%d;1H\033[K\033[38;5;%dm%s\033[m", window_rows - 1, color, write_message);
+	if (not fuzz) write(1, screen, (size_t) length);
+}
+
+
+
+/////good/////
 static inline void prompt(const char* prompt_message, int color, char* out, int out_size) {
 
 	if (fuzz) return;
@@ -870,11 +1062,8 @@ static inline void prompt(const char* prompt_message, int color, char* out, int 
 	tb_c = 0; tb_vo = 0; tb_vc = 0; tb_vs = 0;
 }
 
-static inline void print_above_textbox(char* write_message, int color) {
-	int length = sprintf(screen, "\033[%d;1H\033[K\033[38;5;%dm%s\033[m", window_rows - 1, color, write_message);
-	if (not fuzz) write(1, screen, (size_t) length);
-}
 
+/////good/////
 static inline int confirmed(const char* question) {
 
 	if (fuzz) return 1;	
@@ -891,6 +1080,9 @@ static inline int confirmed(const char* question) {
 		else print_above_textbox("please type \"yes\" or \"no\".", default_prompt_color);
 	}
 }
+
+
+// ---------------- BAD -----------------
 
 static inline void initialize_current_data_registers() {
 	
@@ -921,7 +1113,7 @@ static inline void initialize_current_data_registers() {
 	default_prompt_color = 214;
 	line_number_color = 236;
 	status_bar_color = 245;
-	wrap_width = 120;
+	wrap_width = 0;
 	tab_width = 8;
 	scroll_speed = 4;
 	show_status = 1;
@@ -935,6 +1127,9 @@ static inline void initialize_current_data_registers() {
 	memset(filename, 0, sizeof filename);
 }
 
+
+
+/////good/////
 static inline void create_empty_buffer() {
 	store_current_data_to_buffer();
 	buffers = realloc(buffers, sizeof(struct file_data) * (size_t)(buffer_count + 1));
@@ -945,6 +1140,8 @@ static inline void create_empty_buffer() {
 	store_current_data_to_buffer();
 }
 
+
+/////good/////
 static inline void close_active_buffer() {
 	buffer_count--;
 	memmove(buffers + active_buffer, buffers + active_buffer + 1, 
@@ -954,18 +1151,25 @@ static inline void close_active_buffer() {
 	load_buffer_data_into_registers();
 }
 
+
+/////good/////
 static inline void move_to_next_buffer() {
 	store_current_data_to_buffer(); 
 	if (active_buffer) active_buffer--; 
 	load_buffer_data_into_registers();
 }
 
+
+
+/////good/////
 static inline void move_to_previous_buffer() {
 	store_current_data_to_buffer(); 
 	if (active_buffer < buffer_count - 1) active_buffer++; 
 	load_buffer_data_into_registers();
 }
 
+
+/////good/////
 static inline void open_file(const char* given_filename) {
 	if (fuzz) return;
 
@@ -981,19 +1185,32 @@ static inline void open_file(const char* given_filename) {
 	}
 
 	fseek(file, 0, SEEK_END);        
+
         size_t length = (size_t) ftell(file);
 	char* buffer = malloc(sizeof(char) * length);
+
         fseek(file, 0, SEEK_SET);
         fread(buffer, sizeof(char), length, file);
+
 	create_empty_buffer();
-	for (size_t i = 0; i < length; i++) insert(buffer[i], 0);
-	free(buffer); fclose(file);
-	saved = 1; mode = 1; move_top();
+	for (size_t i = 0; i < length; i++) 
+		insert(buffer[i], 0);
+
+	free(buffer); 
+	fclose(file);
+
+	saved = 1; mode = 1; 
+	move_top();
+
 	strcpy(filename, given_filename);
 	store_current_data_to_buffer();
+
 	sprintf(message, "read %lub", length);
 }
 
+
+
+/////good/////
 static inline void prompt_open() {
 	char new_filename[4096] = {0};
 	prompt("open: ", default_prompt_color, new_filename, sizeof new_filename);
@@ -1001,6 +1218,9 @@ static inline void prompt_open() {
 	open_file(new_filename);
 }
 
+
+// ---------------- BAD -----------------
+/////good/////
 static inline void save() {
 
 	if (not strlen(filename)) {
@@ -1042,6 +1262,9 @@ static inline void save() {
 	}
 }
 
+
+
+/////good/////
 static inline void rename_file() {
 	char new[4096] = {0};
 prompt_filename:
@@ -1059,12 +1282,14 @@ prompt_filename:
 	}
 }
 
+
+
+/////good/////
 static inline void interpret_escape_code() {
 	char c = 0;
 
-	if (fuzz) return;
+	// if (fuzz) return;
 
-	
 	read(0, &c, 1);         // make this a timedout read? so that if there are no more characters to be read, 
 				// we simply treat it as the user JUST pressing the escape key ONCE. instead of twice...
 
@@ -1101,6 +1326,9 @@ static inline void interpret_escape_code() {
 	} 
 }
 
+
+// ---------------- BAD -----------------
+
 static inline void replay_action() {
 
 	require_logical_state(&head->pre);
@@ -1130,6 +1358,9 @@ static inline void replay_action() {
 	require_logical_state(&head->post); 
 }
 
+
+// ---------------- BAD -----------------
+
 static inline void reverse_action() {
 
 	require_logical_state(&head->post);
@@ -1150,6 +1381,8 @@ static inline void reverse_action() {
 	require_logical_state(&head->pre);
 }
 
+
+/////good/////
 static inline void undo() {
 
 	if (not head->parent) return;
@@ -1167,6 +1400,9 @@ static inline void undo() {
 	head = head->parent;
 }
 
+
+
+/////good/////
 static inline void redo() {
 
 	if (not head->count) return;
@@ -1184,26 +1420,38 @@ static inline void redo() {
 	replay_action();
 }
 
+
+/////good/////
 static inline void alternate_up() {
 	if (head and head->choice + 1 < head->count) head->choice++;
 	sprintf(message, "switched to history #%d from %d histories", head->choice, head->count);
 }
 
+
+
+/////good/////
 static inline void alternate_down() {
 	if (head and head->choice) head->choice--;
 	sprintf(message, "switched to history #%d from %d histories", head->choice, head->count);
 }
 
+
+/////good/////
 static inline void jump_line(int line) {
 	while (lcl < line) move_down();
 	while (lcl > line) move_up();
 }
 
+
+/////good/////
 static inline void jump_column(int column) {
 	while (lcc < column) move_right(1);
 	while (lcc > column) move_left(1);
 }
 
+
+
+/////good/////
 static inline void prompt_jump_line() {
 	char string_number[128] = {0};
 	prompt("line: ", default_prompt_color, string_number, sizeof string_number);
@@ -1215,6 +1463,9 @@ static inline void prompt_jump_line() {
 	sprintf(message, "jumped to %d %d", lcl + 1, lcc + 1);
 }
 
+
+
+/////good/////
 static inline void prompt_jump_column() {
 	char string_number[128] = {0};
 	prompt("column: ", default_prompt_color, string_number, sizeof string_number);
@@ -1225,6 +1476,8 @@ static inline void prompt_jump_column() {
 	sprintf(message, "jumped to %d %d", lcl + 1, lcc + 1);
 }
 
+
+/////good/////
 static inline void recalculate_position() {
 	int save_lcl = lcl, save_lcc = lcc;
 	move_top();
@@ -1232,6 +1485,9 @@ static inline void recalculate_position() {
 	jump_line(save_lcl);
 	jump_column(save_lcc);
 }
+
+
+// ---------------- BAD -----------------
 
 static inline void show_buffer_list() {
 	char list[4096] = {0};
@@ -1243,6 +1499,9 @@ static inline void show_buffer_list() {
 	print_above_textbox(list, info_prompt_color);
 	needs_display_update = 0;
 }
+
+
+// ---------------- BAD -----------------
 
 static inline void get_numeric_option_value(int* variable, const char* option) {
 	char string_number[128] = {0};
@@ -1256,10 +1515,16 @@ static inline void get_numeric_option_value(int* variable, const char* option) {
 	sprintf(message, "%s set to %d", option, *variable);
 }
 
+
+// ---------------- BAD -----------------
+
 static inline int is_exit_sequence(char c, char p) {
 	return (c == left_exit[1] and p == left_exit[0]) or
 	       (c == right_exit[1] and p == right_exit[0]);
 }
+
+
+// ---------------- BAD -----------------
 
 static inline void paste() {
 
@@ -1298,6 +1563,9 @@ static inline void paste() {
 	head->children[head->count++] = new_action;
 	head = new_action;
 }
+
+
+// ---------------- BAD -----------------
 
 static inline void copy() {
 
@@ -1345,6 +1613,11 @@ done:
 	sprintf(message, "copied to system clipboard");
 	pclose(file);
 }
+
+
+
+
+// ---------------- BAD -----------------
 
 static inline char* get_selection(int* out_length) {
 
@@ -1429,6 +1702,10 @@ local_done:
 	return string;
 }
 
+
+
+// ---------------- BAD -----------------
+/////good/////
 static inline void cut() { 
 
 	struct action* new_action = calloc(1, sizeof(struct action));
@@ -1463,6 +1740,9 @@ anchor_first:
 	sprintf(message, "deleted %db", deleted_length);
 }
 
+
+
+/////good/////
 static inline void anchor() {
 	lal = lcl; lac = lcc;
 	sprintf(message, "set anchor %d %d", lal + 1, lac + 1);
@@ -1478,6 +1758,16 @@ static inline void anchor() {
 
 	// if (argc == 1) create_empty_buffer();
 	// else for (int i = 1; i < argc; i++) open_file(argv[i]);
+
+
+
+
+
+
+
+
+
+
 
 static inline void editor(const uint8_t* input, const size_t size) {
 
@@ -1674,6 +1964,9 @@ exit_editor:
 	}
 
 
+
+
+
 	free(buffers);
 	// for (int b = 0; b < buffer_count) {
 		///TODO: go over each bufer, and free the data, there.
@@ -1693,6 +1986,10 @@ exit_editor:
 
 	// todo: traverse the tree, and free each node....     hard...
 
+
+
+
+
 	free(root);
 
 	// for (int i = 0; i < 
@@ -1701,6 +1998,12 @@ exit_editor:
 
 
 
+
+
+
+
+
+//// remove the values of all variables:
 
 
 	alert_prompt_color = 196;
@@ -1772,32 +2075,92 @@ exit_editor:
 
 }
 
-int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
-	// printf("\n[%lu] : { ", size);
- // 	for (size_t i = 0; i < size; i++) {
-	// 	printf("%02hhx(%c) ", input[i], input[i] > 32 ? input[i] : 32);
-	// }
-	// printf("}\n\n");
-	editor(input, size);
-	return 0;  // Non-zero return values are reserved for future use.
-}
 
 
 
-// This editor has a HUGE memory leak. we need to fix this.
+// int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
+// 	// printf("\n[%lu] : { ", size);
+//  // 	for (size_t i = 0; i < size; i++) {
+// 	// 	printf("%02hhx(%c) ", input[i], input[i] > 32 ? input[i] : 32);
+// 	// }
+// 	// printf("}\n\n");
+// 	editor(input, size);
+// 	return 0;  // Non-zero return values are reserved for future use.
+// }
 
 
 
 
 
 
-///TODO: we sshould probably like... make the editro not use pointers for our undo tree. 
+
+
+
+
+// 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
 
 
 /*
+
+
+
+--------------------------
+	problems:
+--------------------------
+
+ 	- this editor has a HUGE memory leak. we need to fix this.
+
+	- redo the undo-tree code so that it uses a flat datastructure- not a pointer based tree. 
+
+	- 
+
+	- we need to put most of the state for the registers that's not essential in a buffer data structure. 
+
+	- make a simple and robust copy/paste system, that can support multiple sources. 
+
+	- completely redo the command system: 
+	
+		- - easy to use by design,
+		- - allow for repitions and macros by design,
+		- - allow for commands with arbitary spelling
+		- - extensible command context/enviornments,
+		- - unified command system: buffer commands vs prompted commands. 
+
+	- make the code use "nat"'s instead of int's.    using the typedef:   // typedef nat ssize_t; 
+	
+	
+	- 
+	
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1808,28 +2171,103 @@ int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 
 		- i need to make my own copy-past clipboard internally, or find a cross platform way to do that. 
 
-		- i need to make the command system more uniform, robust, and able to say numeric repitiosns, and macros, ie, have an interpreterr for commands, in a given mode. 
-
-		- i need to make my undo tree ds not be pointer based, but be index based, to be more reliable, deconstructable, more performant, etc. 
+				ie, use a library and/or internal clipboard. 
 
 
-		- i need to COMPLETLEY redo the cut/copy/get_selection code. its so bad and ugly, and code-smelly
+
+		- i need to make the command system more uniform, robust, 
+			and able to say numeric repitions, and macros, 		
+	
+				ie, have an interpreter for commands, in a given mode. 
+
+
+
+
+		- i need to make my undo tree ds not be pointer based, but be index based, 
+			to be more reliable, deconstructable, more performant, etc. 
+
+				ie, redo the entire undo-tree system, so that we are using a flatter ds. 
+
+
+
+		- i need to COMPLETLEY redo the cut/copy/get_selection code. its so bad and ugly, and code-smelly.
+
+				
+				ie, redo copy/paste code entirely.
+
+
+
+
 
 
 		- i need to redo how i am doing multiple buffers, possibly... theres alot of duplication... and i really dont like it... 
 			i mean, it kinda makes sense, its just wayyy too much management, because of the fact that the neccessary amount of state of the system is like changing, as we implement new features...
 
 
+				ie, we need to put all extraneous state into a struct.    "curent_state" or something. 
+
+						which will hold everything except for the essential info:  lcc, lcl, etc. 
+
+
+
+
+		
+
+
+
 		- i need to make sure there are LITERALLY NO memory leaks.
 
 				this should be easy, like its not that hard.
 
+				
+
+	
+				ie, do cleaning up properly, when we close a buffer!
+
+		
+
+
+
 
 		- i need to add a minimalist mode. 
 
+
+				this is just an extra feature. (not really neccessary to be implemented right now)
+
+
+	
+
+
+
+
 		- i need to make the final architecture of this thing like, BUILT to do fuzz testing. i'm always going to need it. 
 
-		- 
+
+
+			--->    no that's not true- i think we don't need it, actually. or rather, we can make our own fuzz tester? idk.. 
+
+						or, we can just do alot of testing, i think.
+
+			
+
+
+
+
+
+		- i kind of want to redo alot of of the fundemental systems that i have implemented:
+
+	
+			- - buffers, registers, state management, 
+
+			- - copy/paste clipboards,
+	
+			- - undo-tree as a flat datastructure
+
+		
+
+
+
+		- 	
 
 
 
