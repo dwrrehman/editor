@@ -23,7 +23,7 @@
 #include <errno.h>
 #include <stdbool.h>
 
-#define fuzz 1
+#define fuzz 0
 
 typedef ssize_t nat;
 
@@ -310,13 +310,6 @@ static inline void move_word_right() {
 	));
 }
 
-static inline void recalculate_position() {
-	nat save_lcl = lcl, save_lcc = lcc;
-	move_top();
-	adjust_window_size();
-	jump_line(save_lcl);
-	jump_column(save_lcc);
-}
 
 
 
@@ -580,7 +573,13 @@ static inline void display() {
 		write(1, screen, (size_t) length);
 }
 
-
+static inline void recalculate_position() {
+	nat save_lcl = lcl, save_lcc = lcc;
+	move_top();
+	adjust_window_size();
+	jump_line(save_lcl);
+	jump_column(save_lcc);
+}
 
 static inline void textbox_move_left() {
 	if (not tb.c) return;
@@ -1084,8 +1083,6 @@ static inline void interpret_escape_code() {
 	} 
 }
 
-
-
 static inline void prompt_open() {
 	char new_filename[4096] = {0};
 	prompt("open: ", buffer.default_prompt_color, new_filename, sizeof new_filename);
@@ -1097,31 +1094,23 @@ static inline void prompt_jump_line() {
 	char string_number[128] = {0};
 	prompt("line: ", buffer.default_prompt_color, string_number, sizeof string_number);
 	nat line = atoi(string_number);
-	if (not line) return; 
-	line--;
 	if (line >= count) line = count - 1;
-	move_begin();
 	jump_line(line);
-	sprintf(message, "jumped to %ld %ld", lcl + 1, lcc + 1);
+	sprintf(message, "jumped to %ld %ld", lcl, lcc);
 }
 
 static inline void prompt_jump_column() {
 	char string_number[128] = {0};
 	prompt("column: ", buffer.default_prompt_color, string_number, sizeof string_number);
 	nat column = atoi(string_number);
-	if (not column) return; 
-	column--;
 	if (column > lines[lcl].count) column = lines[lcl].count;
 	jump_column(column);
-	sprintf(message, "jumped to %ld %ld", lcl + 1, lcc + 1);
+	sprintf(message, "jumped to %ld %ld", lcl, lcc);
 }
-
-
 
 static inline void editor(const uint8_t* input, const size_t input_count) {
 
 	if (fuzz) create_empty_buffer();
-
 
 	struct termios terminal = {0};
 
@@ -1361,7 +1350,7 @@ int main(const int argc, const char** argv) {
 
 		- make the line numbers and column numbers 0-based everywhere. just do it. 
 
-		- write the delete_buffers and delete_lines functions. 
+
 
 
 
@@ -1374,7 +1363,7 @@ int main(const int argc, const char** argv) {
 
 	x	- make scroll counter a local static variable in the internpret escape code function.
 
-
+	x	- write the delete_buffers and delete_lines functions. 
 
 
 

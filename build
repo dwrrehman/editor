@@ -2,7 +2,7 @@
 
 
 if [ "release" = "$1" ]; then
-	clang -Ofast e.c -o editor
+	clang -Ofast main.c -o editor
 
 
 elif [ "clean" = "$1" ]; then
