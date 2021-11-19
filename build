@@ -10,13 +10,12 @@ elif [ "clean" = "$1" ]; then
 	rm -rf editor.dSYM
 
 
-
 elif [ "" = "$1" ]; then 
-	clang -g -O0 -Weverything -Wno-poison-system-directories -ferror-limit=20 -fsanitize=address,undefined main.c -o editor
+	clang -g -O0 -Weverything -Wno-poison-system-directories -fsanitize=address,undefined main.c -o editor
 
 
 elif [ "fuzz" = "$1" ]; then 
-	clang -g -O0 -Weverything -Wno-poison-system-directories -fsanitize=fuzzer,address,undefined main.c -o editor
+	clang -g -O0 -Weverything -Wno-poison-system-directories -fsanitize=fuzzer,address,undefined,leak main.c -o editor
 
 
 else 

@@ -63,8 +63,7 @@ struct buffer {
 
 struct logical_state {
 	nat 
-		saved, count, capacity, 
-		line_number_width, needs_display_update, 
+		saved, line_number_width, needs_display_update, 
 
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 
 		vsl, vsc, 	vdc,    	lal,  lac
@@ -73,11 +72,10 @@ struct logical_state {
 
 struct textbox {
 	char* data;
-	nat 	
+	nat
 		count, capacity, prompt_length, 
 		c, 	vc, 	vs, 	vo
 	;
-
 };
 
 // application global data:
@@ -789,10 +787,6 @@ static inline void record_logical_state(struct logical_state* pcond_out) { // ge
 	struct logical_state* p = pcond_out; // respelling.
 
 	p->saved = buffer.saved;
-
-	p->count = count;
-	p->capacity = capacity;
-
 	p->line_number_width = line_number_width;
 	p->needs_display_update = buffer.needs_display_update;
 
@@ -809,10 +803,6 @@ static inline void require_logical_state(struct logical_state* pcond_in) {   // 
 	struct logical_state* p = pcond_in; // respelling.
 
 	buffer.saved = p->saved;
-
-	count = p->count;
-	capacity = p->capacity;
-
 	line_number_width = p->line_number_width;
 	buffer.needs_display_update = p->needs_display_update;
 
@@ -829,20 +819,37 @@ static inline void require_logical_state(struct logical_state* pcond_in) {   // 
 
 
 
+static inline void zero_registers() {
+
+	wrap_width = 0;
+	tab_width = 0;
+	line_number_width = 0;
+
+	show_status = 0;
+	show_line_numbers = 0;
+
+	capacity = 0;
+	count = 0;
+
+	lines = NULL;
+
+	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
+	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
+
+	memset(message, 0, sizeof message);
+	memset(filename, 0, sizeof filename);
+
+	buffer = (struct buffer){0};
+	buffers = NULL;
+
+	buffer_count = 0;
+	active_index = 0;
+	
+}
 
 
 
-
-
-
-
-
-
-
-
-
-
-static inline void initialize_current_data_registers() {
+static inline void initialize_registers() {
 	
 	buffer.saved = true;
 	buffer.mode = 0;
@@ -883,14 +890,20 @@ static inline void create_empty_buffer() {
 	store_current_data_to_buffer();
 	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 1));
 	buffers[buffer_count] = (struct buffer) {0};
-	initialize_current_data_registers();
+	initialize_registers();
 	active_index = buffer_count;
 	buffer_count++;
 	store_current_data_to_buffer();
 }
 
-
+	
 static inline void close_active_buffer() {
+
+	store_current_data_to_buffer();
+	for (nat line = 0; line < buffers[active_index].count; line++) 
+		free(buffers[active_index].lines[line].data);
+	free(buffers[active_index].lines);
+
 	buffer_count--;
 	memmove(buffers + active_index, buffers + active_index + 1, 
 		sizeof(struct buffer) * (size_t)(buffer_count - active_index));
@@ -1119,22 +1132,15 @@ static inline void recalculate_position() {
 }
 
 
-/*
-
-int main(const int argc, const char** argv) {
-	if (argc == 1) create_empty_buffer();
-	else for (int i = 1; i < argc; i++) open_file(argv[i]);
-	editor(0, NULL);
-}
-
-*/
 
 
 
 
 static inline void editor(const uint8_t* input, const size_t input_count) {
 
-	
+	if (fuzz) create_empty_buffer();
+
+
 	struct termios terminal = {0};
 
 	if (not fuzz) {
@@ -1153,7 +1159,7 @@ loop:
 
 	if (fuzz) {
 		if (input_index >= input_count) goto done;
-		c = input[input_index++];
+		c = (char) input[input_index++];
 	} else read(0, &c, 1);
 
 	buffer.needs_display_update = 1;
@@ -1229,6 +1235,17 @@ loop:
 	if (buffer_count) goto loop;
 
 done:
+
+	while (buffer_count) close_active_buffer();
+
+	zero_registers();
+
+	free(screen);
+	screen = NULL;
+	window_rows = 0;
+	window_columns = 0;
+	
+
 	if (not fuzz) {
 		write(1, "\033[?1049l\033[?1000l", 16);	
 		tcsetattr(0, TCSAFLUSH, &terminal);
@@ -1237,6 +1254,10 @@ done:
 }
 
 
+
+#if fuzz
+
+int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 
 	// printf("\n[%lu] : { ", size);
@@ -1249,7 +1270,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 	return 0;
 }
 
+#else
 
+int main(const int argc, const char** argv) {
+	if (argc == 1) create_empty_buffer();
+	else for (int i = 1; i < argc; i++) open_file(argv[i]);
+	editor(NULL, 0);
+}
+
+#endif
 
 
 
