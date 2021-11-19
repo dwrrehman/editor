@@ -23,6 +23,8 @@
 #include <errno.h>
 #include <stdbool.h>
 
+#define fuzz 1
+
 typedef ssize_t nat;
 
 enum action_type {
@@ -48,7 +50,6 @@ struct buffer {
 
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 	
 		vsl, vsc, 	vdc,    	lal, lac,
-
 
 		wrap_width, tab_width, 
 		scroll_speed, show_status, show_line_numbers, 
@@ -79,7 +80,6 @@ struct textbox {
 
 };
 
-
 // application global data:
 static nat 
 	window_rows = 0, 
@@ -105,7 +105,6 @@ static nat
 
 static char message[4096] = {0};
 static char filename[4096] = {0};
-
 
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
@@ -458,6 +457,10 @@ static inline void delete(bool should_record) {
 	// head->choice = head->count;
 	// head->children[head->count++] = new_action;
 	// head = new_action;
+
+	
+	// temporary:
+	free(deleted_string);
 }
 
 
@@ -571,7 +574,8 @@ static inline void display() {
     
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", vsl + 1, vsc + 1 + line_number_width);
 
-	write(1, screen, (size_t) length);
+	if (not fuzz) 
+		write(1, screen, (size_t) length);
 }
 
 
@@ -584,7 +588,6 @@ static inline void textbox_move_left() {
 }
 
 
-/////good/////
 static inline void textbox_move_right() {
 	if (tb.c >= tb.count) return;
 	tb.vc++; 
@@ -593,7 +596,6 @@ static inline void textbox_move_right() {
 }
 
 
-/////good/////
 static inline void textbox_insert(char c) {
 	if (tb.count + 1 > tb.capacity) 
 		tb.data = realloc(tb.data, (size_t)(tb.capacity = 8 * (tb.capacity + 1)));
@@ -604,7 +606,6 @@ static inline void textbox_insert(char c) {
 }
 
 
-/////good/////
 static inline void textbox_delete() {
 	if (not tb.c) return;
 	nat save = tb.c;
@@ -614,7 +615,6 @@ static inline void textbox_delete() {
 }
 
 
-/////good/////
 static inline void textbox_display(const char* prompt, nat prompt_color) {
 	nat length = sprintf(screen, "\033[?25l\033[%ld;1H\033[38;5;%ldm%s\033[m", window_rows, prompt_color, prompt);
 	nat col = 0, vc = 0, sc = tb.prompt_length;
@@ -632,20 +632,21 @@ static inline void textbox_display(const char* prompt, nat prompt_color) {
 		screen[length++] = ' ';
 
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", window_rows, tb.vs + 1 + tb.prompt_length);
-	write(1, screen, (size_t) length);
+
+	if (not fuzz) 
+		write(1, screen, (size_t) length);
 }
 
 
-/////good/////
 static inline void print_above_textbox(char* write_message, nat color) {
 	nat length = sprintf(screen, "\033[%ld;1H\033[K\033[38;5;%ldm%s\033[m", window_rows - 1, color, write_message);
-	write(1, screen, (size_t) length);
+	if (not fuzz) write(1, screen, (size_t) length);
 }
 
 
-
-/////good/////
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
+
+	if (fuzz) return;
 
 	tb.prompt_length = (int) strlen(prompt_message);
 	do {
@@ -677,6 +678,8 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 
 
 static inline bool confirmed(const char* question) {
+	
+	if (fuzz) return true;
 
 	char prompt_message[4096] = {0};
 	sprintf(prompt_message, "%s? (yes/no): ", question);
@@ -781,8 +784,6 @@ static inline void load_buffer_data_into_registers() {
 
 // ------------------ pre-condition getters and setters ---------------
 
-// ---------------- BAD -----------------
-/////good/////
 static inline void record_logical_state(struct logical_state* pcond_out) { // get current state, fill into given pre/post-condtion.
 	
 	struct logical_state* p = pcond_out; // respelling.
@@ -840,9 +841,6 @@ static inline void require_logical_state(struct logical_state* pcond_in) {   // 
 
 
 
-
-
-// ---------------- BAD -----------------
 
 static inline void initialize_current_data_registers() {
 	
@@ -902,7 +900,7 @@ static inline void close_active_buffer() {
 }
 
 
-/////good/////
+
 static inline void move_to_next_buffer() {
 	store_current_data_to_buffer(); 
 	if (active_index) active_index--; 
@@ -911,7 +909,6 @@ static inline void move_to_next_buffer() {
 
 
 
-/////good/////
 static inline void move_to_previous_buffer() {
 	store_current_data_to_buffer(); 
 	if (active_index < buffer_count - 1) active_index++; 
@@ -919,8 +916,10 @@ static inline void move_to_previous_buffer() {
 }
 
 
-/////good/////
 static inline void open_file(const char* given_filename) {
+
+	if (fuzz) return;
+
 
 	if (not strlen(given_filename)) return;
 	
@@ -960,6 +959,9 @@ static inline void open_file(const char* given_filename) {
 
 
 static inline void prompt_open() {
+
+	if (fuzz) return;
+
 	char new_filename[4096] = {0};
 	prompt("open: ", buffer.default_prompt_color, new_filename, sizeof new_filename);
 	if (not strlen(new_filename)) { sprintf(message, "aborted open"); return; }
@@ -968,6 +970,8 @@ static inline void prompt_open() {
 
 
 static inline void save() {
+
+	if (fuzz) return;
 
 	if (not strlen(filename)) {
 	prompt_filename:
@@ -1013,9 +1017,13 @@ static inline void save() {
 
 
 static inline void rename_file() {
+
+	if (fuzz) return;
+
+
 	char new[4096] = {0};
 
-prompt_filename:
+	prompt_filename:
 	prompt("rename to: ", buffer.default_prompt_color, new, sizeof new);
 	if (not strlen(new)) { sprintf(message, "aborted rename"); return; }
 
@@ -1032,6 +1040,8 @@ prompt_filename:
 
 
 static inline void interpret_escape_code() {
+
+	if (fuzz) return;
 
 	static nat scroll_counter = 0;
 	char c = 0;
@@ -1072,6 +1082,9 @@ static inline void interpret_escape_code() {
 }
 
 static inline void prompt_jump_line() {
+
+	if (fuzz) return;
+
 	char string_number[128] = {0};
 	prompt("line: ", buffer.default_prompt_color, string_number, sizeof string_number);
 	nat line = atoi(string_number);
@@ -1084,6 +1097,9 @@ static inline void prompt_jump_line() {
 }
 
 static inline void prompt_jump_column() {
+
+	if (fuzz) return;
+
 	char string_number[128] = {0};
 	prompt("column: ", buffer.default_prompt_color, string_number, sizeof string_number);
 	nat column = atoi(string_number);
@@ -1103,16 +1119,31 @@ static inline void recalculate_position() {
 }
 
 
+/*
 
 int main(const int argc, const char** argv) {
-
 	if (argc == 1) create_empty_buffer();
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
+	editor(0, NULL);
+}
 
-	struct termios terminal = configure_terminal();
-	write(1, "\033[?1049h\033[?1000h", 16);
+*/
+
+
+
+
+static inline void editor(const uint8_t* input, const size_t input_count) {
+
+	
+	struct termios terminal = {0};
+
+	if (not fuzz) {
+		terminal = configure_terminal();
+		write(1, "\033[?1049h\033[?1000h", 16);
+	}
 
 	char p = 0, c = 0;
+	size_t input_index = 0; 
 
 loop:
 	if (buffer.needs_display_update) {
@@ -1120,10 +1151,15 @@ loop:
 		display();
 	}
 
-	read(0, &c, 1);
+	if (fuzz) {
+		if (input_index >= input_count) goto done;
+		c = input[input_index++];
+	} else read(0, &c, 1);
+
 	buffer.needs_display_update = 1;
 
 	if (buffer.mode == 0) {
+
 		// if (is_exit_sequence(c, p)) { undo(); buffer.mode = 1; }
 		
 		if (c == '\r') insert('\n', 1);
@@ -1192,10 +1228,35 @@ loop:
 	p = c;
 	if (buffer_count) goto loop;
 
-	write(1, "\033[?1049l\033[?1000l", 16);	
-	tcsetattr(0, TCSAFLUSH, &terminal);
+done:
+	if (not fuzz) {
+		write(1, "\033[?1049l\033[?1000l", 16);	
+		tcsetattr(0, TCSAFLUSH, &terminal);
+	}
 
 }
+
+
+int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
+
+	// printf("\n[%lu] : { ", size);
+	 // 	for (size_t i = 0; i < size; i++) {
+		// 	printf("%02hhx(%c) ", input[i], input[i] > 32 ? input[i] : 32);
+		// }
+	// printf("}\n\n");
+
+	editor(input, size);
+	return 0;
+}
+
+
+
+
+
+
+
+
+
 
 
 

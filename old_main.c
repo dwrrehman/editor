@@ -57,6 +57,7 @@
 
 //        implement word wrap!! : unimplemented.    (feature)
 
+
 //        minimalist mode?   : unimplemented.        (feature)      
 
 
@@ -1825,17 +1826,17 @@ loop:
 			else if (c == 'f') mode = 0;
 			else if (c == 'e') mode = 2;
 
-			// else if (c == 'w') save();
+			else if (c == 'w') save();
 			
-			// else if (c == 'a') anchor();
-			// else if (c == 'v') paste();
-			// else if (c == 'c') copy();
-			// else if (c == 'd') cut();
+			else if (c == 'a') anchor();
+			else if (c == 'v') paste();
+			else if (c == 'c') copy();
+			else if (c == 'd') cut();
 
-			// else if (c == 'u') undo();
-			// else if (c == 'r') redo();
-			// else if (c == 'U') alternate_up();
-			// else if (c == 'R') alternate_down();
+			else if (c == 'u') undo();
+			else if (c == 'r') redo();
+			else if (c == 'U') alternate_up();
+			else if (c == 'R') alternate_down();
 
 			else if (c == 'j') move_left(1);
 			else if (c == ';') move_right(1);
