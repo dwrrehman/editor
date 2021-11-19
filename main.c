@@ -260,8 +260,8 @@ static inline void move_down() {
 }
 
 static inline void jump_line(nat line) {
-	while (lcl < line) move_down();
-	while (lcl > line) move_up();
+	while (lcl < line) move_down(); // lcc < lines[lcl].count
+	while (lcl > line) move_up(); // lcc > 0
 }
 
 static inline void jump_column(nat column) {
@@ -272,7 +272,6 @@ static inline void jump_column(nat column) {
 static inline void move_begin() {
 	while (vcc) move_left(1);
 }
-
 
 static inline void move_end() {
 	while (lcc < lines[lcl].count and vcc < wrap_width) move_right(1); 
@@ -286,12 +285,10 @@ static inline void move_top() {
 	vdc = 0;
 }
 
-
 static inline void move_bottom() {
 	while (lcl < count - 1 or lcc < lines[lcl].count) move_down(); 
 	vdc = vcc;
 }
-
 
 static inline void move_word_left() {
 	do move_left(1);
@@ -313,8 +310,13 @@ static inline void move_word_right() {
 	));
 }
 
-
-
+static inline void recalculate_position() {
+	nat save_lcl = lcl, save_lcc = lcc;
+	move_top();
+	adjust_window_size();
+	jump_line(save_lcl);
+	jump_column(save_lcc);
+}
 
 
 
@@ -418,6 +420,8 @@ static inline void delete(bool should_record) {
 			new->data = realloc(new->data, (size_t)(new->capacity = 8 * (new->capacity + this->count)));
         
 		if (this->count) memcpy(new->data + new->count, this->data, (size_t) this->count);
+
+		free(this->data);
 
 		new->count += this->count;
 		memmove(lines + lcl + 1, lines + lcl + 2, 
@@ -697,9 +701,6 @@ static inline bool confirmed(const char* question) {
 
 
 
-
-
-
 static inline void store_current_data_to_buffer() {
 	if (not buffer_count) return;
 
@@ -913,20 +914,20 @@ static inline void close_active_buffer() {
 }
 
 
-
 static inline void move_to_next_buffer() {
 	store_current_data_to_buffer(); 
 	if (active_index) active_index--; 
 	load_buffer_data_into_registers();
 }
 
-
-
 static inline void move_to_previous_buffer() {
 	store_current_data_to_buffer(); 
 	if (active_index < buffer_count - 1) active_index++; 
 	load_buffer_data_into_registers();
 }
+
+
+
 
 
 static inline void open_file(const char* given_filename) {
@@ -968,17 +969,6 @@ static inline void open_file(const char* given_filename) {
 	store_current_data_to_buffer();
 
 	sprintf(message, "read %lub", length);
-}
-
-
-static inline void prompt_open() {
-
-	if (fuzz) return;
-
-	char new_filename[4096] = {0};
-	prompt("open: ", buffer.default_prompt_color, new_filename, sizeof new_filename);
-	if (not strlen(new_filename)) { sprintf(message, "aborted open"); return; }
-	open_file(new_filename);
 }
 
 
@@ -1094,10 +1084,16 @@ static inline void interpret_escape_code() {
 	} 
 }
 
+
+
+static inline void prompt_open() {
+	char new_filename[4096] = {0};
+	prompt("open: ", buffer.default_prompt_color, new_filename, sizeof new_filename);
+	if (not strlen(new_filename)) { sprintf(message, "aborted open"); return; }
+	open_file(new_filename);
+}
+
 static inline void prompt_jump_line() {
-
-	if (fuzz) return;
-
 	char string_number[128] = {0};
 	prompt("line: ", buffer.default_prompt_color, string_number, sizeof string_number);
 	nat line = atoi(string_number);
@@ -1110,9 +1106,6 @@ static inline void prompt_jump_line() {
 }
 
 static inline void prompt_jump_column() {
-
-	if (fuzz) return;
-
 	char string_number[128] = {0};
 	prompt("column: ", buffer.default_prompt_color, string_number, sizeof string_number);
 	nat column = atoi(string_number);
@@ -1122,17 +1115,6 @@ static inline void prompt_jump_column() {
 	jump_column(column);
 	sprintf(message, "jumped to %ld %ld", lcl + 1, lcc + 1);
 }
-
-static inline void recalculate_position() {
-	nat save_lcl = lcl, save_lcc = lcc;
-	move_top();
-	adjust_window_size();
-	jump_line(save_lcl);
-	jump_column(save_lcc);
-}
-
-
-
 
 
 

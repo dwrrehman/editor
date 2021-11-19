@@ -21,3 +21,10 @@ elif [ "fuzz" = "$1" ]; then
 else 
 	echo "build: unknown target: $1"
 fi
+
+
+
+# useful for me:
+
+#       ./editor -print_coverage=1 -runs=50000 -detect_leaks=1 -only_ascii=1
+
