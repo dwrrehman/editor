@@ -207,11 +207,6 @@ static inline void move_right(bool change_desired) {
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
 			do {
-				if (vcc >= wrap_width) {
-					vcl++; vcc = 0; voc = 0; vsc = 0;
-					if (vsl < window_rows - 1 - show_status) vsl++; 
-					else vol++;
-				}
 				vcc++;
 				if (vsc < window_columns - 1 - line_number_width) vsc++;
 				else voc++;
@@ -655,8 +650,8 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 		textbox_display(prompt_message, color);
 		char c = 0;
 		read(0, &c, 1);
-		if (c == '\r') break;
-		if (c == '\t') { /*tab complete*/ }
+		if (c == '\r' or c == '\n') break;
+		else if (c == '\t') { /*tab complete*/ }
 		else if (c == 27) {
 			read(0, &c, 1);
 			if (c == '[') {
@@ -691,6 +686,7 @@ static inline bool confirmed(const char* question) {
 		
 		if (not strncmp(response, "yes", 4)) return true;
 		else if (not strncmp(response, "no", 3)) return false;
+		else if (not strncmp(response, "", 1)) return false;
 		else print_above_textbox("please type \"yes\" or \"no\".", buffer.default_prompt_color);
 	}
 }
@@ -954,6 +950,7 @@ static inline void open_file(const char* given_filename) {
         fread(text, sizeof(char), length, file);
 
 	create_empty_buffer();
+	adjust_window_size();
 	for (size_t i = 0; i < length; i++) 
 		insert(text[i], 0);
 
@@ -1124,6 +1121,7 @@ static inline void editor(const uint8_t* input, const size_t input_count) {
 	if (not fuzz) {
 		terminal = configure_terminal();
 		write(1, "\033[?1049h\033[?1000h", 16);
+		buffer.needs_display_update = 1;
 	}
 
 	char p = 0, c = 0;
