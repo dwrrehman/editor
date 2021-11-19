@@ -1108,9 +1108,16 @@ static inline void prompt_jump_column() {
 	sprintf(message, "jumped to %ld %ld", lcl, lcc);
 }
 
-static inline void editor(const uint8_t* input, const size_t input_count) {
+static inline void is_exit_sequence() {
 
-	if (fuzz) create_empty_buffer();
+}
+
+
+static inline void execute() {
+	
+}
+
+static inline void editor(const uint8_t* input, const size_t input_count) {
 
 	struct termios terminal = {0};
 
@@ -1135,9 +1142,12 @@ loop:
 
 	buffer.needs_display_update = 1;
 
+
+	// start of execute() function: 
+
 	if (buffer.mode == 0) {
 
-		// if (is_exit_sequence(c, p)) { undo(); buffer.mode = 1; }
+		if (is_exit_sequence(c, p)) { /*undo();*/ buffer.mode = 1; }
 		
 		if (c == '\r') insert('\n', 1);
 		else if (c == 127) delete(1);
@@ -1176,8 +1186,7 @@ loop:
 
 	} else if (buffer.mode == 2) {
 
-		if (c == 'q') { if (buffer.saved) close_active_buffer(); }
-		else if (c == 'Q') { if (buffer.saved or confirmed("discard unsaved changes")) close_active_buffer(); }
+		if (c == 'q') { if (buffer.saved or confirmed("discard unsaved changes")) close_active_buffer(); }
 
 		else if (c == 'f') buffer.mode = 0;
 		else if (c == 'a') buffer.mode = 1;
@@ -1195,12 +1204,13 @@ loop:
 		
 		else if (c == 27) interpret_escape_code();
 		
-	} else if (buffer.mode == 3) {
+	} else dif (buffer.mode == 3) {
 		     if (c == 'f') buffer.mode = 0;
 	} else {
-		sprintf(message, "error: unknown mode %ld, reverting to mode 1", buffer.mode);
 		buffer.mode = 1;
 	}
+
+	
 
 	p = c;
 	if (buffer_count) goto loop;
@@ -1208,14 +1218,12 @@ loop:
 done:
 
 	while (buffer_count) close_active_buffer();
-
 	zero_registers();
 
 	free(screen);
 	screen = NULL;
 	window_rows = 0;
 	window_columns = 0;
-	
 
 	if (not fuzz) {
 		write(1, "\033[?1049l\033[?1000l", 16);	
@@ -1230,13 +1238,7 @@ done:
 
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
-
-	// printf("\n[%lu] : { ", size);
-	 // 	for (size_t i = 0; i < size; i++) {
-		// 	printf("%02hhx(%c) ", input[i], input[i] > 32 ? input[i] : 32);
-		// }
-	// printf("}\n\n");
-
+	create_empty_buffer();
 	editor(input, size);
 	return 0;
 }
@@ -1256,91 +1258,6 @@ int main(const int argc, const char** argv) {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-//todo: write free_memory function: ie, delete_buffers(), delete_lines(),     and thats it. 
-
-
-	// free(buffers);
-	// // for (int b = 0; b < buffer_count) {
-	// 	///TODO: go over each bufer, and free the data, there.
-	// // }
-
-	// for (int line = 0; line < count; line++) {
-	// 	free(lines[line].data);
-	// 	lines[line].data = NULL;
-	// }
-
-	// free(lines);
-	// free(tb_data);
-	// free(screen);
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /*
 	todo: 
 --------------------------
@@ -1348,11 +1265,30 @@ int main(const int argc, const char** argv) {
 
 	
 
-		- make the line numbers and column numbers 0-based everywhere. just do it. 
+
+	- redo the undo-tree code so that it uses a flat datastructure- not a pointer based tree. 
 
 
+	- make a simple and robust copy/paste system, that can support multiple clipboards. 
 
 
+	- make the machine code virtual machine interpreter:
+
+		- implement the editor ISA, 
+		- figure out how to allow for it to be TC.
+		- make it ergonmic for a human to type, while being fast/efficient and minimalist.
+		
+			- - then later on, we can make the scripting language which will compile to the editor ISA machine code.
+
+
+		- - easy to use by design,
+		- - allow for repitions and macros by design,
+		- - allow for commands with arbitary spelling
+		- - extensible command context/enviornments,
+		- - unified command system: buffer commands vs prompted commands. 
+
+
+	
 
 
 
@@ -1361,163 +1297,24 @@ int main(const int argc, const char** argv) {
 -------------------------
 
 
+
+	x	- make the line numbers and column numbers 0-based everywhere. just do it. 
+
 	x	- make scroll counter a local static variable in the internpret escape code function.
 
 	x	- write the delete_buffers and delete_lines functions. 
 
+	x 	- this editor has a HUGE memory leak. we need to fix this.
 
+	x	- we need to put most of the state for the registers that's not essential in a buffer data structure. 
 
+	x	- make the code use "nat"'s instead of int's.    using the typedef:   // typedef nat ssize_t; 
 
 
---------------------------
-	problems:
---------------------------
 
- 	- this editor has a HUGE memory leak. we need to fix this.
 
-	- redo the undo-tree code so that it uses a flat datastructure- not a pointer based tree. 
 
-	- 
 
-x	- we need to put most of the state for the registers that's not essential in a buffer data structure. 
-
-	- make a simple and robust copy/paste system, that can support multiple clipboards. 
-
-	- completely redo the command system: 
-	
-		- - easy to use by design,
-		- - allow for repitions and macros by design,
-		- - allow for commands with arbitary spelling
-		- - extensible command context/enviornments,
-		- - unified command system: buffer commands vs prompted commands. 
-
-x	- make the code use "nat"'s instead of int's.    using the typedef:   // typedef nat ssize_t; 
-	
-	
-	- 
-	
-
-
-
-
-
-
-
-
-
-
-
-
-
-	okay, so there arae like several systems, thata i have to completely redo. 
-
-
-
-
-		- i need to make my own copy-past clipboard internally, or find a cross platform way to do that. 
-
-				ie, use a library and/or internal clipboard. 
-
-
-
-		- i need to make the command system more uniform, robust, 
-			and able to say numeric repitions, and macros, 		
-	
-				ie, have an interpreter for commands, in a given mode. 
-
-
-
-
-		- i need to make my undo tree ds not be pointer based, but be index based, 
-			to be more reliable, deconstructable, more performant, etc. 
-
-				ie, redo the entire undo-tree system, so that we are using a flatter ds. 
-
-
-
-		- i need to COMPLETLEY redo the cut/copy/get_selection code. its so bad and ugly, and code-smelly.
-
-				
-				ie, redo copy/paste code entirely.
-
-
-
-
-
-
-		- i need to redo how i am doing multiple buffers, possibly... theres alot of duplication... and i really dont like it... 
-			i mean, it kinda makes sense, its just wayyy too much management, because of the fact that the neccessary amount of state of the system is like changing, as we implement new features...
-
-
-				ie, we need to put all extraneous state into a struct.    "curent_state" or something. 
-
-						which will hold everything except for the essential info:  lcc, lcl, etc. 
-
-
-
-
-		
-
-
-
-		- i need to make sure there are LITERALLY NO memory leaks.
-
-				this should be easy, like its not that hard.
-
-				
-
-	
-				ie, do cleaning up properly, when we close a buffer!
-
-		
-
-
-
-
-		- i need to add a minimalist mode. 
-
-
-				this is just an extra feature. (not really neccessary to be implemented right now)
-
-
-	
-
-
-
-
-		- i need to make the final architecture of this thing like, BUILT to do fuzz testing. i'm always going to need it. 
-
-
-
-			--->    no that's not true- i think we don't need it, actually. or rather, we can make our own fuzz tester? idk.. 
-
-						or, we can just do alot of testing, i think.
-
-			
-
-
-
-
-
-		- i kind of want to redo alot of of the fundemental systems that i have implemented:
-
-	
-			- - buffers, registers, state management, 
-
-			- - copy/paste clipboards,
-	
-			- - undo-tree as a flat datastructure
-
-		
-
-
-
-		- 	
-
-
-
-
-*/
 
 
 
