@@ -647,7 +647,7 @@ static inline void print_above_textbox(char* write_message, nat color) {
 
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
 
-	if (fuzz) return;
+	if (fuzz) return;     ///TODO: make this code tested by the fuzzer by supplying the input to its read calls. somehow.
 
 	tb.prompt_length = (int) strlen(prompt_message);
 	do {
@@ -1108,8 +1108,8 @@ static inline void prompt_jump_column() {
 	sprintf(message, "jumped to %ld %ld", lcl, lcc);
 }
 
-static inline void is_exit_sequence() {
-
+static inline bool is_exit_sequence(char c, char p) {
+	return c == 'f' and p == 'd' or c == 'j' and p == 'k';
 }
 
 
@@ -1142,75 +1142,70 @@ loop:
 
 	buffer.needs_display_update = 1;
 
-
 	// start of execute() function: 
 
 	if (buffer.mode == 0) {
 
 		if (is_exit_sequence(c, p)) { /*undo();*/ buffer.mode = 1; }
-		
-		if (c == '\r') insert('\n', 1);
+		else if (c == '\r') insert('\n', 1);
 		else if (c == 127) delete(1);
 		else if (c == 27) interpret_escape_code();
 		else insert(c, 1);
 
 	} else if (buffer.mode == 1) {
 
-			if (c == 'q') { if (buffer.saved) close_active_buffer(); }
-			else if (c == 'Q') { if (buffer.saved or confirmed("discard unsaved changes")) close_active_buffer(); }
-			
-			else if (c == 'f') buffer.mode = 0;
-			else if (c == 'e') buffer.mode = 2;
+		if (c == 'c') buffer.mode = 0;
+		else if (c == 'a') buffer.mode = 2;
 
-			else if (c == 'w') save();
+		else if (c == 'm') move_left(1);
+		else if (c == ';') move_right(1);
+		else if (c == 'l') move_up();
+		else if (c == 'k') move_down();
 
-			else if (c == 'j') move_left(1);
-			else if (c == ';') move_right(1);
-			else if (c == 'o') move_up();
-			else if (c == 'i') move_down();
+		else if (c == 'i') move_word_left();
+		else if (c == 'o') move_word_right();
 
-			else if (c == 'k') move_word_left();
-			else if (c == 'l') move_word_right();
+		else if (c == 'f') move_begin();
+		else if (c == 'j') move_end();
 
-			else if (c == 'J') move_begin();
-			else if (c == ':') move_end();
-			else if (c == 'I') move_bottom();
-			else if (c == 'O') move_top();
+		else if (c == 'F') move_top();
+		else if (c == 'J') move_bottom();
 
-			else if (c == 'K') prompt_jump_column();
-			else if (c == 'L') prompt_jump_line();
+		else if (c == 'K') prompt_jump_column();
+		else if (c == 'L') prompt_jump_line();
 
-			else if (c == '_') memset(message, 0, sizeof message);
-			else if (c == 27) interpret_escape_code();
+		// else if (c == 'u') undo();
+		// else if (c == 'r') redo();
+		// else if (c == 'U') alternate_up();
+		// else if (c == 'R') alternate_down();
 
+		// else if (c == 'e') set_anchor();       
+		// else if (c == 's') copy_selection();   
+		// else if (c == 'd') delete_selection(); 
+		// else if (c == 'v') paste_selection();  
 
-	} else if (buffer.mode == 2) {
-
-		if (c == 'q') { if (buffer.saved or confirmed("discard unsaved changes")) close_active_buffer(); }
-
-		else if (c == 'f') buffer.mode = 0;
-		else if (c == 'a') buffer.mode = 1;
+		else if (c == 'g') move_to_previous_buffer();
+		else if (c == 'h') move_to_next_buffer();
+		else if (c == 'p') prompt_open();
+    		else if (c == 'n') create_empty_buffer();
+		else if (c == 'q') { if (buffer.saved or confirmed("discard unsaved changes")) close_active_buffer(); }
 
 		else if (c == 'w') save();
 		else if (c == 'W') rename_file();
-
-		else if (c == 's') show_status = not show_status; 
-		else if (c == 'd') show_line_numbers = not show_line_numbers;
-
-		else if (c == 'j') move_to_next_buffer();
-            	else if (c == ';') move_to_previous_buffer();
-		else if (c == 'o') prompt_open();
-            	else if (c == 'i') create_empty_buffer();
 		
 		else if (c == 27) interpret_escape_code();
-		
-	} else dif (buffer.mode == 3) {
-		     if (c == 'f') buffer.mode = 0;
-	} else {
-		buffer.mode = 1;
-	}
 
-	
+	} else if (buffer.mode == 2) {
+
+		if (c == 'c') buffer.mode = 0;
+		else if (c == 'd') buffer.mode = 1;
+
+		else if (c == 's') show_status = not show_status; 
+		else if (c == 'n') show_line_numbers = not show_line_numbers;
+
+		else if (c == '_') memset(message, 0, sizeof message);
+		
+	} else buffer.mode = 1;
 
 	p = c;
 	if (buffer_count) goto loop;
@@ -1317,4 +1312,6 @@ int main(const int argc, const char** argv) {
 
 
 
+
+*/
 
