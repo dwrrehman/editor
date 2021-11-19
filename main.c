@@ -547,7 +547,7 @@ static inline void display() {
 			datetime, 
 			buffer.mode, 
 			active_index, buffer_count,
-			lcl + 1, lcc + 1, 
+			lcl, lcc, 
 			filename, 
 			buffer.saved ? 's' : 'e', 
 			message
