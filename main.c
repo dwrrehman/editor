@@ -131,8 +131,6 @@ static inline struct termios configure_terminal() {
 	return save;
 }
 
-
-/// vet this function.
 static inline void compute_vcc() {
 	vcc = 0;
 	for (nat c = 0; c < lcc; c++) {
@@ -147,7 +145,6 @@ static inline void compute_vcc() {
 	}
 }
 
-/// vet this function.
 static inline void move_left(bool change_desired) {
 	if (not lcc) {
 		if (not lcl) return;
@@ -195,18 +192,23 @@ visual_just_line_up: vcl--;
 }
 
 
-/// vet this function.
 static inline void move_right(bool change_desired) {
 	if (lcl >= count) return;
 	if (lcc >= lines[lcl].count) {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0; 
-		vcl++;  vcc = 0; voc = 0; vsc = 0;
+		vcl++; vcc = 0; voc = 0; vsc = 0;
 		if (vsl < window_rows - 1 - show_status) vsl++; 
 		else vol++;
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
 			do {
+				if (wrap_width <= tab_width) break; // erronerous width configurations. this prevents the subsequent infinite loop.
+				if (vcc >= wrap_width) {
+					vcl++; vcc = 0; voc = 0; vsc = 0;
+					if (vsl < window_rows - 1 - show_status) vsl++; 
+					else vol++;
+				}
 				vcc++;
 				if (vsc < window_columns - 1 - line_number_width) vsc++;
 				else voc++;
@@ -227,7 +229,6 @@ static inline void move_right(bool change_desired) {
 	if (change_desired) vdc = vcc;
 }
 
-// vet this function.
 static inline void move_up() {
 	if (not vcl) {
 		lcl = 0; lcc = 0;
@@ -243,7 +244,6 @@ static inline void move_up() {
 	else { vsc = vcc; voc = 0; }
 }
 
-// vet this function.
 static inline void move_down() {
 	nat line_target = vcl + 1;
 	while (vcl < line_target) { 
@@ -308,13 +308,6 @@ static inline void move_word_right() {
 
 
 
-
-
-
-
-
-// ---------------- BAD -----------------
-/////good/////
 static inline void insert(char c, bool should_record) { 
 	//   0 means do nothing,       1 means record action. 
 	//      		       (but, append to previous action, 
@@ -383,8 +376,6 @@ static inline void insert(char c, bool should_record) {
 }
 
 
-// ---------------- BAD -----------------
-/////good/////
 static inline void delete(bool should_record) {
 
 	// struct action* new_action = NULL;
@@ -1256,16 +1247,43 @@ int main(const int argc, const char** argv) {
 --------------------------
 
 
+
+
+
+
+	synopsis:
+
+		1. make the editor VM.
+
+		2. addins to make it TC.
+
+		3. add copy/paste feature.
+
+		4. add undo-tree feature.
+
+
+			done! ready for prime time.
+
+					
+
+
+
+
+
+
+
+
+
+
+
+
+
 	
 
 
-	- redo the undo-tree code so that it uses a flat datastructure- not a pointer based tree. 
-
-
-	- make a simple and robust copy/paste system, that can support multiple clipboards. 
-
 
 	- make the machine code virtual machine interpreter:
+
 
 		- implement the editor ISA, 
 		- figure out how to allow for it to be TC.
@@ -1282,6 +1300,25 @@ int main(const int argc, const char** argv) {
 
 
 	
+
+
+
+
+
+	- redo the undo-tree code so that it uses a flat datastructure- not a pointer based tree. 
+
+
+	- make a simple and robust copy/paste system, that can support multiple clipboards. 
+
+
+
+
+
+
+
+
+
+
 
 
 

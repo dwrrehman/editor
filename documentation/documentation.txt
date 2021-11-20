@@ -1,0 +1,377 @@
+documentation on the editor:
+---------------------------------
+
+
+
+explanation of the global variables:
+
+// application global data:
+static nat 
+	window_rows = 0,                
+	window_columns = 0;
+static char* screen = NULL;    
+
+static struct textbox tb = {0};          <  used like a little single-line editor for when we want to get a command or a confirmation from the user.
+							kind of like a mini little buffer that only can have a single line of text,
+									and isnt saved to a file at all.
+
+// file buffer data:
+static struct buffer* buffers = NULL;         these hold all of the currently open buffer's data, text, cursors, settings, etc.
+static nat 
+	buffer_count = 0, 
+
+
+	active_index = 0;          <  and index which represents which of these buffers is currently in view right now, being edited.
+						this buffer's contents will be copied into the global variables ("registers")  as well as the "buffer" global var.
+							this is just to allow them to be repelt, basically, and to keep us from having to index active_index into the buffer list every time we want to operate on the current buffer. just a little optimization.
+
+
+
+
+
+
+// active buffer's registers:
+
+static struct buffer buffer = {0};        // only some of this structure is used- the members which are not found below.
+
+static struct line* lines = NULL;    // a "register variable" which is the lines of text of the buffer. has "count" lines.
+static nat 
+	count = 0, capacity = 0, 
+
+
+	line_number_width = 0, tab_width = 0, wrap_width = 0, 
+
+		line number width is the number of columns that the gutter on the left hand side, intented for displaying line numbers, takes up currently.
+
+			this is related to how many lines there are. the gutter increases in size, as you need more digits of line numbers.
+
+
+
+
+		tab width is the number of colmnns ( how many space characters.)
+
+
+		wrap width determines when text does a soft wrap to the following line.
+
+				you need to ensure that tab width is less than wrap width, obviously.
+
+			if wrap width == 0, then that means that the code will set wrap width to be the current window width. ie, wrap to the window.
+
+
+
+	show_status = 0, show_line_numbers = 0,
+
+
+		two booleans related to displaying.   if show status, then the status bar will be printed, which shows information such as the cursor position, name of the file, its saved or unsaved status, what mode you are in, the latest error/status message reported, etc.
+
+
+			if show line numbers, then the gutter will be displayed with the line numbers of each line on screen on the left hand side.
+
+
+		
+
+
+
+
+----------------------------------- cursors -----------------------------
+
+
+
+
+	lcl = 0, lcc = 0, vcl = 0, vcc = 0, vol = 0,          
+	voc = 0, vsl = 0, vsc = 0, vdc = 0, lal = 0, lac = 0; 
+
+
+
+
+
+
+
+
+				these set of variables all have to do with cursors:
+
+
+	
+		L C L =    Logical Cursor Line
+
+		L C C =    Logical Cursor Column        
+
+
+							these represent where the cursors is (in terms of the actual file, in the abstract- not influenced by any rendering)
+								this pair of numbers is what is displayed to the user, in the status bar, to tell what line and column the cursor is at.
+
+									here, every BYTE in the file logically is counted as 1 unit.
+
+											so "∑" is counted as several bytes, and thus moving over this character would increase LCC by more than one, even though visually it looks like you moved one character.
+
+
+
+		V C L =     Visual Cursor Line
+
+		V C C =     Visual Cursor Column
+
+
+
+							these represent where the cursor is visually in the entire file, only impacted by the size of each character, whether its unicode, what the tab and wrap widths are.
+
+
+					here, every UNICODE CHARACTER in the file (visually) is counted as 1 unit (this code assumes a fixed with unicode font, ie, each charcter visually only takes one unit), 
+								 EXCEPT FOR-
+
+
+
+												TABS. tabs are of width   "tab_width", which will most likely
+														be several characters (spaces) wide.
+
+													ie, moving over a single \t (tab) character
+													will increase  VCC by several.
+
+
+
+												
+				
+
+
+									note, that this does not account for how much of the file is in screen, or the size of the screen at all.
+
+
+
+	
+		V S L =        Visual Screen Line
+
+		V S C =        Visual Screen Column
+
+
+	
+
+								these represent where the cursor is IN SCREEN COORDINATES. 
+
+	
+										ie, where the Terminal emulator's cursor is on the screen, irrespective of the file and the contents of the file. it is calcuated using VCL/VCC  in combination with   VOL/VOC.
+
+
+
+	
+
+
+
+		V O L =       Visual Origin Line
+
+		V O C =       Visual Origin Column
+
+
+								these represent a position in the same coordinates as VCL/VCC,
+										but that position is the position of where the (1,1) character of the screen is located- refered to as, the "origin" of the screen. 
+
+									these pair of variables tells where the origin of the screen are, in visual-file coordinates. (the same coordinates that VCL and VCC are using.)
+
+
+
+				
+
+
+
+
+						note:    there is the invariant that: 
+
+
+
+
+						VSL + VOL = VCL       and            VSC + VOC = VCC
+
+
+
+				
+
+	
+	
+			ie,   visual screen   and   visual origin    are just a way of breaking apart the     visual cursor
+
+				
+
+
+							into the parts which are       inside the view        and prior to (ie, outside) the view
+
+															respectively.
+
+
+
+
+
+
+
+
+
+ 
+those are the main cursors used throughout the   rendering/cursor moving/insert/delete   sections of code.     the rest are-
+
+
+
+
+
+
+
+			vdc = 0, lal = 0, lac = 0;        
+
+
+
+
+
+ are the remaining left to explain-
+
+
+
+
+
+
+
+
+	
+		V D C =      Visual Desired Column
+
+
+
+							this value represents what column the user was at, the last time they moved the logical cursor left or right.
+
+
+										when the user moves up or down, the code chooses what COLUMN to put the cursor at,
+
+											based on this value-
+
+
+
+										the code will try to put the cursor at this column,  (IN VISUAL COORDINATES, hence VISUAL desired column)
+											however, if the line which the cursor is now on isn't even long enough to be able to do that, 
+					then the code will put the cursor at the last column on that line which is still valid for that line length.
+
+
+
+
+									however, the code will keep track of the fact that the desired column is still VDC,
+
+
+									and when the user moves to a subsequent line which does have a sufficient length, 
+
+
+											it will place the cursor at a logical column which has that visual column = VDC.
+
+
+
+
+
+
+
+
+
+finally, the anchor-
+
+
+
+
+
+
+				there are actually two cursors which live in logical coordinates of the file-
+
+
+						the cursor      (aka, LCL/LCC)
+
+
+
+
+				and 		the anchor.      (aka LAL,LAC)
+
+
+
+
+
+
+
+		L A L =     Logical Anchor Line
+
+
+		L A C =     Logical Anchor Column
+
+
+
+
+
+
+
+
+					these are just another cursor in the file-   however it can only be repositioned when the user issues the instruction:
+
+
+
+
+											"set anchor to where-ever the cursor is currently"
+
+
+
+
+
+							that instruction will set the anchor at the position of the cursor.  (in logical coordinates)
+
+
+
+
+
+
+
+
+				this is useful, because then, the user can move their cursor somewhere else, while the anchor remains as is,
+
+
+
+							and then when the user issues a  "copy"   or   "delete"    instruction,
+
+
+
+
+					those instructions operate on the text which is inbetween the cursor and the anchor.
+
+
+
+
+
+
+
+										ie, the "selection"
+
+
+
+
+
+
+					
+
+
+
+	thats just how i implemented selections in this editor. kinda janky, but its okay. its very non-visual, lol. but it works. 
+
+
+
+
+	
+
+
+
+
+
+
+
+okay, i think you understand all the global variables now. 
+
+
+
+
+
+											
+
+
+
+
+
+
+
+
+						
