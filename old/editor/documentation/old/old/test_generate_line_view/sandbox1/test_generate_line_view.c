@@ -3,7 +3,7 @@
 //  sandbox1
 //
 //  Created by Daniel Rehman on 1911107.
-//  Copyright © 2019 Daniel Rehman. All rights reserved.
+//                                                       
 //
 
 //##########################################################

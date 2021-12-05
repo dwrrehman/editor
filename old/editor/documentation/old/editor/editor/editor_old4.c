@@ -3,7 +3,7 @@
 //  editor
 //
 //  Created by Daniel Rehman on 2004245.
-//  Copyright © 2020 Daniel Rehman. All rights reserved.
+//                                                       
 //
 #include <stdbool.h>
 #include <stdio.h>
