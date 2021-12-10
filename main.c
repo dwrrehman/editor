@@ -7,7 +7,7 @@
 //          written on 2101177.005105
 //           edited on 2111114.172631
 //
-//        tentatively named:   "ef".
+//        tentatively named:   "rt".
 //
 #include <iso646.h>
 #include <termios.h>
@@ -84,6 +84,8 @@ static nat
 	window_columns = 0;
 static char* screen = NULL;
 static struct textbox tb = {0};
+
+// static const char* clipboard = NULL;   // delete me!
 
 // file buffer data:
 static struct buffer* buffers = NULL;
@@ -203,7 +205,9 @@ static inline void move_right(bool change_desired) {
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
 			do {
-				if (wrap_width <= tab_width) break; // erronerous width configurations. this prevents the subsequent infinite loop.
+				if (wrap_width <= tab_width) break; 
+				// erronerous width configurations. this prevents the subsequent infinite loop.
+				
 				if (vcc >= wrap_width) {
 					vcl++; vcc = 0; voc = 0; vsc = 0;
 					if (vsl < window_rows - 1 - show_status) vsl++; 
@@ -559,13 +563,14 @@ static inline void display() {
 		write(1, screen, (size_t) length);
 }
 
-static inline void recalculate_position() {
-	nat save_lcl = lcl, save_lcc = lcc;
-	move_top();
-	adjust_window_size();
-	jump_line(save_lcl);
-	jump_column(save_lcc);
-}
+/////good/////
+// static inline void recalculate_position() {    // used when we modify wrap or tab width. i think...
+// 	int save_lcl = lcl, save_lcc = lcc;
+// 	move_top();
+// 	adjust_window_size();
+// 	jump_line(save_lcl);
+// 	jump_column(save_lcc);
+// }
 
 static inline void textbox_move_left() {
 	if (not tb.c) return;
@@ -1097,20 +1102,154 @@ static inline void prompt_jump_column() {
 }
 
 static inline bool is_exit_sequence(char c, char p) {
-	return c == 'f' and p == 'd' or c == 'j' and p == 'k';
+	return c == 'w' and p == 'r' or c == 'f' and p == 'u';
 }
 
 
 
-
-
-
-
-
-
-static inline void execute() {
+static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last_line, nat last_column) {
 	
+	char* string = malloc(256);
+	nat length = 0;
+	nat s_capacity = 256;
+
+	nat line = first_line, column = first_column;
+
+	while (line < last_line) {
+
+		if (length + (lines[line].count - column) + 1 >= s_capacity) 
+			string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + (lines[line].count - column) + 1)));
+
+		memcpy(string + length, lines[line].data + column, (size_t)(lines[line].count - column));
+
+		length += lines[line].count - column;
+		string[length++] = '\n';
+
+		line++;
+		column = 0;
+	}
+
+	if (length + lcc >= s_capacity) 
+		string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + last_column - column)));
+
+	memcpy(string + length, lines[line].data + column, (size_t)(last_column - column));
+	length += last_column - column;
+
+	*out_length = length;
+	return string;
 }
+
+static inline char* get_selection(nat* out) {
+	if (lal < lcl) return get_sel(out, lal, lac, lcl, lcc);
+	if (lcl < lal) return get_sel(out, lcl, lcc, lal, lac);
+	if (lac < lcc) return get_sel(out, lal, lac, lcl, lcc);
+	if (lcc < lac) return get_sel(out, lcl, lcc, lal, lac);
+	*out = 0;
+	return NULL;
+}
+
+static inline void paste() {
+
+	// struct action* new_action = calloc(1, sizeof(struct action));
+	// record_logical_state(&new_action->pre);
+
+	char* string = malloc(256);
+	nat s_capacity = 256;
+	nat length = 0;
+	
+	FILE* file = popen("pbpaste", "r");
+	if (not file) {
+		sprintf(message, "error: paste: popen(): %s", strerror(errno));
+		return;
+	}
+
+	nat c = 0;
+	while ((c = fgetc(file)) != EOF) {
+		if (length + 1 >= s_capacity) string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + 1)));
+		string[length++] = (char) c;
+		insert((char)c, 0);
+	}
+
+	sprintf(message, "pasted %ldb", length);
+	pclose(file);
+
+	// record_logical_state(&new_action->post);
+
+	// new_action->type = paste_text_action;
+	// new_action->parent = head;
+	// new_action->text = string;
+	// new_action->length = length;
+
+	// head->children = realloc(head->children, sizeof(struct action*) * (size_t) (head->count + 1));
+	// head->choice = head->count;
+	// head->children[head->count++] = new_action;
+	// head = new_action;
+
+	free(string); // temp
+}
+
+
+
+static inline void cut() { 
+
+	// struct action* new_action = calloc(1, sizeof(struct action));
+	// record_logical_state(&new_action->pre);
+
+	nat deleted_length = 0;
+	char* deleted_string = get_selection(&deleted_length);
+
+	if (lal < lcl) goto anchor_first;
+	if (lcl < lal) goto cursor_first;
+	if (lac < lcc) goto anchor_first;
+	if (lcc < lac) goto cursor_first;
+
+cursor_first:;
+	nat line = lcl, column = lcc;
+	while (lcl < lal or lcc < lac) move_right(0);
+	lal = line; lac = column;
+anchor_first:
+	while (lal < lcl or lac < lcc) delete(0);
+
+	sprintf(message, "deleted %ldb", deleted_length);
+
+	// record_logical_state(&new_action->post);
+
+	// new_action->type = cut_text_action;
+	// new_action->parent = head;
+	// new_action->text = deleted_string;
+	// new_action->length = deleted_length;
+    
+	// head->children = realloc(head->children, sizeof(struct action*) * (size_t) (head->count + 1));
+	// head->choice = head->count;
+	// head->children[head->count++] = new_action;
+	// head = new_action;
+
+	free(deleted_string); // temp
+}
+
+static inline void copy() {
+
+	FILE* file = popen("pbcopy", "w");
+	if (not file) {
+		sprintf(message, "error: copy: popen(): %s", strerror(errno));
+		return;
+	}
+
+	nat length = 0;
+	char* selection = get_selection(&length);
+	fwrite(selection, 1, (size_t)length, file);
+	free(selection);
+	sprintf(message, "copied %ldb", length);
+	pclose(file);
+}
+
+
+
+
+
+// static inline void execute() {
+// 	abort();
+// }
 
 
 
@@ -1142,11 +1281,14 @@ loop:
 
 	buffer.needs_display_update = 1;
 
+
+
+
 	// start of execute() function: 
 
 	if (buffer.mode == 0) {
 
-		if (is_exit_sequence(c, p)) { /*undo();*/ buffer.mode = 1; }
+		if (is_exit_sequence(c, p)) { delete(1);/*undo();*/ buffer.mode = 1; }
 		else if (c == '\r') insert('\n', 1);
 		else if (c == 127) delete(1);
 		else if (c == 27) interpret_escape_code();
@@ -1154,58 +1296,70 @@ loop:
 
 	} else if (buffer.mode == 1) {
 
-		if (c == 'c') buffer.mode = 0;
-		else if (c == 'a') buffer.mode = 2;
+		if (c == 't') buffer.mode = 0;
+		else if (c == 'h') buffer.mode = 2;
 
-		else if (c == 'm') move_left(1);
-		else if (c == ';') move_right(1);
-		else if (c == 'l') move_up();
-		else if (c == 'k') move_down();
+		else if (c == 'n') move_left(1);
+		else if (c == 'i') move_right(1);
+		else if (c == 'p') move_up();
+		else if (c == 'u') move_down();
 
-		else if (c == 'i') move_word_left();
+		else if (c == 'e') move_word_left();
 		else if (c == 'o') move_word_right();
 
-		else if (c == 'f') move_begin();
-		else if (c == 'j') move_end();
+		else if (c == 'N') move_begin();
+		else if (c == 'I') move_end();
 
-		else if (c == 'F') move_top();
-		else if (c == 'J') move_bottom();
+		else if (c == 'P') move_top();
+		else if (c == 'U') move_bottom();
 
-		else if (c == 'K') prompt_jump_column();
-		else if (c == 'L') prompt_jump_line();
+		else if (c == 'E') prompt_jump_column();
+		else if (c == 'O') prompt_jump_line();
 
 		// else if (c == 'u') undo();
 		// else if (c == 'r') redo();
 		// else if (c == 'U') alternate_up();
 		// else if (c == 'R') alternate_down();
 
-		// else if (c == 'e') set_anchor();       
-		// else if (c == 's') copy_selection();   
-		// else if (c == 'd') delete_selection(); 
-		// else if (c == 'v') paste_selection();  
+		else if (c == 'a') { lal = lcl; lac = lcc; sprintf(message, "anchor %ld %ld", lal, lac); }
+
+		else if (c == 'C') {
+			nat length = 0;
+		 	char* selection = get_selection(&length);
+			sprintf(message, "(%ld):", length);
+			for (int i = 0; i < length; i++) 
+				sprintf(message + strlen(message), "%c", selection[i] != 10 ? selection[i] : '/');
+			free(selection);
+		}
+		else if (c == 'c') copy();
+		else if (c == 'r') cut(); 
+		else if (c == 'v') paste();
 
 		else if (c == 'g') move_to_previous_buffer();
-		else if (c == 'h') move_to_next_buffer();
-		else if (c == 'p') prompt_open();
-    		else if (c == 'n') create_empty_buffer();
+		else if (c == 'y') move_to_next_buffer();
+		else if (c == 'f') prompt_open();
+    		else if (c == 'l') create_empty_buffer();
 		else if (c == 'q') { if (buffer.saved or confirmed("discard unsaved changes")) close_active_buffer(); }
 
-		else if (c == 'w') save();
-		else if (c == 'W') rename_file();
+		else if (c == 's') save();
+		else if (c == 'S') rename_file();
 		
 		else if (c == 27) interpret_escape_code();
 
 	} else if (buffer.mode == 2) {
 
-		if (c == 'c') buffer.mode = 0;
-		else if (c == 'd') buffer.mode = 1;
+		if (c == 't') buffer.mode = 0;
+		else if (c == 'r') buffer.mode = 1;
 
 		else if (c == 's') show_status = not show_status; 
 		else if (c == 'n') show_line_numbers = not show_line_numbers;
 
-		else if (c == '_') memset(message, 0, sizeof message);
+		else if (c == 'd') memset(message, 0, sizeof message);
 		
 	} else buffer.mode = 1;
+
+	// end of the execute function.
+	
 
 	p = c;
 	if (buffer_count) goto loop;

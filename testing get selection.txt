@@ -1,0 +1,18 @@
+this is a text document that i am 
+writing right now in order to
+get better at typing overall. 
+i think its working well, 
+however, i just implemented this 
+get_selection function, 
+and i am going to test 
+it out right now! 
+hopefully 
+it works! 
+...
+
+this is hopefully my message.
+
+this is a text document that i am 
+writing right now in order to
+get better at typing overall.
+
