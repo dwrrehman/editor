@@ -42,6 +42,8 @@ struct line {
 
 struct buffer {
 	struct line* lines;
+	struct action* actions;
+
 	nat 
 		saved, mode, 
 		count, capacity, 
@@ -55,7 +57,9 @@ struct buffer {
 		scroll_speed, show_status, show_line_numbers, 
 		use_txt_extension_when_absent,
 		line_number_color, status_bar_color, alert_prompt_color, 
-		info_prompt_color, default_prompt_color
+		info_prompt_color, default_prompt_color,
+
+		action_count, head
 	;
 	char message[4096];
 	char filename[4096];
@@ -74,9 +78,34 @@ struct textbox {
 	char* data;
 	nat
 		count, capacity, prompt_length, 
-		c, 	vc, 	vs, 	vo
+		c, vc, vs, vo
 	;
 };
+
+struct action { 
+	nat* children; 	// count: count    (array of indexes into action list)
+	char* text; 	// count: length
+	nat parent; 	// (index into action list)
+	nat type;
+	nat choice;
+	nat count;
+	nat length;
+	struct logical_state pre;
+	struct logical_state post;
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // application global data:
 static nat 
@@ -84,8 +113,6 @@ static nat
 	window_columns = 0;
 static char* screen = NULL;
 static struct textbox tb = {0};
-
-// static const char* clipboard = NULL;   // delete me!
 
 // file buffer data:
 static struct buffer* buffers = NULL;
@@ -96,12 +123,14 @@ static nat
 // active buffer's registers:
 static struct buffer buffer = {0};
 static struct line* lines = NULL;
+static struct action* actions = NULL;
 static nat 
 	count = 0, capacity = 0, 
 	line_number_width = 0, tab_width = 0, wrap_width = 0, 
 	show_status = 0, show_line_numbers = 0,
 	lcl = 0, lcc = 0, vcl = 0, vcc = 0, vol = 0,          
-	voc = 0, vsl = 0, vsc = 0, vdc = 0, lal = 0, lac = 0; 
+	voc = 0, vsl = 0, vsc = 0, vdc = 0, lal = 0, lac = 0,
+	head, action_count;
 
 static char message[4096] = {0};
 static char filename[4096] = {0};
@@ -310,19 +339,52 @@ static inline void move_word_right() {
 }
 
 
+static inline void record_logical_state(struct logical_state* pcond_out) { // get current state, fill into given pre/post-condtion.
+	
+	struct logical_state* p = pcond_out; // respelling.
 
+	p->saved = buffer.saved;
+	p->line_number_width = line_number_width;
+
+	p->lcl = lcl;  p->lcc = lcc; 	
+	p->vcl = vcl;  p->vcc = vcc;
+  	p->vol = vol;  p->voc = voc;
+	p->vsl = vsl;  p->vsc = vsc; 
+	p->vdc = vdc;  p->lal = lal;
+	p->lac = lac;
+}
+
+static inline void require_logical_state(struct logical_state* pcond_in) {   // set current state, based on a pre/post-condition.
+	
+	struct logical_state* p = pcond_in; // respelling.
+
+	buffer.saved = p->saved;
+	line_number_width = p->line_number_width;
+
+	lcl = p->lcl;  lcc = p->lcc; 	
+	vcl = p->vcl;  vcc = p->vcc;
+  	vol = p->vol;  voc = p->voc;
+	vsl = p->vsl;  vsc = p->vsc; 
+	vdc = p->vdc;  lal = p->lal;
+	lac = p->lac;
+}
+
+
+static inline void create_action(struct action new) {
+	new.parent = head;
+	actions[head].children = realloc(actions[head].children, sizeof(nat) * (size_t) (actions[head].count + 1));
+	actions[head].choice = actions[head].count;
+	actions[head].children[actions[head].count++] = action_count;
+	
+	actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
+	head = action_count;
+	actions[action_count++] = new;
+}
 
 static inline void insert(char c, bool should_record) { 
-	//   0 means do nothing,       1 means record action. 
-	//      		       (but, append to previous action, 
-	//  			          if c is a unprintable unicode character.)
 
-	// struct action* new_action = NULL;
-
-	// if (should_record and not zero_width(c)) {
-	// 	new_action = calloc(1, sizeof(struct action));
-	// 	record_logical_state(&new_action->pre);
-	// }
+	struct action new_action = {0};
+	if (should_record and not zero_width(c)) record_logical_state(&new_action.pre);
 
 	struct line* this = lines + lcl;
 	if (c == 10) {
@@ -339,12 +401,7 @@ static inline void insert(char c, bool should_record) {
 	} else {
 		if (this->count + 1 > this->capacity) 
 			this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
-		
-		// // our lcc is becoming invalid, from redo. this might fix it.    :/  .....hmmm
-		// if (lcc > this->count) lcc = this->count;
-
 		memmove(this->data + lcc + 1, this->data + lcc, (size_t) (this->count - lcc));
-
 		this->data[lcc] = c;
 		this->count++;
 	}
@@ -354,40 +411,27 @@ static inline void insert(char c, bool should_record) {
 
 	buffer.saved = false;
 
-
-	// if (not should_record) return;
-
-	// if (zero_width(c)) {
-	// 	head->text = realloc(head->text, (size_t) head->length + 1);
-	// 	head->text[head->length++] = c;
-	// 	record_logical_state(&head->post);
-	// 	return;
-	// }
-
-	// record_logical_state(&new_action->post);
-
-	// new_action->type = insert_action;
-	// new_action->parent = head;
-
-	// new_action->text = malloc(1);
-	// new_action->text[0] = c;
-	// new_action->length = 1;
-    
-	// head->children = realloc(head->children, sizeof(struct action*) * (size_t) (head->count + 1));
-	// head->choice = head->count;
-	// head->children[head->count++] = new_action;
-	// head = new_action;
+	if (not should_record) return;
+	if (zero_width(c)) {
+		actions[head].text = realloc(actions[head].text, (size_t) actions[head].length + 1);
+		actions[head].text[actions[head].length++] = c;
+		record_logical_state(&actions[head].post);
+		return;
+	}
+	
+	record_logical_state(&new_action.post);
+	new_action.type = insert_action;
+	new_action.text = malloc(1);
+	new_action.text[0] = c;
+	new_action.length = 1;
+	create_action(new_action);
 }
 
 
 static inline void delete(bool should_record) {
 
-	// struct action* new_action = NULL;
-
-	// if (should_record) {
-	// 	new_action = calloc(1, sizeof(struct action));
-	// 	record_logical_state(&new_action->pre);
-	// }
+	struct action new_action = {0};
+	if (should_record) record_logical_state(&new_action.pre);
 
 	char* deleted_string = NULL;
 	nat deleted_length = 0;
@@ -429,25 +473,14 @@ static inline void delete(bool should_record) {
 
 	buffer.saved = false;
 	
-	// if (not should_record) return;
-	
-	// record_logical_state(&new_action->post);
+	if (not should_record) return;
 
-	// new_action->type = delete_action;
-	// new_action->parent = head;
-	// new_action->text = deleted_string;
-	// new_action->length = deleted_length;
-    
-	// head->children = realloc(head->children, sizeof(struct action*) * (size_t) (head->count + 1));
-	// head->choice = head->count;
-	// head->children[head->count++] = new_action;
-	// head = new_action;
-
-	
-	// temporary:
-	free(deleted_string);
+	record_logical_state(&new_action.post);
+	new_action.type = delete_action;
+	new_action.text = deleted_string;
+	new_action.length = deleted_length;
+	create_action(new_action);
 }
-
 
 static inline void adjust_window_size() {
 	struct winsize window = {0};
@@ -579,14 +612,12 @@ static inline void textbox_move_left() {
 	if (tb.vs) tb.vs--; else if (tb.vo) tb.vo--;
 }
 
-
 static inline void textbox_move_right() {
 	if (tb.c >= tb.count) return;
 	tb.vc++; 
 	if (tb.vs < window_columns - 1 - tb.prompt_length) tb.vs++; else tb.vo++;
 	do tb.c++; while (tb.c < tb.count and zero_width(tb.data[tb.c]));
 }
-
 
 static inline void textbox_insert(char c) {
 	if (tb.count + 1 > tb.capacity) 
@@ -596,7 +627,6 @@ static inline void textbox_insert(char c) {
 	tb.count++;
 	if (zero_width(c)) tb.c++; else textbox_move_right();
 }
-
 
 static inline void textbox_delete() {
 	if (not tb.c) return;
@@ -727,6 +757,10 @@ static inline void store_current_data_to_buffer() {
 	buffers[b].scroll_speed = buffer.scroll_speed;
 	buffers[b].use_txt_extension_when_absent = buffer.use_txt_extension_when_absent;
 
+	buffers[b].head = head;
+	buffers[b].action_count = action_count;
+	buffers[b].actions = actions;
+
 	memcpy(buffers[b].message, message, sizeof message);
 	memcpy(buffers[b].filename, filename, sizeof filename);
 }
@@ -762,6 +796,9 @@ static inline void load_buffer_data_into_registers() {
 	buffer.line_number_color = this.line_number_color;
 	buffer.status_bar_color = this.status_bar_color;
 
+	head = this.head;
+	action_count = this.action_count;
+	actions = this.actions;
 	
 	show_status = this.show_status;
 	this.scroll_speed = this.scroll_speed;
@@ -771,43 +808,6 @@ static inline void load_buffer_data_into_registers() {
 	memcpy(message, this.message, sizeof message);
 	memcpy(filename, this.filename, sizeof filename);
 }
-
-// ------------------ pre-condition getters and setters ---------------
-
-static inline void record_logical_state(struct logical_state* pcond_out) { // get current state, fill into given pre/post-condtion.
-	
-	struct logical_state* p = pcond_out; // respelling.
-
-	p->saved = buffer.saved;
-	p->line_number_width = line_number_width;
-	p->needs_display_update = buffer.needs_display_update;
-
-	p->lcl = lcl;  p->lcc = lcc; 	
-	p->vcl = vcl;  p->vcc = vcc;
-  	p->vol = vol;  p->voc = voc;
-	p->vsl = vsl;  p->vsc = vsc; 
-	p->vdc = vdc;  p->lal = lal;
-	p->lac = lac;
-}
-
-static inline void require_logical_state(struct logical_state* pcond_in) {   // set current state, based on a pre/post-condition.
-	
-	struct logical_state* p = pcond_in; // respelling.
-
-	buffer.saved = p->saved;
-	line_number_width = p->line_number_width;
-	buffer.needs_display_update = p->needs_display_update;
-
-	lcl = p->lcl;  lcc = p->lcc; 	
-	vcl = p->vcl;  vcc = p->vcc;
-  	vol = p->vol;  voc = p->voc;
-	vsl = p->vsl;  vsc = p->vsc; 
-	vdc = p->vdc;  lal = p->lal;
-	lac = p->lac;
-}
-
-
-
 
 
 
@@ -828,6 +828,10 @@ static inline void zero_registers() {
 	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
 	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
 
+	head = 0;
+	action_count = 0;
+	actions = NULL;
+
 	memset(message, 0, sizeof message);
 	memset(filename, 0, sizeof filename);
 
@@ -835,11 +839,8 @@ static inline void zero_registers() {
 	buffers = NULL;
 
 	buffer_count = 0;
-	active_index = 0;
-	
+	active_index = 0;	
 }
-
-
 
 static inline void initialize_registers() {
 	
@@ -872,11 +873,13 @@ static inline void initialize_registers() {
 	
 	buffer.use_txt_extension_when_absent = 1;
 
+	head = 0;
+	action_count = 1;
+	actions = calloc(1, sizeof(struct action));
+
 	memset(message, 0, sizeof message);
 	memset(filename, 0, sizeof filename);
 }
-
-
 
 static inline void create_empty_buffer() {
 	store_current_data_to_buffer();
@@ -888,13 +891,17 @@ static inline void create_empty_buffer() {
 	store_current_data_to_buffer();
 }
 
-	
 static inline void close_active_buffer() {
-
 	store_current_data_to_buffer();
 	for (nat line = 0; line < buffers[active_index].count; line++) 
 		free(buffers[active_index].lines[line].data);
 	free(buffers[active_index].lines);
+
+	for (nat a = 0; a < buffers[active_index].action_count; a++) {
+		free(buffers[active_index].actions[a].text);
+		free(buffers[active_index].actions[a].children);
+	}
+	free(buffers[active_index].actions);
 
 	buffer_count--;
 	memmove(buffers + active_index, buffers + active_index + 1, 
@@ -903,7 +910,6 @@ static inline void close_active_buffer() {
 	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count));
 	load_buffer_data_into_registers();
 }
-
 
 static inline void move_to_next_buffer() {
 	store_current_data_to_buffer(); 
@@ -916,10 +922,6 @@ static inline void move_to_previous_buffer() {
 	if (active_index < buffer_count - 1) active_index++; 
 	load_buffer_data_into_registers();
 }
-
-
-
-
 
 static inline void open_file(const char* given_filename) {
 
@@ -962,7 +964,6 @@ static inline void open_file(const char* given_filename) {
 
 	sprintf(message, "read %lub", length);
 }
-
 
 static inline void save() {
 
@@ -1014,7 +1015,6 @@ static inline void save() {
 static inline void rename_file() {
 
 	if (fuzz) return;
-
 
 	char new[4096] = {0};
 
@@ -1106,7 +1106,6 @@ static inline bool is_exit_sequence(char c, char p) {
 }
 
 
-
 static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last_line, nat last_column) {
 	
 	char* string = malloc(256);
@@ -1150,18 +1149,18 @@ static inline char* get_selection(nat* out) {
 
 static inline void paste() {
 
-	// struct action* new_action = calloc(1, sizeof(struct action));
-	// record_logical_state(&new_action->pre);
-
-	char* string = malloc(256);
-	nat s_capacity = 256;
-	nat length = 0;
-	
 	FILE* file = popen("pbpaste", "r");
 	if (not file) {
 		sprintf(message, "error: paste: popen(): %s", strerror(errno));
 		return;
 	}
+
+	struct action new = {0};
+	record_logical_state(&new.pre);
+
+	char* string = malloc(256);
+	nat s_capacity = 256;
+	nat length = 0;
 
 	nat c = 0;
 	while ((c = fgetc(file)) != EOF) {
@@ -1173,35 +1172,20 @@ static inline void paste() {
 	sprintf(message, "pasted %ldb", length);
 	pclose(file);
 
-	// record_logical_state(&new_action->post);
-
-	// new_action->type = paste_text_action;
-	// new_action->parent = head;
-	// new_action->text = string;
-	// new_action->length = length;
-
-	// head->children = realloc(head->children, sizeof(struct action*) * (size_t) (head->count + 1));
-	// head->choice = head->count;
-	// head->children[head->count++] = new_action;
-	// head = new_action;
-
-	free(string); // temp
+	record_logical_state(&new.post);
+	new.type = paste_text_action;
+	new.text = string;
+	new.length = length;
+	create_action(new);
 }
 
-
-
-static inline void cut() { 
-
-	// struct action* new_action = calloc(1, sizeof(struct action));
-	// record_logical_state(&new_action->pre);
-
-	nat deleted_length = 0;
-	char* deleted_string = get_selection(&deleted_length);
+static inline void cut_text() {
 
 	if (lal < lcl) goto anchor_first;
 	if (lcl < lal) goto cursor_first;
 	if (lac < lcc) goto anchor_first;
 	if (lcc < lac) goto cursor_first;
+	return;
 
 cursor_first:;
 	nat line = lcl, column = lcc;
@@ -1209,25 +1193,28 @@ cursor_first:;
 	lal = line; lac = column;
 anchor_first:
 	while (lal < lcl or lac < lcc) delete(0);
+}
 
+static inline void cut() { 
+
+	struct action new = {0};
+	record_logical_state(&new.pre);
+
+	nat deleted_length = 0;
+	char* deleted_string = get_selection(&deleted_length);
+	cut_text();
 	sprintf(message, "deleted %ldb", deleted_length);
 
-	// record_logical_state(&new_action->post);
-
-	// new_action->type = cut_text_action;
-	// new_action->parent = head;
-	// new_action->text = deleted_string;
-	// new_action->length = deleted_length;
-    
-	// head->children = realloc(head->children, sizeof(struct action*) * (size_t) (head->count + 1));
-	// head->choice = head->count;
-	// head->children[head->count++] = new_action;
-	// head = new_action;
-
-	free(deleted_string); // temp
+	record_logical_state(&new.post);
+	new.type = cut_text_action;
+	new.text = deleted_string;
+	new.length = deleted_length;
+	create_action(new);
 }
 
 static inline void copy() {
+
+	if (fuzz) return;
 
 	FILE* file = popen("pbcopy", "w");
 	if (not file) {
@@ -1243,17 +1230,82 @@ static inline void copy() {
 	pclose(file);
 }
 
+static inline void replay_action(struct action a) {
 
+	require_logical_state(&a.pre);
 
+	if (a.type == no_action) return;
+	else if (a.type == insert_action or a.type == paste_text_action) {
+		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	} else if (a.type == delete_action) delete(0); 
+	else if (a.type == cut_text_action) cut_text();
+
+	require_logical_state(&a.post); 
+}
+
+static inline void reverse_action(struct action a) {
+
+	require_logical_state(&a.post);
+
+	if (a.type == no_action) return;
+	else if (a.type == insert_action) delete(0);
+	else if (a.type == paste_text_action) { 
+		while (lcc > a.pre.lcc or lcl > a.pre.lcl) delete(0);
+	} else if (a.type == delete_action or a.type == cut_text_action) {
+		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	}
+	
+	require_logical_state(&a.pre);
+}
+
+static inline void undo() {
+	if (not head) return;
+
+	reverse_action(actions[head]);
+
+	if (actions[actions[head].parent].count == 1) {
+		sprintf(message, "undoing %ld", actions[head].type);
+
+	} else {
+		sprintf(message, "selected %ld / %ld, undoing %ld",
+        		actions[actions[head].parent].choice, 
+			actions[actions[head].parent].count, 
+			actions[head].type);
+	}
+	head = actions[head].parent;
+}
+
+static inline void redo() {
+	if (not actions[head].count) return;
+
+	head = actions[head].children[actions[head].choice];
+
+	if (actions[actions[head].parent].count == 1) {
+		sprintf(message, "redoing %ld", actions[head].type);
+
+	} else {
+		sprintf(message, "selected %ld / %ld, redoing %ld",
+        		actions[actions[head].parent].choice, 
+			actions[actions[head].parent].count, 
+			actions[head].type);
+	}
+	replay_action(actions[head]);
+}
+
+static inline void alternate_up() {
+	if (actions[head].choice + 1 < actions[head].count) actions[head].choice++;
+	sprintf(message, "switched to %ld / %ld", actions[head].choice, actions[head].count);
+}
+
+static inline void alternate_down() {
+	if (actions[head].choice) actions[head].choice--;
+	sprintf(message, "switched to %ld / %ld", actions[head].choice, actions[head].count);
+}
 
 
 // static inline void execute() {
 // 	abort();
 // }
-
-
-
-
 
 static inline void editor(const uint8_t* input, const size_t input_count) {
 
@@ -1281,14 +1333,11 @@ loop:
 
 	buffer.needs_display_update = 1;
 
-
-
-
 	// start of execute() function: 
 
 	if (buffer.mode == 0) {
 
-		if (is_exit_sequence(c, p)) { delete(1);/*undo();*/ buffer.mode = 1; }
+		if (is_exit_sequence(c, p)) { undo(); buffer.mode = 1; }
 		else if (c == '\r') insert('\n', 1);
 		else if (c == 127) delete(1);
 		else if (c == 27) interpret_escape_code();
@@ -1316,14 +1365,14 @@ loop:
 		else if (c == 'E') prompt_jump_column();
 		else if (c == 'O') prompt_jump_line();
 
-		// else if (c == 'u') undo();
-		// else if (c == 'r') redo();
-		// else if (c == 'U') alternate_up();
-		// else if (c == 'R') alternate_down();
+		else if (c == '1') sprintf(message, "h=%ld,ac=%ld", head, action_count); // debug
 
-		else if (c == 'a') { lal = lcl; lac = lcc; sprintf(message, "anchor %ld %ld", lal, lac); }
+		else if (c == 'z') undo();
+		else if (c == 'x') redo();
+		else if (c == 'Z') alternate_up();
+		else if (c == 'X') alternate_down();
 
-		else if (c == 'C') {
+		else if (c == '2') { // debug
 			nat length = 0;
 		 	char* selection = get_selection(&length);
 			sprintf(message, "(%ld):", length);
@@ -1331,6 +1380,8 @@ loop:
 				sprintf(message + strlen(message), "%c", selection[i] != 10 ? selection[i] : '/');
 			free(selection);
 		}
+
+		else if (c == 'a') { lal = lcl; lac = lcc; sprintf(message, "anchor %ld %ld", lal, lac); }
 		else if (c == 'c') copy();
 		else if (c == 'r') cut(); 
 		else if (c == 'v') paste();
@@ -1360,12 +1411,10 @@ loop:
 
 	// end of the execute function.
 	
-
 	p = c;
 	if (buffer_count) goto loop;
 
 done:
-
 	while (buffer_count) close_active_buffer();
 	zero_registers();
 
@@ -1380,8 +1429,6 @@ done:
 	}
 
 }
-
-
 
 #if fuzz
 

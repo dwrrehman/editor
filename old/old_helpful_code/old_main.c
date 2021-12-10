@@ -1484,13 +1484,13 @@ static inline void prompt_jump_column() {
 
 
 /////good/////
-// static inline void recalculate_position() {    // used when we modify wrap or tab width. i think... 
-// 	int save_lcl = lcl, save_lcc = lcc;
-// 	move_top();
-// 	adjust_window_size();
-// 	jump_line(save_lcl);
-// 	jump_column(save_lcc);
-// }
+static inline void recalculate_position() {
+	int save_lcl = lcl, save_lcc = lcc;
+	move_top();
+	adjust_window_size();
+	jump_line(save_lcl);
+	jump_column(save_lcc);
+}
 
 
 // ---------------- BAD -----------------
@@ -2069,8 +2069,6 @@ exit_editor:
 	// static int macro_capacity = 0;
 	// static int recording = 0;
 
-
-	
 
 	root = NULL;
 	head = NULL;
