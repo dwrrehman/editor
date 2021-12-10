@@ -23,7 +23,7 @@
 #include <errno.h>
 #include <stdbool.h>
 
-#define fuzz 0
+#define fuzz 1
 
 typedef ssize_t nat;
 
@@ -467,6 +467,7 @@ static inline void delete(bool should_record) {
 		deleted_string = malloc((size_t) deleted_length);
 		memcpy(deleted_string, this->data + lcc, (size_t) deleted_length);
 
+		
 		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
 		this->count -= save - lcc;
 	}
@@ -927,7 +928,6 @@ static inline void open_file(const char* given_filename) {
 
 	if (fuzz) return;
 
-
 	if (not strlen(given_filename)) return;
 	
 	FILE* file = fopen(given_filename, "r");
@@ -1119,7 +1119,8 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 		if (length + (lines[line].count - column) + 1 >= s_capacity) 
 			string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + (lines[line].count - column) + 1)));
 
-		memcpy(string + length, lines[line].data + column, (size_t)(lines[line].count - column));
+		if (lines[line].count - column) 
+			memcpy(string + length, lines[line].data + column, (size_t)(lines[line].count - column));
 
 		length += lines[line].count - column;
 		string[length++] = '\n';
@@ -1168,9 +1169,9 @@ static inline void paste() {
 		string[length++] = (char) c;
 		insert((char)c, 0);
 	}
+	pclose(file);
 
 	sprintf(message, "pasted %ldb", length);
-	pclose(file);
 
 	record_logical_state(&new.post);
 	new.type = paste_text_action;
@@ -1225,9 +1226,9 @@ static inline void copy() {
 	nat length = 0;
 	char* selection = get_selection(&length);
 	fwrite(selection, 1, (size_t)length, file);
+	pclose(file);
 	free(selection);
 	sprintf(message, "copied %ldb", length);
-	pclose(file);
 }
 
 static inline void replay_action(struct action a) {
@@ -1339,6 +1340,7 @@ loop:
 
 		if (is_exit_sequence(c, p)) { undo(); buffer.mode = 1; }
 		else if (c == '\r') insert('\n', 1);
+		else if (fuzz and c == 'n') insert('\n', 1);
 		else if (c == 127) delete(1);
 		else if (c == 27) interpret_escape_code();
 		else insert(c, 1);
@@ -1372,19 +1374,20 @@ loop:
 		else if (c == 'Z') alternate_up();
 		else if (c == 'X') alternate_down();
 
-		else if (c == '2') { // debug
-			nat length = 0;
-		 	char* selection = get_selection(&length);
-			sprintf(message, "(%ld):", length);
-			for (int i = 0; i < length; i++) 
-				sprintf(message + strlen(message), "%c", selection[i] != 10 ? selection[i] : '/');
-			free(selection);
-		}
+		// else if (c == '2') { // debug
+		// 	nat length = 0;
+		//  	char* selection = get_selection(&length);
+		// 	sprintf(message, "(%ld):", length);
+		// 	for (int i = 0; i < length; i++) 
+		// 		sprintf(message + strlen(message), "%c", selection[i] != 10 ? selection[i] : '/');
+		// 	free(selection);
+		// }
 
 		else if (c == 'a') { lal = lcl; lac = lcc; sprintf(message, "anchor %ld %ld", lal, lac); }
+
 		else if (c == 'c') copy();
-		else if (c == 'r') cut(); 
-		else if (c == 'v') paste();
+		else if (c == 'r') cut();  
+		else if (c == 'v') paste();    
 
 		else if (c == 'g') move_to_previous_buffer();
 		else if (c == 'y') move_to_next_buffer();
