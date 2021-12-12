@@ -24,6 +24,9 @@
 #include <stdbool.h>
 
 #define fuzz 1
+#define use_main 0
+#define crash_testing 0
+#define print_crash 0
 
 typedef ssize_t nat;
 
@@ -67,7 +70,7 @@ struct buffer {
 
 struct logical_state {
 	nat 
-		saved, line_number_width, needs_display_update, 
+		saved, line_number_width,
 
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 
 		vsl, vsc, 	vdc,    	lal,  lac
@@ -94,19 +97,6 @@ struct action {
 	struct logical_state post;
 };
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 // application global data:
 static nat 
 	window_rows = 0, 
@@ -117,7 +107,7 @@ static struct textbox tb = {0};
 // file buffer data:
 static struct buffer* buffers = NULL;
 static nat 
-	buffer_count = 0, 
+	buffer_count = 0,
 	active_index = 0;
 
 // active buffer's registers:
@@ -235,7 +225,6 @@ static inline void move_right(bool change_desired) {
 		if (lines[lcl].data[lcc] == '\t') {
 			do {
 				if (wrap_width <= tab_width) break; 
-				// erronerous width configurations. this prevents the subsequent infinite loop.
 				
 				if (vcc >= wrap_width) {
 					vcl++; vcc = 0; voc = 0; vsc = 0;
@@ -369,7 +358,6 @@ static inline void require_logical_state(struct logical_state* pcond_in) {   // 
 	lac = p->lac;
 }
 
-
 static inline void create_action(struct action new) {
 	new.parent = head;
 	actions[head].children = realloc(actions[head].children, sizeof(nat) * (size_t) (actions[head].count + 1));
@@ -383,8 +371,10 @@ static inline void create_action(struct action new) {
 
 static inline void insert(char c, bool should_record) { 
 
+	if (should_record and zero_width(c) and actions[head].type != insert_action) return; 
+
 	struct action new_action = {0};
-	if (should_record and not zero_width(c)) record_logical_state(&new_action.pre);
+	if (should_record and visual(c)) record_logical_state(&new_action.pre);
 
 	struct line* this = lines + lcl;
 	if (c == 10) {
@@ -427,7 +417,6 @@ static inline void insert(char c, bool should_record) {
 	create_action(new_action);
 }
 
-
 static inline void delete(bool should_record) {
 
 	struct action new_action = {0};
@@ -455,19 +444,22 @@ static inline void delete(bool should_record) {
 			sizeof(struct line) * (size_t)(count - (lcl + 2)));
 		count--;
 
-		deleted_length = 1;
-		deleted_string = malloc(1);
-		deleted_string[0] = '\n';
+		if (should_record) {
+			deleted_length = 1;
+			deleted_string = malloc(1);
+			deleted_string[0] = '\n';
+		}
 
 	} else {
 		nat save = lcc;
 		move_left(1);
-
-		deleted_length = save - lcc;
-		deleted_string = malloc((size_t) deleted_length);
-		memcpy(deleted_string, this->data + lcc, (size_t) deleted_length);
-
 		
+		if (should_record) {
+			deleted_length = save - lcc;
+			deleted_string = malloc((size_t) deleted_length);
+			memcpy(deleted_string, this->data + lcc, (size_t) deleted_length);
+		}
+
 		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
 		this->count -= save - lcc;
 	}
@@ -497,7 +489,6 @@ static inline void adjust_window_size() {
 
 	if (not wrap_width) wrap_width = window_columns - 1 - line_number_width;
 }
-
 
 static inline void display() {
 	
@@ -568,7 +559,6 @@ static inline void display() {
 	} while (sl < window_rows - show_status);
 
 	if (show_status) {
-		// length += sprintf(screen + length, "\033[7m\033[38;5;%ldm", buffer.status_bar_color);
 
 		char datetime[16] = {0};
 		get_datetime(datetime);
@@ -597,14 +587,6 @@ static inline void display() {
 		write(1, screen, (size_t) length);
 }
 
-/////good/////
-// static inline void recalculate_position() {    // used when we modify wrap or tab width. i think...
-// 	int save_lcl = lcl, save_lcc = lcc;
-// 	move_top();
-// 	adjust_window_size();
-// 	jump_line(save_lcl);
-// 	jump_column(save_lcc);
-// }
 
 static inline void textbox_move_left() {
 	if (not tb.c) return;
@@ -637,7 +619,6 @@ static inline void textbox_delete() {
 	tb.count -= save - tb.c;
 }
 
-
 static inline void textbox_display(const char* prompt, nat prompt_color) {
 	nat length = sprintf(screen, "\033[?25l\033[%ld;1H\033[38;5;%ldm%s\033[m", window_rows, prompt_color, prompt);
 	nat col = 0, vc = 0, sc = tb.prompt_length;
@@ -660,12 +641,10 @@ static inline void textbox_display(const char* prompt, nat prompt_color) {
 		write(1, screen, (size_t) length);
 }
 
-
 static inline void print_above_textbox(char* write_message, nat color) {
 	nat length = sprintf(screen, "\033[%ld;1H\033[K\033[38;5;%ldm%s\033[m", window_rows - 1, color, write_message);
 	if (not fuzz) write(1, screen, (size_t) length);
 }
-
 
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
 
@@ -699,7 +678,6 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 	tb = (struct textbox){0};
 }
 
-
 static inline bool confirmed(const char* question) {
 	
 	if (fuzz) return true;
@@ -717,11 +695,6 @@ static inline bool confirmed(const char* question) {
 		else print_above_textbox("please type \"yes\" or \"no\".", buffer.default_prompt_color);
 	}
 }
-
-
-
-
-
 
 static inline void store_current_data_to_buffer() {
 	if (not buffer_count) return;
@@ -766,7 +739,6 @@ static inline void store_current_data_to_buffer() {
 	memcpy(buffers[b].filename, filename, sizeof filename);
 }
 
-
 static inline void load_buffer_data_into_registers() {
 	if (not buffer_count) return;
 
@@ -810,8 +782,6 @@ static inline void load_buffer_data_into_registers() {
 	memcpy(filename, this.filename, sizeof filename);
 }
 
-
-
 static inline void zero_registers() {
 
 	wrap_width = 0;
@@ -823,7 +793,6 @@ static inline void zero_registers() {
 
 	capacity = 0;
 	count = 0;
-
 	lines = NULL;
 
 	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
@@ -1011,7 +980,6 @@ static inline void save() {
 	buffer.saved = true;
 }
 
-
 static inline void rename_file() {
 
 	if (fuzz) return;
@@ -1105,7 +1073,6 @@ static inline bool is_exit_sequence(char c, char p) {
 	return c == 'w' and p == 'r' or c == 'f' and p == 'u';
 }
 
-
 static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last_line, nat last_column) {
 	
 	char* string = malloc(256);
@@ -1181,13 +1148,11 @@ static inline void paste() {
 }
 
 static inline void cut_text() {
-
 	if (lal < lcl) goto anchor_first;
 	if (lcl < lal) goto cursor_first;
 	if (lac < lcc) goto anchor_first;
 	if (lcc < lac) goto cursor_first;
 	return;
-
 cursor_first:;
 	nat line = lcl, column = lcc;
 	while (lcl < lal or lcc < lac) move_right(0);
@@ -1308,7 +1273,7 @@ static inline void alternate_down() {
 // 	abort();
 // }
 
-static inline void editor(const uint8_t* input, const size_t input_count) {
+static inline void editor(const uint8_t* input, size_t input_count) {
 
 	struct termios terminal = {0};
 
@@ -1329,7 +1294,7 @@ loop:
 
 	if (fuzz) {
 		if (input_index >= input_count) goto done;
-		c = (char) input[input_index++];
+		c = (char) input[input_index++];	
 	} else read(0, &c, 1);
 
 	buffer.needs_display_update = 1;
@@ -1340,6 +1305,7 @@ loop:
 
 		if (is_exit_sequence(c, p)) { undo(); buffer.mode = 1; }
 		else if (c == '\r') insert('\n', 1);
+		else if (fuzz and c == 'd') delete(1);
 		else if (fuzz and c == 'n') insert('\n', 1);
 		else if (c == 127) delete(1);
 		else if (c == 27) interpret_escape_code();
@@ -1374,15 +1340,6 @@ loop:
 		else if (c == 'Z') alternate_up();
 		else if (c == 'X') alternate_down();
 
-		// else if (c == '2') { // debug
-		// 	nat length = 0;
-		//  	char* selection = get_selection(&length);
-		// 	sprintf(message, "(%ld):", length);
-		// 	for (int i = 0; i < length; i++) 
-		// 		sprintf(message + strlen(message), "%c", selection[i] != 10 ? selection[i] : '/');
-		// 	free(selection);
-		// }
-
 		else if (c == 'a') { lal = lcl; lac = lcc; sprintf(message, "anchor %ld %ld", lal, lac); }
 
 		else if (c == 'c') copy();
@@ -1411,7 +1368,6 @@ loop:
 		else if (c == 'd') memset(message, 0, sizeof message);
 		
 	} else buffer.mode = 1;
-
 	// end of the execute function.
 	
 	p = c;
@@ -1433,7 +1389,7 @@ done:
 
 }
 
-#if fuzz
+#if fuzz && !use_main
 
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
@@ -1457,46 +1413,44 @@ int main(const int argc, const char** argv) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /*
+
+
 	todo: 
 --------------------------
 
 
 
+------------------- bugs ------------------------
 
 
 
-	synopsis:
+	- memory leak because of undo().
 
-		1. make the editor VM.
-
-		2. addins to make it TC.
-
-		3. add copy/paste feature.
-
-		4. add undo-tree feature.
+	
 
 
-			done! ready for prime time.
-
-					
-
-
-
-
-
-
-
-
-
-
-
-
+	- a possible crashing bug of undo()/move_left(), although i'm not sure yet...
 
 	
 
 
 
+			
 	- make the machine code virtual machine interpreter:
 
 
@@ -1518,28 +1472,17 @@ int main(const int argc, const char** argv) {
 
 
 
-
-
-	- redo the undo-tree code so that it uses a flat datastructure- not a pointer based tree. 
-
-
-	- make a simple and robust copy/paste system, that can support multiple clipboards. 
+--------------------------------------------------------
+			DONE:
+--------------------------------------------------------
 
 
 
 
 
 
-
-
-
-
-
-
-
-
-	done:
--------------------------
+	features:
+----------------------------
 
 
 
@@ -1555,13 +1498,106 @@ int main(const int argc, const char** argv) {
 
 	x	- make the code use "nat"'s instead of int's.    using the typedef:   // typedef nat ssize_t; 
 
+	x	- redo the undo-tree code so that it uses a flat array datastructure- not a pointer based tree. 
+
+	x	- make a simple and robust copy/paste system, that can support system clipboard.
 
 
+	bugs:
+----------------------------
 
-
-
-
-
+	x	- negative size param, delete(), from cut(). 
 
 */
+
+
+
+		// else if (c == '2') { // debug
+		// 	nat length = 0;
+		//  	char* selection = get_selection(&length);
+		// 	sprintf(message, "(%ld):", length);
+		// 	for (int i = 0; i < length; i++) 
+		// 		sprintf(message + strlen(message), "%c", selection[i] != 10 ? selection[i] : '/');
+		// 	free(selection);
+		// }
+
+
+
+
+// ==94077==ERROR: AddressSanitizer: negative-size-param: (size=-1)
+//     #0 0x104b35d54 in __asan_memmove+0x74 (libclang_rt.asan_osx_dynamic.dylib:arm64+0x3dd54)
+//     #1 0x1045f9f1c in insert main.c:405
+//     #2 0x104614f00 in paste main.c:1165
+//     #3 0x1045f2988 in editor main.c:1389
+
+
+
+
+
+
+
+// bugs:
+// ------------------------------
+
+
+
+	// get sel     cb
+
+	// inf loop    somewhere...  
+
+	// 
+
+
+
+
+
+
+
+
+
+// #if print_crash
+// {
+// 	FILE* file = fopen("crash-b4a1e470ec5f2300ce90da9351220a7afb00d490", "r");
+// 	fseek(file, 0, SEEK_END);        
+//         size_t crash_length = (size_t) ftell(file);
+// 	char* crash = malloc(sizeof(char) * crash_length);
+
+//         fseek(file, 0, SEEK_SET);
+//         fread(crash, sizeof(char), crash_length, file);
+// 	fclose(file);
+
+// 	input = (const uint8_t*) crash;
+// 	input_count = crash_length;
+
+// 	printf("\n\n\nstr = \"");
+// 	for (size_t i = 0; i < input_count; i++) {
+// 		// if (input[i] >= 33 and input[i] < 127)
+// 		// 	printf("%c", input[i]);
+// 		// else 
+// 		printf("\\x%02hhx", input[i]);
+// 	}
+// 	printf("\";\n\n\n");
+
+// 	exit(1);
+// }
+// #endif
+
+// #if crash_testing
+	
+// 	const char* str = "\x01\x77\xff\xff\xff\xff\xff\xff\xff\xff\xff\x3b\x3b\x77\x0a\x63\x6f\x9c\x9c\x9c\x9c\x6d\x2e\x61\x72\x77\x77\x72\x7a\x0a\x72\x7a";
+
+// 	input = (const uint8_t*) str;
+// 	input_count = strlen(str);
+// #endif
+
+
+
+/////good/////
+// static inline void recalculate_position() {    // used when we modify wrap or tab width. i think...
+// 	int save_lcl = lcl, save_lcc = lcc;
+// 	move_top();
+// 	adjust_window_size();
+// 	jump_line(save_lcl);
+// 	jump_column(save_lcc);
+// }
 

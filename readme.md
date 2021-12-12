@@ -3,8 +3,7 @@
 
 This is a simple modal text editor intended for my personal use, based on minimalism, ergonomics and simplicity. 
 
-It's features and behavior are loosely based on that of TextEdit, as well as Vim and Kakoune.
-
+It's features and behavior are loosely based on that of TextEdit, ed, and vi/vim.
 
 ### Features:
 
@@ -20,7 +19,7 @@ It's features and behavior are loosely based on that of TextEdit, as well as Vim
 
  - Uses an undo tree system
 
- - Line numbers
+ - Togglable line numbers and status bar
 
  - Copy/paste 
 
@@ -31,8 +30,9 @@ It's features and behavior are loosely based on that of TextEdit, as well as Vim
 
  - VT100 terminal based
 
- - source code is currently only 2,000 lines of code. 
+ - source code is currently only 1400 lines of code. 
 
  - No syntax highlighting, ever
 
  - Built-in file editor coming soon!
+
