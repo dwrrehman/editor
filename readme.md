@@ -36,3 +36,4 @@ It's features and behavior are loosely based on that of TextEdit, ed, and vi/vim
 
  - Built-in file editor coming soon!
 
+ - Minimalist Turing-complete machine-code ISA for interface.
