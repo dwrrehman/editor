@@ -24,8 +24,8 @@
 #include <errno.h>
 #include <stdbool.h>
 
-#define fuzz 1
-#define use_main 0
+#define fuzz 0
+// #define use_main 1
 
 typedef ssize_t nat;
 
@@ -1397,7 +1397,7 @@ done:
 	}
 }
 
-#if fuzz && !use_main
+#if fuzz // && !use_main
 
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
