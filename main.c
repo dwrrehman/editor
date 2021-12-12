@@ -1191,7 +1191,7 @@ static inline void undo() {
 	reverse_action(actions[head]);
 	sprintf(message, "undoing %ld ", actions[head].type);
 	if (actions[head].count != 1) 
-		sprintf(message + strlen(message), "(%ld / %ld)", actions[head].choice, actions[head].count);
+		sprintf(message + strlen(message), "%ld %ld", actions[head].choice, actions[head].count);
 	head = actions[head].parent;
 }
 
@@ -1200,18 +1200,18 @@ static inline void redo() {
 	head = actions[head].children[actions[head].choice];
 	sprintf(message, "redoing %ld ", actions[head].type);
 	if (actions[head].count != 1) 
-		sprintf(message + strlen(message), "(%ld / %ld)", actions[head].choice, actions[head].count);
+		sprintf(message + strlen(message), "%ld %ld", actions[head].choice, actions[head].count);
 	replay_action(actions[head]);
 }
 
 static inline void alternate_up() {
 	if (actions[head].choice + 1 < actions[head].count) actions[head].choice++;
-	sprintf(message, "switched to %ld / %ld", actions[head].choice, actions[head].count);
+	sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
 }
 
 static inline void alternate_down() {
 	if (actions[head].choice) actions[head].choice--;
-	sprintf(message, "switched to %ld / %ld", actions[head].choice, actions[head].count);
+	sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
 }
 
 static inline void execute(char c, char p) {
