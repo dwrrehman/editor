@@ -25,7 +25,6 @@
 #include <stdbool.h>
 
 #define fuzz 0
-// #define use_main 1
 
 typedef ssize_t nat;
 
@@ -211,7 +210,6 @@ visual_just_line_up: vcl--;
 	if (change_desired) vdc = vcc;
 }
 
-
 static inline void move_right(bool change_desired) {
 	if (lcl >= count) return;
 	if (lcc >= lines[lcl].count) {
@@ -328,7 +326,6 @@ static inline void move_word_right() {
 
 
 static inline void record_logical_state(struct logical_state* pcond_out) { // get current state, fill into given pre/post-condtion.
-	
 	struct logical_state* p = pcond_out; // respelling.
 
 	p->saved = buffer.saved;
@@ -343,7 +340,6 @@ static inline void record_logical_state(struct logical_state* pcond_out) { // ge
 }
 
 static inline void require_logical_state(struct logical_state* pcond_in) {   // set current state, based on a pre/post-condition.
-	
 	struct logical_state* p = pcond_in; // respelling.
 
 	buffer.saved = p->saved;
@@ -423,7 +419,6 @@ static inline void delete(bool should_record) {
 
 	char* deleted_string = NULL;
 	nat deleted_length = 0;
-
 	struct line* this = lines + lcl;
 
 	if (not lcc) {
@@ -490,7 +485,6 @@ static inline void adjust_window_size() {
 }
 
 static inline void display() {
-	
 	nat length = 9; 
 	memcpy(screen, "\033[?25l\033[H", 9);
 
@@ -646,7 +640,6 @@ static inline void print_above_textbox(char* write_message, nat color) {
 }
 
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
-
 	if (fuzz) return;     ///TODO: make this code tested by the fuzzer by supplying the input to its read calls. somehow.
 
 	tb.prompt_length = (int) strlen(prompt_message);
@@ -678,12 +671,10 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 }
 
 static inline bool confirmed(const char* question) {
-	
 	if (fuzz) return true;
 
 	char prompt_message[4096] = {0};
 	sprintf(prompt_message, "%s? (yes/no): ", question);
-
 	while (1) {
 		char response[10] = {0};
 		prompt(prompt_message, buffer.alert_prompt_color, response, sizeof response);
@@ -806,7 +797,6 @@ static inline void zero_registers() {
 
 	buffer = (struct buffer){0};
 	buffers = NULL;
-
 	buffer_count = 0;
 	active_index = 0;	
 }
@@ -816,12 +806,12 @@ static inline void initialize_registers() {
 	buffer.saved = true;
 	buffer.mode = 0;
 
-	wrap_width = 0;
-	tab_width = 8;
+	wrap_width = 0; // init using file
+	tab_width = 8; // init using file
 	line_number_width = 0;
 
-	show_status = 1;
-	show_line_numbers = 1;
+	show_status = 0; // init using file
+	show_line_numbers = 0; // init using file
 	buffer.needs_display_update = 1;
 
 	capacity = 1;
@@ -832,15 +822,14 @@ static inline void initialize_registers() {
 	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
 
 	//TODO: make these initial default_values read from a config file or something.. 
-	buffer.alert_prompt_color = 196;
-	buffer.info_prompt_color = 45;
-	buffer.default_prompt_color = 214;
-	buffer.line_number_color = 236;
-	buffer.status_bar_color = 245;
+	buffer.alert_prompt_color = 196; // init using file
+	buffer.info_prompt_color = 45; // init using file
+	buffer.default_prompt_color = 214; // init using file
+	buffer.line_number_color = 236; // init using file
+	buffer.status_bar_color = 245; // init using file
 	
-	buffer.scroll_speed = 4;
-	
-	buffer.use_txt_extension_when_absent = 1;
+	buffer.scroll_speed = 4; // init using file
+	buffer.use_txt_extension_when_absent = 1; // init using file
 
 	head = 0;
 	action_count = 1;
@@ -893,9 +882,7 @@ static inline void move_to_previous_buffer() {
 }
 
 static inline void open_file(const char* given_filename) {
-
 	if (fuzz) return;
-
 	if (not strlen(given_filename)) return;
 	
 	FILE* file = fopen(given_filename, "r");
@@ -908,10 +895,8 @@ static inline void open_file(const char* given_filename) {
 	}
 
 	fseek(file, 0, SEEK_END);        
-
         size_t length = (size_t) ftell(file);
 	char* text = malloc(sizeof(char) * length);
-
         fseek(file, 0, SEEK_SET);
         fread(text, sizeof(char), length, file);
 
@@ -922,11 +907,9 @@ static inline void open_file(const char* given_filename) {
 
 	free(text); 
 	fclose(file);
-
 	buffer.saved = true; 
 	buffer.mode = 1; 
 	move_top();
-
 	strcpy(filename, given_filename);
 	store_current_data_to_buffer();
 
@@ -934,17 +917,13 @@ static inline void open_file(const char* given_filename) {
 }
 
 static inline void save() {
-
 	if (fuzz) return;
 
 	if (not strlen(filename)) {
 	prompt_filename:
 		prompt("save as: ", buffer.default_prompt_color, filename, sizeof filename);
-
 		if (not strlen(filename)) { sprintf(message, "aborted save"); return; }
-
 		if (not strrchr(filename, '.') and buffer.use_txt_extension_when_absent) strcat(filename, ".txt");
-
 		if (file_exists(filename) and not confirmed("file already exists, overwrite")) {
 			strcpy(filename, ""); goto prompt_filename;
 		}
@@ -975,16 +954,13 @@ static inline void save() {
 
 	fclose(file);
 	sprintf(message, "wrote %lldb;%ldl", bytes, count);
-
 	buffer.saved = true;
 }
 
 static inline void rename_file() {
-
 	if (fuzz) return;
 
 	char new[4096] = {0};
-
 	prompt_filename:
 	prompt("rename to: ", buffer.default_prompt_color, new, sizeof new);
 	if (not strlen(new)) { sprintf(message, "aborted rename"); return; }
@@ -1002,14 +978,11 @@ static inline void rename_file() {
 
 
 static inline void interpret_escape_code() {
-
 	if (fuzz) return;
 
 	static nat scroll_counter = 0;
 	char c = 0;
-
-	read(0, &c, 1);      // make it so pressing escape once is sufficient. 
-
+	read(0, &c, 1);      // TODO: make it so pressing escape once is sufficient. add mouse.
 	if (c == 27) buffer.mode = 1;
 	else if (c == '[') {
 		read(0, &c, 1);
@@ -1077,7 +1050,6 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 	char* string = malloc(256);
 	nat length = 0;
 	nat s_capacity = 256;
-
 	nat line = first_line, column = first_column;
 
 	while (line < last_line) {
@@ -1100,7 +1072,6 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 
 	memcpy(string + length, lines[line].data + column, (size_t)(last_column - column));
 	length += last_column - column;
-
 	*out_length = length;
 	return string;
 }
@@ -1122,12 +1093,8 @@ empty:	*out = 0;
 }
 
 static inline void paste() {
-
 	FILE* file = popen("pbpaste", "r");
-	if (not file) {
-		sprintf(message, "error: paste: popen(): %s", strerror(errno));
-		return;
-	}
+	if (not file) { sprintf(message, "error: paste: popen(): %s", strerror(errno)); return; }
 
 	struct action new = {0};
 	record_logical_state(&new.pre);
@@ -1143,7 +1110,6 @@ static inline void paste() {
 		insert((char)c, 0);
 	}
 	pclose(file);
-
 	sprintf(message, "pasted %ldb", length);
 
 	record_logical_state(&new.post);
@@ -1168,19 +1134,14 @@ anchor_first:
 }
 
 static inline void cut() { 
-	if (anchor_is_invalid()) {
-		sprintf(message, "?");
-		return;
-	}
+	if (anchor_is_invalid()) { sprintf(message, "?"); return; }
 
 	struct action new = {0};
 	record_logical_state(&new.pre);
-
 	nat deleted_length = 0;
 	char* deleted_string = get_selection(&deleted_length);
 	cut_text();
 	sprintf(message, "deleted %ldb", deleted_length);
-
 	record_logical_state(&new.post);
 	new.type = cut_text_action;
 	new.text = deleted_string;
@@ -1189,19 +1150,11 @@ static inline void cut() {
 }
 
 static inline void copy() {
-
 	if (fuzz) return;
-
-	if (anchor_is_invalid()) {
-		sprintf(message, "?");
-		return;
-	}
+	if (anchor_is_invalid()) { sprintf(message, "?"); return; }
 
 	FILE* file = popen("pbcopy", "w");
-	if (not file) {
-		sprintf(message, "error: copy: popen(): %s", strerror(errno));
-		return;
-	}
+	if (not file) { sprintf(message, "error: copy: popen(): %s", strerror(errno)); return; }
 
 	nat length = 0;
 	char* selection = get_selection(&length);
@@ -1212,22 +1165,17 @@ static inline void copy() {
 }
 
 static inline void replay_action(struct action a) {
-
 	require_logical_state(&a.pre);
-
 	if (a.type == no_action) return;
 	else if (a.type == insert_action or a.type == paste_text_action) {
 		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
 	} else if (a.type == delete_action) delete(0); 
 	else if (a.type == cut_text_action) cut_text();
-
 	require_logical_state(&a.post); 
 }
 
 static inline void reverse_action(struct action a) {
-
 	require_logical_state(&a.post);
-
 	if (a.type == no_action) return;
 	else if (a.type == insert_action) delete(0);
 	else if (a.type == paste_text_action) { 
@@ -1235,41 +1183,24 @@ static inline void reverse_action(struct action a) {
 	} else if (a.type == delete_action or a.type == cut_text_action) {
 		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
 	}
-	
 	require_logical_state(&a.pre);
 }
 
 static inline void undo() {
 	if (not head) return;
-
 	reverse_action(actions[head]);
-
-	if (actions[actions[head].parent].count == 1) {
-		sprintf(message, "undoing %ld", actions[head].type);
-
-	} else {
-		sprintf(message, "selected %ld / %ld, undoing %ld",
-        		actions[actions[head].parent].choice, 
-			actions[actions[head].parent].count, 
-			actions[head].type);
-	}
+	sprintf(message, "undoing %ld ", actions[head].type);
+	if (actions[head].count != 1) 
+		sprintf(message + strlen(message), "(%ld / %ld)", actions[head].choice, actions[head].count);
 	head = actions[head].parent;
 }
 
 static inline void redo() {
 	if (not actions[head].count) return;
-
 	head = actions[head].children[actions[head].choice];
-
-	if (actions[actions[head].parent].count == 1) {
-		sprintf(message, "redoing %ld", actions[head].type);
-
-	} else {
-		sprintf(message, "selected %ld / %ld, redoing %ld",
-        		actions[actions[head].parent].choice, 
-			actions[actions[head].parent].count, 
-			actions[head].type);
-	}
+	sprintf(message, "redoing %ld ", actions[head].type);
+	if (actions[head].count != 1) 
+		sprintf(message + strlen(message), "(%ld / %ld)", actions[head].choice, actions[head].count);
 	replay_action(actions[head]);
 }
 
@@ -1283,37 +1214,7 @@ static inline void alternate_down() {
 	sprintf(message, "switched to %ld / %ld", actions[head].choice, actions[head].count);
 }
 
-// static inline void execute() {
-// 	abort();
-// }
-
-static inline void editor(const uint8_t* input, size_t input_count) {
-
-	struct termios terminal = {0};
-
-	if (not fuzz) {
-		terminal = configure_terminal();
-		write(1, "\033[?1049h\033[?1000h", 16);
-		buffer.needs_display_update = 1;
-	}
-
-	char p = 0, c = 0;
-	size_t input_index = 0; 
-loop:
-	if (buffer.needs_display_update) {
-		adjust_window_size();
-		display();
-	}
-
-	if (fuzz) {
-		if (input_index >= input_count) goto done;
-		c = (char) input[input_index++];	
-	} else read(0, &c, 1);
-
-	buffer.needs_display_update = 1;
-
-	// start of execute() function: 
-
+static inline void execute(char c, char p) {
 	if (buffer.mode == 0) {
 
 		if (is_exit_sequence(c, p)) { undo(); buffer.mode = 1; }
@@ -1343,7 +1244,7 @@ loop:
 
 		else if (c == 'E') prompt_jump_column();
 		else if (c == 'O') prompt_jump_line();
-		// else if (c == '1') sprintf(message, "h=%ld,ac=%ld", head, action_count); // debug
+
 		else if (c == 'z') undo();
 		else if (c == 'x') redo();
 		else if (c == 'Z') alternate_up();
@@ -1377,15 +1278,34 @@ loop:
 		else if (c == 'd') memset(message, 0, sizeof message);
 		
 	} else buffer.mode = 1;
-	// end of the execute function.
-	
+}
+
+static inline void editor(const uint8_t* input, size_t input_count) {
+
+	struct termios terminal;
+	if (not fuzz) {
+		terminal = configure_terminal();
+		write(1, "\033[?1049h\033[?1000h", 16);
+		buffer.needs_display_update = 1;
+	}
+	char p = 0, c = 0;
+	size_t input_index = 0; 
+loop:
+	if (buffer.needs_display_update) {
+		adjust_window_size();
+		display();
+	}
+	if (fuzz) {
+		if (input_index >= input_count) goto done;
+		c = (char) input[input_index++];	
+	} else read(0, &c, 1);
+	buffer.needs_display_update = 1;
+	execute(c, p);
 	p = c;
 	if (buffer_count) goto loop;
-
 done:
 	while (buffer_count) close_active_buffer();
 	zero_registers();
-
 	free(screen);
 	screen = NULL;
 	window_rows = 0;
@@ -1409,7 +1329,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 #else
 
 int main(const int argc, const char** argv) {
-	if (argc == 1) create_empty_buffer();
+	if (argc <= 1) create_empty_buffer();
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
 	editor(NULL, 0);
 }
@@ -1443,9 +1363,30 @@ int main(const int argc, const char** argv) {
 
 
 
-------------------- bugs ------------------------
-
 	
+
+b	- vdc not correct, with unicode.  
+
+f	- file manager and tab completion
+
+f	- config file for init values.
+
+f	- tc isa!!!
+	
+	- 
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1484,14 +1425,11 @@ int main(const int argc, const char** argv) {
 ----------------------------
 
 
-
 	x	- make the line numbers and column numbers 0-based everywhere. just do it. 
 
 	x	- make scroll counter a local static variable in the internpret escape code function.
 
 	x	- write the delete_buffers and delete_lines functions. 
-
-	x 	- this editor has a HUGE memory leak. we need to fix this.
 
 	x	- we need to put most of the state for the registers that's not essential in a buffer data structure. 
 
@@ -1505,6 +1443,8 @@ int main(const int argc, const char** argv) {
 	bugs:
 ----------------------------
 
+	x 	- this editor has a HUGE memory leak. we need to fix this.
+
 	x	- negative size param, delete(), from cut(). 
 
 	x	- memory leak because of x:undo(); 
@@ -1512,54 +1452,7 @@ int main(const int argc, const char** argv) {
 	x	- a possible crashing bug of undo()/move_left(), although i'm not sure yet...
 
 
-
-
-
-
 */
-
-
-
-		// else if (c == '2') { // debug
-		// 	nat length = 0;
-		//  	char* selection = get_selection(&length);
-		// 	sprintf(message, "(%ld):", length);
-		// 	for (int i = 0; i < length; i++) 
-		// 		sprintf(message + strlen(message), "%c", selection[i] != 10 ? selection[i] : '/');
-		// 	free(selection);
-		// }
-
-
-
-
-// ==94077==ERROR: AddressSanitizer: negative-size-param: (size=-1)
-//     #0 0x104b35d54 in __asan_memmove+0x74 (libclang_rt.asan_osx_dynamic.dylib:arm64+0x3dd54)
-//     #1 0x1045f9f1c in insert main.c:405
-//     #2 0x104614f00 in paste main.c:1165
-//     #3 0x1045f2988 in editor main.c:1389
-
-
-
-
-
-
-
-// bugs:
-// ------------------------------
-
-
-
-	// get sel     cb
-
-	// inf loop    somewhere...  
-
-	// 
-
-
-
-
-
-
 
 
 
@@ -1608,15 +1501,6 @@ int main(const int argc, const char** argv) {
 // 	jump_line(save_lcl);
 // 	jump_column(save_lcc);
 // }
-
-
-
-
-
-
-
-
-
 
 
 
