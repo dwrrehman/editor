@@ -500,7 +500,7 @@ static inline void display() {
 		if (line >= count) goto next_visual_line;
 
 		if (show_line_numbers and vl >= vol and vl < vol + window_rows - show_status) {
-			if (not col) length += sprintf(screen + length, "\033[38;5;%ldm%*ld\033[0m  ", buffer.line_number_color, line_number_digits, line + 1);
+			if (not col) length += sprintf(screen + length, "\033[38;5;%ldm%*ld\033[0m  ", buffer.line_number_color, line_number_digits, line);
 			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
 		}
             
@@ -1346,23 +1346,11 @@ int main(const int argc, const char** argv) {
 
 
 
-
-
-
-
-
-
-
-
-
 /*
 
 
 	todo: 
 --------------------------
-
-
-
 	
 
 b	- vdc not correct, with unicode.  
@@ -1373,18 +1361,6 @@ f	- config file for init values.
 
 f	- tc isa!!!
 	
-	- 
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1409,16 +1385,9 @@ f	- tc isa!!!
 
 
 	
-
-
-
 --------------------------------------------------------
 			DONE:
 --------------------------------------------------------
-
-
-
-
 
 
 	features:
@@ -1456,44 +1425,6 @@ f	- tc isa!!!
 
 
 
-// #if print_crash
-// {
-// 	FILE* file = fopen("crash-b4a1e470ec5f2300ce90da9351220a7afb00d490", "r");
-// 	fseek(file, 0, SEEK_END);        
-//         size_t crash_length = (size_t) ftell(file);
-// 	char* crash = malloc(sizeof(char) * crash_length);
-
-//         fseek(file, 0, SEEK_SET);
-//         fread(crash, sizeof(char), crash_length, file);
-// 	fclose(file);
-
-// 	input = (const uint8_t*) crash;
-// 	input_count = crash_length;
-
-// 	printf("\n\n\nstr = \"");
-// 	for (size_t i = 0; i < input_count; i++) {
-// 		// if (input[i] >= 33 and input[i] < 127)
-// 		// 	printf("%c", input[i]);
-// 		// else 
-// 		printf("\\x%02hhx", input[i]);
-// 	}
-// 	printf("\";\n\n\n");
-
-// 	exit(1);
-// }
-// #endif
-
-// #if crash_testing
-	
-// 	const char* str = "\x01\x77\xff\xff\xff\xff\xff\xff\xff\xff\xff\x3b\x3b\x77\x0a\x63\x6f\x9c\x9c\x9c\x9c\x6d\x2e\x61\x72\x77\x77\x72\x7a\x0a\x72\x7a";
-
-// 	input = (const uint8_t*) str;
-// 	input_count = strlen(str);
-// #endif
-
-
-
-/////good/////
 // static inline void recalculate_position() {    // used when we modify wrap or tab width. i think...
 // 	int save_lcl = lcl, save_lcc = lcc;
 // 	move_top();
