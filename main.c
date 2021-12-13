@@ -24,7 +24,7 @@
 #include <errno.h>
 #include <stdbool.h>
 
-#define fuzz 0
+#define fuzz 1
 
 typedef ssize_t nat;
 
@@ -177,7 +177,7 @@ visual_just_line_up: vcl--;
 			vsc = window_columns - 1 - line_number_width; 
 			voc = vcc - vsc; 
 		} else { 
-			vsc = vcc; 
+			vsc = vcc;
 			voc = 0; 
 		}
 	} else {
@@ -269,8 +269,16 @@ static inline void move_down() {
 		if (lcl == count - 1 and lcc == lines[lcl].count) return;
 		move_right(0);
 	}
-	while (vcc < vdc and lcc < lines[lcl].count) move_right(0);
-	if (vcc != vdc and lcc and lines[lcl].data[lcc - 1] != '\t') move_left(0);
+	while (vcc < vdc and lcc < lines[lcl].count) {
+		if (lines[lcl].data[lcc] == '\t' and vcc + (tab_width - (vcc % tab_width)) > vdc) return;
+		move_right(0);
+	}
+	//if (vcc != vdc and lcc and lines[lcl].data[lcc - 1] != '\t') move_left(0);
+	
+	/*
+		e	osehntoesnohnet
+			senhtonshontenston
+	*/
 }
 
 static inline void jump_line(nat line) {
@@ -1453,3 +1461,102 @@ f	- tc isa!!!
 	// input = (const uint8_t*) str;
 	// input_count = strlen(str);
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ ft: 7109 corp: 692/24Kb lim: 80 exec/s: 1459 rss: 675Mb L: 19/80 MS: 1 EraseBytes-
+#110910	REDUCE cov: 1130 ft: 7109 corp: 692/24Kb lim: 80 exec/s: 1459 rss: 675Mb L: 33/80 MS: 1 EraseBytes-
+#111029	NEW    cov: 1130 ft: 7110 corp: 693/24Kb lim: 80 exec/s: 1460 rss: 675Mb L: 75/80 MS: 4 InsertByte-ChangeBit-ShuffleBytes-CMP- DE: "z\x00\x00\x00"-
+#111136	REDUCE cov: 1130 ft: 7110 corp: 693/24Kb lim: 80 exec/s: 1443 rss: 675Mb L: 48/80 MS: 2 CopyPart-EraseBytes-
+=================================================================
+==66313==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x000103305691 at pc 0x000100f6f990 bp 0x00016eea1340 sp 0x00016eea1338
+READ of size 1 at 0x000103305691 thread T0
+    #0 0x100f6f98c in move_left main.c:185
+    #1 0x100f6e150 in delete main.c:457
+    #2 0x100f73504 in reverse_action main.c:1188
+    #3 0x100f72708 in undo main.c:1199
+    #4 0x100f6404c in execute main.c:1256
+    #5 0x100f5e9bc in editor main.c:1311
+    #6 0x100f5e6d8 in LLVMFuzzerTestOneInput main.c:1333
+    #7 0x100f9b9e4 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
+    #8 0x100f9b1c4 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
+    #9 0x100f9c840 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
+    #10 0x100f9d478 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
+    #11 0x100f8db5c in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
+    #12 0x100fb54a0 in main FuzzerMain.cpp:20
+    #13 0x1013590f0 in start+0x204 (dyld:arm64+0x50f0)
+    #14 0x12527ffffffffffc  (<unknown module>)
+
+0x000103305691 is located 0 bytes to the right of 1-byte region [0x000103305690,0x000103305691)
+allocated by thread T0 here:
+    #0 0x10143f6d8 in wrap_malloc+0x8c (libclang_rt.asan_osx_dynamic.dylib:arm64+0x3f6d8)
+    #1 0x100f695dc in insert main.c:386
+    #2 0x100f73c50 in reverse_action main.c:1192
+    #3 0x100f72708 in undo main.c:1199
+    #4 0x100f6404c in execute main.c:1256
+    #5 0x100f5e9bc in editor main.c:1311
+    #6 0x100f5e6d8 in LLVMFuzzerTestOneInput main.c:1333
+    #7 0x100f9b9e4 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
+    #8 0x100f9b1c4 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
+    #9 0x100f9c840 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
+    #10 0x100f9d478 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
+    #11 0x100f8db5c in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
+    #12 0x100fb54a0 in main FuzzerMain.cpp:20
+    #13 0x1013590f0 in start+0x204 (dyld:arm64+0x50f0)
+    #14 0x12527ffffffffffc  (<unknown module>)
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow main.c:185 in move_left
+Shadow bytes around the buggy address:
+  0x007020680a80: fa fa fd fa fa fa fa fa fa fa fd fa fa fa fa fa
+  0x007020680a90: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x007020680aa0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x007020680ab0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x007020680ac0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+=>0x007020680ad0: fa fa[01]fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x007020680ae0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fd
+  0x007020680af0: fa fa fd fa fa fa fd fa fa fa fa fa fa fa fd fa
+  0x007020680b00: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x007020680b10: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x007020680b20: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==66313==ABORTING
+MS: 1 CopyPart-; base unit: 8e5e1a31109078d9f8a45fdc4a0466da598b53b2
+0x1a,0xa,0xa,0xa,0x2,0x5b,0xa,0xa,0xa,0xa,0xa,0xf6,0xa,0xa,0xa,0x9a,0x0,0x9,0x72,0x77,0x77,0xab,0x65,0x0,0x7a,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xf8,0x70,0xc,0x9,0x9,0x0,0x0,0x27,0x0,0x0,0x0,0x9,0x72,0x77,0x77,0xab,0x65,0x0,0x7a,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xf8,0x70,0xc,0x9,0x9,0x0,0x0,0x27,0x0,0x65,0x0,0x7a,0x0,0x0,0xa,0xa,0x9a,0x92,0x9a,
+\x1a\x0a\x0a\x0a\x02[\x0a\x0a\x0a\x0a\x0a\xf6\x0a\x0a\x0a\x9a\x00\x09rww\xabe\x00z\x00\x00\x00\x00\x00\x00\x00\x00\xf8p\x0c\x09\x09\x00\x00'\x00\x00\x00\x09rww\xabe\x00z\x00\x00\x00\x00\x00\x00\x00\x00\xf8p\x0c\x09\x09\x00\x00'\x00e\x00z\x00\x00\x0a\x0a\x9a\x92\x9a
+artifact_prefix='./'; Test unit written to ./crash-ecdc458c1f856e72f62017a778452e28c318dbb4
+Base64: GgoKCgJbCgoKCgr2CgoKmgAJcnd3q2UAegAAAAAAAAAA+HAMCQkAACcAAAAJcnd3q2UAegAAAAAAAAAA+HAMCQkAACcAZQB6AAAKCpqSmg==
+zsh: abort      ./editor
+dwrr.editor: sub main.c
