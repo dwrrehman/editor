@@ -8,7 +8,7 @@
 //           edited on 2111114.172631
 //           edited on 2112116.194022
 //
-//        tentatively named:   "rt".
+//        tentatively named:   "t".
 //
 #include <iso646.h>
 #include <termios.h>
@@ -25,6 +25,7 @@
 #include <stdbool.h>
 
 #define fuzz 1
+#define use_main 0
 
 typedef ssize_t nat;
 
@@ -182,7 +183,9 @@ visual_just_line_up: vcl--;
 		}
 	} else {
 		nat save_lcc = lcc;
-		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
+		do lcc--; while (lcc and zero_width(
+			lines[lcl].
+			data[lcc]));
 		if (lines[lcl].data[lcc] == '\t') {
 			compute_vcc();
 			nat old_vcc = vcc;
@@ -273,22 +276,16 @@ static inline void move_down() {
 		if (lines[lcl].data[lcc] == '\t' and vcc + (tab_width - (vcc % tab_width)) > vdc) return;
 		move_right(0);
 	}
-	//if (vcc != vdc and lcc and lines[lcl].data[lcc - 1] != '\t') move_left(0);
-	
-	/*
-		e	osehntoesnohnet
-			senhtonshontenston
-	*/
 }
 
 static inline void jump_line(nat line) {
-	while (lcl < line) move_down(); // lcc < lines[lcl].count
-	while (lcl > line) move_up(); // lcc > 0
+	while (lcl < line and lcl < count) move_down();
+	while (lcl > line and lcl) move_up();
 }
 
 static inline void jump_column(nat column) {
-	while (lcc < column) move_right(1);
-	while (lcc > column) move_left(1);
+	while (lcc < column and lcc < lines[lcl].count) move_right(1);
+	while (lcc > column and lcc) move_left(1);
 }
 
 static inline void move_begin() {
@@ -374,26 +371,33 @@ static inline void create_action(struct action new) {
 
 static inline void insert(char c, bool should_record) { 
 
-	if (should_record and zero_width(c) and actions[head].type != insert_action) return; 
+	if (should_record and zero_width(c) and (actions[head].type != insert_action or actions[head].text[0] == '\n')) return; 
 
 	struct action new_action = {0};
 	if (should_record and visual(c)) record_logical_state(&new_action.pre);
 
 	struct line* this = lines + lcl;
-	if (c == 10) {
+	if (c == '\n') {
 		nat rest = this->count - lcc;
 		this->count = lcc;
 		struct line new = {malloc((size_t) rest), rest, rest};
 		if (rest) memcpy(new.data, this->data + lcc, (size_t) rest);
-		if (count + 1 > capacity) 
-			lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
-		memmove(lines + lcl + 2, lines + lcl + 1, 
-			sizeof(struct line) * (size_t)(count - (lcl + 1)));
+
+		// if (count + 1 > capacity) 
+		// 	lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
+		if (not fuzz) abort();
+		lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1));
+
+		memmove(lines + lcl + 2, lines + lcl + 1, sizeof(struct line) * (size_t)(count - (lcl + 1)));
 		lines[lcl + 1] = new;
 		count++;
+
 	} else {
-		if (this->count + 1 > this->capacity) 
-			this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
+		// if (this->count + 1 > this->capacity) 
+		// 	this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
+		if (not fuzz) abort();
+		this->data = realloc(this->data, (size_t)(this->count + 1));
+
 		memmove(this->data + lcc + 1, this->data + lcc, (size_t) (this->count - lcc));
 		this->data[lcc] = c;
 		this->count++;
@@ -434,9 +438,11 @@ static inline void delete(bool should_record) {
 		move_left(1);
 		struct line* new = lines + lcl;
 
-		if (new->count + this->count > new->capacity)
-			new->data = realloc(new->data, (size_t)(new->capacity = 8 * (new->capacity + this->count)));
-        
+		// if (new->count + this->count > new->capacity)
+		// 	new->data = realloc(new->data, (size_t)(new->capacity = 8 * (new->capacity + this->count)));
+		if (not fuzz) abort();
+		new->data = realloc(new->data, (size_t)(new->count + this->count));
+
 		if (this->count) memcpy(new->data + new->count, this->data, (size_t) this->count);
 
 		free(this->data);
@@ -445,6 +451,9 @@ static inline void delete(bool should_record) {
 		memmove(lines + lcl + 1, lines + lcl + 2, 
 			sizeof(struct line) * (size_t)(count - (lcl + 2)));
 		count--;
+
+		if (not fuzz) abort();
+		lines = realloc(lines, sizeof(struct line) * (size_t)count);
 
 		if (should_record) {
 			deleted_length = 1;
@@ -464,6 +473,9 @@ static inline void delete(bool should_record) {
 
 		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
 		this->count -= save - lcc;
+
+		if (not fuzz) abort();
+		this->data = realloc(this->data, (size_t)(this->count));
 	}
 
 	buffer.saved = false;
@@ -606,6 +618,8 @@ static inline void textbox_move_right() {
 static inline void textbox_insert(char c) {
 	if (tb.count + 1 > tb.capacity) 
 		tb.data = realloc(tb.data, (size_t)(tb.capacity = 8 * (tb.capacity + 1)));
+	///TODO: do a realloc, so that we can detect memory bugs with the textbox.
+
 	memmove(tb.data + tb.c + 1, tb.data + tb.c, (size_t) (tb.count - tb.c));
 	tb.data[tb.c] = c;
 	tb.count++;
@@ -650,7 +664,7 @@ static inline void print_above_textbox(char* write_message, nat color) {
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
 	if (fuzz) return;     ///TODO: make this code tested by the fuzzer by supplying the input to its read calls. somehow.
 
-	tb.prompt_length = (int) strlen(prompt_message);
+	tb.prompt_length = (nat) strlen(prompt_message);
 	do {
 		adjust_window_size();
 		textbox_display(prompt_message, color);
@@ -804,6 +818,7 @@ static inline void zero_registers() {
 	memset(filename, 0, sizeof filename);
 
 	buffer = (struct buffer){0};
+
 	buffers = NULL;
 	buffer_count = 0;
 	active_index = 0;	
@@ -984,7 +999,6 @@ static inline void rename_file() {
 	}
 }
 
-
 static inline void interpret_escape_code() {
 	if (fuzz) return;
 
@@ -1062,23 +1076,31 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 
 	while (line < last_line) {
 
-		if (length + lines[line].count - column + 1 >= s_capacity) 
-			string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + lines[line].count - column + 1)));
+		// if (length + lines[line].count - column + 1 >= s_capacity) 
+		// 	string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + lines[line].count - column + 1)));
+		if (not fuzz) abort();
+		string = realloc(string, (size_t) (length + lines[line].count - column));
 
 		if (lines[line].count - column) 
 			memcpy(string + length, lines[line].data + column, (size_t)(lines[line].count - column));
 
 		length += lines[line].count - column;
+
+		if (not fuzz) abort(); 
+		string = realloc(string, (size_t) (length + 1));
+
 		string[length++] = '\n';
 
 		line++;
 		column = 0;
 	}
 
-	if (length + (last_column - column) >= s_capacity) 
-		string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + last_column - column)));
+	// if (length + (last_column - column) >= s_capacity) 
+	// 	string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + last_column - column)));
+	if (not fuzz) abort();
+	string = realloc(string, (size_t) (length + last_column - column));	
 
-	memcpy(string + length, lines[line].data + column, (size_t)(last_column - column));
+	if (last_column - column) memcpy(string + length, lines[line].data + column, (size_t)(last_column - column));
 	length += last_column - column;
 	*out_length = length;
 	return string;
@@ -1113,10 +1135,14 @@ static inline void paste() {
 
 	nat c = 0;
 	while ((c = fgetc(file)) != EOF) {
-		if (length + 1 >= s_capacity) string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + 1)));
+		// if (length + 1 >= s_capacity) string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + 1)));
+		if (not fuzz) abort(); 
+		string = realloc(string, (size_t) (length + 1));
+
 		string[length++] = (char) c;
 		insert((char)c, 0);
 	}
+
 	pclose(file);
 	sprintf(message, "pasted %ldb", length);
 
@@ -1272,23 +1298,39 @@ static inline void execute(char c, char p) {
 
 		else if (c == 's') save();
 		else if (c == 'S') rename_file();
-		
 		else if (c == 27) interpret_escape_code();
 
 	} else if (buffer.mode == 2) {
 
 		if (c == 't') buffer.mode = 0;
 		else if (c == 'r') buffer.mode = 1;
-
 		else if (c == 's') show_status = not show_status; 
 		else if (c == 'n') show_line_numbers = not show_line_numbers;
-
 		else if (c == 'd') memset(message, 0, sizeof message);
 		
 	} else buffer.mode = 1;
 }
 
 static inline void editor(const uint8_t* input, size_t input_count) {
+
+	// FILE* file = fopen("crash-70bd435f53b8ff7b760a30590900997d5d8e7824", "r");
+	// fseek(file, 0, SEEK_END);
+	// size_t crash_length = (size_t) ftell(file);
+	// char* crash = malloc(sizeof(char) * crash_length);
+	// fseek(file, 0, SEEK_SET);
+	// fread(crash, sizeof(char), crash_length, file);
+	// fclose(file);
+	// input = (const uint8_t*) crash;
+	// input_count = crash_length;
+	// printf("\n\n\nstr = \"");
+	// for (size_t i = 0; i < input_count; i++) printf("\\x%02hhx", input[i]);
+	// printf("\";\n\n\n");
+	// exit(1);
+
+	// const char*                 done:     str = "\x1f\x0a\xbb\x74\x7f\x72\x77\x70\x72\x7a\x7a";
+	// move left bug: "\x7f\x1f\x0a\xbb\x43\x78\x74\x72\x77\x70\x7f\x72\x7a\x7a"
+	// input = (const uint8_t*) str;
+	// input_count = strlen(str);
 
 	struct termios terminal;
 	if (not fuzz) {
@@ -1325,7 +1367,7 @@ done:
 	}
 }
 
-#if fuzz // && !use_main
+#if fuzz && !use_main
 
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
@@ -1345,17 +1387,7 @@ int main(const int argc, const char** argv) {
 #endif
 
 
-
-
-
-
-
-
-
-
-
 /*
-
 
 	todo: 
 --------------------------
@@ -1367,14 +1399,10 @@ f	- file manager and tab completion
 
 f	- config file for init values.
 
-f	- tc isa!!!
-	
+f	- tc isa!!
 
 
-
-
-
-			
+		
 	- make the machine code virtual machine interpreter:
 
 
@@ -1392,7 +1420,8 @@ f	- tc isa!!!
 		- - unified command system: buffer commands vs prompted commands. 
 
 
-	
+
+
 --------------------------------------------------------
 			DONE:
 --------------------------------------------------------
@@ -1461,22 +1490,7 @@ f	- tc isa!!!
 	// input = (const uint8_t*) str;
 	// input_count = strlen(str);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+/*
 
 
  ft: 7109 corp: 692/24Kb lim: 80 exec/s: 1459 rss: 675Mb L: 19/80 MS: 1 EraseBytes-
@@ -1560,3 +1574,100 @@ artifact_prefix='./'; Test unit written to ./crash-ecdc458c1f856e72f62017a778452
 Base64: GgoKCgJbCgoKCgr2CgoKmgAJcnd3q2UAegAAAAAAAAAA+HAMCQkAACcAAAAJcnd3q2UAegAAAAAAAAAA+HAMCQkAACcAZQB6AAAKCpqSmg==
 zsh: abort      ./editor
 dwrr.editor: sub main.c
+
+"\x1a\x0a\x0a\x0a\x02\x5b\x0a\x0a\x0a\x0a\x0a\xf6\x0a\x0a\x0a\x9a\x00\x09\x72\x77\x77\xab\x65\x00\x7a\x00\x00\x00\x00\x00\x00\x00\x00\xf8\x70\x0c\x09\x09\x00\x00\x27\x00\x00\x00\x09\x72\x77\x77\xab\x65\x00\x7a\x00\x00\x00\x00\x00\x00\x00\x00\xf8\x70\x0c\x09\x09\x00\x00\x27\x00\x65\x00\x7a\x00\x00\x0a\x0a\x9a\x92\x9a"
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+1 corp: 961/38Kb lim: 285 exec/s: 70 rss: 984Mb L: 68/258 MS: 4 InsertRepeatedBytes-CrossOver-ChangeBit-EraseBytes-
+#347273	REDUCE cov: 1154 ft: 8371 corp: 961/37Kb lim: 293 exec/s: 70 rss: 984Mb L: 196/258 MS: 2 CopyPart-EraseBytes-
+=================================================================
+==32352==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x0001070e5ffa at pc 0x000104b5bbcc bp 0x00016b2b6380 sp 0x00016b2b6378
+READ of size 1 at 0x0001070e5ffa thread T0
+    #0 0x104b5bbc8 in move_left main.c:187
+    #1 0x104b66e88 in jump_column main.c:288
+    #2 0x104b669f8 in prompt_jump_column main.c:1063
+    #3 0x104b504e8 in execute main.c:1282
+    #4 0x104b4aec0 in editor main.c:1362
+    #5 0x104b4abdc in LLVMFuzzerTestOneInput main.c:1384
+    #6 0x104b879e4 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
+    #7 0x104b871c4 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
+    #8 0x104b88840 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
+    #9 0x104b89478 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
+    #10 0x104b79b5c in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
+    #11 0x104ba14a0 in main FuzzerMain.cpp:20
+    #12 0x104fd90f0 in start+0x204 (dyld:arm64+0x50f0)
+    #13 0x4e0ffffffffffffc  (<unknown module>)
+
+0x0001070e5ffa is located 0 bytes to the right of 42-byte region [0x0001070e5fd0,0x0001070e5ffa)
+allocated by thread T0 here:
+    #0 0x1050bf94c in wrap_realloc+0x94 (libclang_rt.asan_osx_dynamic.dylib:arm64+0x3f94c)
+    #1 0x104b56a1c in insert main.c:399
+    #2 0x104b5fe8c in reverse_action main.c:1221
+    #3 0x104b5e944 in undo main.c:1228
+    #4 0x104b50550 in execute main.c:1285
+    #5 0x104b4aec0 in editor main.c:1362
+    #6 0x104b4abdc in LLVMFuzzerTestOneInput main.c:1384
+    #7 0x104b879e4 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
+    #8 0x104b871c4 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
+    #9 0x104b88840 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
+    #10 0x104b89478 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
+    #11 0x104b79b5c in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
+    #12 0x104ba14a0 in main FuzzerMain.cpp:20
+    #13 0x104fd90f0 in start+0x204 (dyld:arm64+0x50f0)
+    #14 0x4e0ffffffffffffc  (<unknown module>)
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow main.c:187 in move_left
+Shadow bytes around the buggy address:
+  0x007020e3cba0: fa fa fd fd fd fd fd fd fa fa fa fa fa fa fa fa
+  0x007020e3cbb0: fa fa fa fa fa fa fa fa fa fa fd fd fd fd fd fa
+  0x007020e3cbc0: fa fa fd fd fd fd fd fd fa fa fa fa fa fa fa fa
+  0x007020e3cbd0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x007020e3cbe0: fa fa fd fd fd fd fd fd fa fa fd fd fd fd fd fa
+=>0x007020e3cbf0: fa fa fd fd fd fd fd fd fa fa 00 00 00 00 00[02]
+  0x007020e3cc00: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x007020e3cc10: fa fa fa fa fa fa fa fa fa fa fd fd fd fd fd fd
+  0x007020e3cc20: fa fa fd fd fd fd fd fa fa fa fa fa fa fa fa fa
+  0x007020e3cc30: fa fa fd fd fd fd fd fd fa fa fa fa fa fa fa fa
+  0x007020e3cc40: fa fa fd fd fd fd fd fa fa fa fd fd fd fd fd fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==32352==ABORTING
+MS: 4 InsertRepeatedBytes-PersAutoDict-PersAutoDict-PersAutoDict- DE: "domain-po"-"\x00\x00\x00R"-":JR.\x01\x00\x00\x00"-; base unit: 937d96d5d341db240b8ec0c29bd302c70f8d1767
+0x7a,0x7a,0x76,0x31,0x72,0x7a,0x75,0x7a,0x76,0x7a,0x7a,0x72,0x7a,0x72,0x65,0xa,0xa,0x60,0x9d,0x9c,0x27,0x75,0x66,0x9d,0x24,0x61,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x0,0x0,0x0,0x52,0xff,0xff,0xff,0xff,0xff,0xff,0x65,0x7e,0xb4,0x0,0x1e,0x52,0x74,0xa8,0x45,0x45,0xa,0x76,0x6a,0x75,0x66,0x9d,0x2c,0x64,0x6f,0x6d,0x61,0x69,0x6e,0x2d,0x70,0x6f,0xed,0x3a,0x4a,0x52,0x2e,0x1,0x0,0x0,0x0,0x52,0x74,0xa8,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0xff,0xff,0xff,0x45,0x45,0x45,0x45,0x45,0x45,0xa8,0x45,0x45,0x45,0x45,0x45,0x45,0x76,0x7a,0x75,0x66,0x72,0x7a,0x45,0x45,0x45,0x45,0x45,0x55,0x40,0x0,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x65,0x54,0x0,0x0,0x0,0x45,0x45,0xe,0x77,0x77,0x77,0x77,0x77,0x77,0x77,0x77,0x77,0x0,0x77,
+zzv1rzuzvzzrzre\x0a\x0a`\x9d\x9c'uf\x9d$a\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00R\xff\xff\xff\xff\xff\xffe~\xb4\x00\x1eRt\xa8EE\x0avjuf\x9d,domain-po\xed:JR.\x01\x00\x00\x00Rt\xa8EEEEEEE\xff\xff\xffEEEEEE\xa8EEEEEEvzufrzEEEEEU@\x00EEEEEEEEEEEEeT\x00\x00\x00EE\x0ewwwwwwwww\x00w
+artifact_prefix='./'; Test unit written to ./crash-9022d2bc16312f0c418c7a1cc75285d0a4237706
+Base64: enp2MXJ6dXp2enpyenJlCgpgnZwndWadJGH/////////AAAAUv///////2V+tAAeUnSoRUUKdmp1Zp0sZG9tYWluLXBv7TpKUi4BAAAAUnSoRUVFRUVFRf///0VFRUVFRahFRUVFRUV2enVmcnpFRUVFRVVAAEVFRUVFRUVFRUVFRWVUAAAARUUOd3d3d3d3d3d3AHc=
+zsh: abort      ./editor
+dwrr.editor:  
