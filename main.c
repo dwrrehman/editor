@@ -25,7 +25,7 @@
 #include <stdbool.h>
 
 #define fuzz 1
-#define use_main 0
+#define use_main 1
 
 typedef ssize_t nat;
 
@@ -1071,7 +1071,9 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 	
 	char* string = malloc(256);
 	nat length = 0;
-	nat s_capacity = 256;
+
+	// nat s_capacity = 256;
+
 	nat line = first_line, column = first_column;
 
 	while (line < last_line) {
@@ -1130,7 +1132,11 @@ static inline void paste() {
 	record_logical_state(&new.pre);
 
 	char* string = malloc(256);
-	nat s_capacity = 256;
+
+
+	// nat s_capacity = 256;
+
+
 	nat length = 0;
 
 	nat c = 0;
@@ -1313,7 +1319,10 @@ static inline void execute(char c, char p) {
 
 static inline void editor(const uint8_t* input, size_t input_count) {
 
-	// FILE* file = fopen("crash-70bd435f53b8ff7b760a30590900997d5d8e7824", "r");
+	// printf("hi\n");
+
+	// FILE* file = fopen("crash-9022d2bc16312f0c418c7a1cc75285d0a4237706", "r");
+	// if (not file) { perror("open"); exit(1); }
 	// fseek(file, 0, SEEK_END);
 	// size_t crash_length = (size_t) ftell(file);
 	// char* crash = malloc(sizeof(char) * crash_length);
@@ -1327,10 +1336,13 @@ static inline void editor(const uint8_t* input, size_t input_count) {
 	// printf("\";\n\n\n");
 	// exit(1);
 
-	// const char*                 done:     str = "\x1f\x0a\xbb\x74\x7f\x72\x77\x70\x72\x7a\x7a";
+	const char* str = "\x6a\x75\x66\x61\x74\xa8\x75\x66\x72\x7a\x45";
+
 	// move left bug: "\x7f\x1f\x0a\xbb\x43\x78\x74\x72\x77\x70\x7f\x72\x7a\x7a"
-	// input = (const uint8_t*) str;
-	// input_count = strlen(str);
+
+	input = (const uint8_t*) str;
+	input_count = strlen(str);
+	// input_count = 1000; // strlen(str);
 
 	struct termios terminal;
 	if (not fuzz) {
@@ -1589,7 +1601,7 @@ dwrr.editor: sub main.c
 
 
 
-
+/*
 
 
 
@@ -1671,3 +1683,8 @@ artifact_prefix='./'; Test unit written to ./crash-9022d2bc16312f0c418c7a1cc7528
 Base64: enp2MXJ6dXp2enpyenJlCgpgnZwndWadJGH/////////AAAAUv///////2V+tAAeUnSoRUUKdmp1Zp0sZG9tYWluLXBv7TpKUi4BAAAAUnSoRUVFRUVFRf///0VFRUVFRahFRUVFRUV2enVmcnpFRUVFRVVAAEVFRUVFRUVFRUVFRWVUAAAARUUOd3d3d3d3d3d3AHc=
 zsh: abort      ./editor
 dwrr.editor:  
+
+
+
+*/
+
