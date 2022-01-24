@@ -7,8 +7,9 @@
 //          written on 2101177.005105
 //           edited on 2111114.172631
 //           edited on 2112116.194022
+//         debugged on 2201237.181929
 //
-//        tentatively named:   "t".
+//          tentatively named:   "t".
 //
 #include <iso646.h>
 #include <termios.h>
@@ -1004,7 +1005,7 @@ static inline void interpret_escape_code() {
 
 	static nat scroll_counter = 0;
 	char c = 0;
-	read(0, &c, 1);      // TODO: make it so pressing escape once is sufficient. add mouse.
+	read(0, &c, 1);      // TODO: make it so pressing escape once is sufficient. also add mouse support so that you can click to reposition the cursor. 
 	if (c == 27) buffer.mode = 1;
 	else if (c == '[') {
 		read(0, &c, 1);
@@ -1157,7 +1158,7 @@ static inline void paste() {
 	new.text = string;
 	new.length = length;
 	create_action(new);
-}
+
 
 static inline void cut_text() {
 	if (lal < lcl) goto anchor_first;
@@ -1293,7 +1294,7 @@ static inline void execute(char c, char p) {
 		else if (c == 'a') { lal = lcl; lac = lcc; sprintf(message, "anchor %ld %ld", lal, lac); }
 
 		else if (c == 'c') copy();
-		else if (c == 'r') cut();  
+		else if (c == 'R') cut();  
 		else if (c == 'v') paste();    
 
 		else if (c == 'g') move_to_previous_buffer();
@@ -1335,14 +1336,14 @@ static inline void editor(const uint8_t* input, size_t input_count) {
 	// for (size_t i = 0; i < input_count; i++) printf("\\x%02hhx", input[i]);
 	// printf("\";\n\n\n");
 	// exit(1);
-
+	
 	const char* str = "\x6a\x75\x66\x61\x74\xa8\x75\x66\x72\x7a\x45";
 
 	// move left bug: "\x7f\x1f\x0a\xbb\x43\x78\x74\x72\x77\x70\x7f\x72\x7a\x7a"
 
 	input = (const uint8_t*) str;
 	input_count = strlen(str);
-	// input_count = 1000; // strlen(str);
+	// input_count = 1000;
 
 	struct termios terminal;
 	if (not fuzz) {
@@ -1405,7 +1406,11 @@ int main(const int argc, const char** argv) {
 --------------------------
 	
 
-b	- vdc not correct, with unicode.  
+x b	- vdc not correct, with unicode.  
+
+
+
+
 
 f	- file manager and tab completion
 
