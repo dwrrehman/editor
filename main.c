@@ -19,8 +19,8 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <ctype.h>
-#include <math.h>  
-#include <time.h>  
+#include <math.h>
+#include <time.h>
 #include <sys/time.h> 
 #include <errno.h>
 #include <stdbool.h>
@@ -36,6 +36,7 @@ enum action_type {
 	delete_action,
 	paste_text_action,
 	cut_text_action,
+	anchor_action,
 };
 
 struct line { 
@@ -329,7 +330,6 @@ static inline void move_word_right() {
 		)
 	));
 }
-
 
 static inline void record_logical_state(struct logical_state* pcond_out) { // get current state, fill into given pre/post-condtion.
 	struct logical_state* p = pcond_out; // respelling.
@@ -1134,9 +1134,7 @@ static inline void paste() {
 
 	char* string = malloc(256);
 
-
 	// nat s_capacity = 256;
-
 
 	nat length = 0;
 
@@ -1158,7 +1156,7 @@ static inline void paste() {
 	new.text = string;
 	new.length = length;
 	create_action(new);
-
+}
 
 static inline void cut_text() {
 	if (lal < lcl) goto anchor_first;
@@ -1207,23 +1205,26 @@ static inline void copy() {
 
 static inline void replay_action(struct action a) {
 	require_logical_state(&a.pre);
-	if (a.type == no_action) return;
-	else if (a.type == insert_action or a.type == paste_text_action) {
+	if (a.type == no_action) {}
+	else if (a.type == insert_action or a.type == paste_text_action) 
 		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
-	} else if (a.type == delete_action) delete(0); 
+	else if (a.type == delete_action) delete(0); 
 	else if (a.type == cut_text_action) cut_text();
+	else if (a.type == anchor_action) {}
+	else sprintf(message, "?");
 	require_logical_state(&a.post); 
 }
 
 static inline void reverse_action(struct action a) {
 	require_logical_state(&a.post);
-	if (a.type == no_action) return;
+	if (a.type == no_action) {}
 	else if (a.type == insert_action) delete(0);
-	else if (a.type == paste_text_action) { 
+	else if (a.type == paste_text_action)
 		while (lcc > a.pre.lcc or lcl > a.pre.lcl) delete(0);
-	} else if (a.type == delete_action or a.type == cut_text_action) {
+	else if (a.type == delete_action or a.type == cut_text_action) 
 		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
-	}
+	else if (a.type == anchor_action) {}
+	else sprintf(message, "?");
 	require_logical_state(&a.pre);
 }
 
@@ -1253,6 +1254,15 @@ static inline void alternate_up() {
 static inline void alternate_down() {
 	if (actions[head].choice) actions[head].choice--;
 	sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
+}
+
+static inline void anchor() {
+	struct action new = {.type = anchor_action};
+	record_logical_state(&new.pre);
+	lal = lcl; lac = lcc;
+	sprintf(message, "anchor %ld %ld", lal, lac);
+	record_logical_state(&new.post);
+	create_action(new);
 }
 
 static inline void execute(char c, char p) {
@@ -1291,10 +1301,9 @@ static inline void execute(char c, char p) {
 		else if (c == 'Z') alternate_up();
 		else if (c == 'X') alternate_down();
 
-		else if (c == 'a') { lal = lcl; lac = lcc; sprintf(message, "anchor %ld %ld", lal, lac); }
-
+		else if (c == 'a') anchor();
 		else if (c == 'c') copy();
-		else if (c == 'R') cut();  
+		else if (c == 'r') cut();  
 		else if (c == 'v') paste();    
 
 		else if (c == 'g') move_to_previous_buffer();
@@ -1337,9 +1346,11 @@ static inline void editor(const uint8_t* input, size_t input_count) {
 	// printf("\";\n\n\n");
 	// exit(1);
 	
-	const char* str = "\x6a\x75\x66\x61\x74\xa8\x75\x66\x72\x7a\x45";
+	// const char* str = "\x6a\x75\x66\x61\x74\xa8\x75\x66\x72\x7a\x45";
 
-	// move left bug: "\x7f\x1f\x0a\xbb\x43\x78\x74\x72\x77\x70\x7f\x72\x7a\x7a"
+	const char* str = "jufat\xa8ufrzE";   
+
+	// c  <exit>  anchor   insertmode    <unicode>    <exit>      cut       undo      jump@col0
 
 	input = (const uint8_t*) str;
 	input_count = strlen(str);
@@ -1404,12 +1415,6 @@ int main(const int argc, const char** argv) {
 
 	todo: 
 --------------------------
-	
-
-x b	- vdc not correct, with unicode.  
-
-
-
 
 
 f	- file manager and tab completion
@@ -1439,6 +1444,9 @@ f	- tc isa!!
 
 
 
+
+
+
 --------------------------------------------------------
 			DONE:
 --------------------------------------------------------
@@ -1462,7 +1470,6 @@ f	- tc isa!!
 
 	x	- make a simple and robust copy/paste system, that can support system clipboard.
 
-
 	bugs:
 ----------------------------
 
@@ -1474,8 +1481,19 @@ f	- tc isa!!
 
 	x	- a possible crashing bug of undo()/move_left(), although i'm not sure yet...
 
+	x 	- vdc not correct, with unicode.  
 
-*/
+
+
+
+
+
+
+
+
+
+
+///////////////////////////////// old code //////////////////////////////////////////////
 
 
 
@@ -1507,189 +1525,9 @@ f	- tc isa!!
 	// input = (const uint8_t*) str;
 	// input_count = strlen(str);
 
-/*
-
-
- ft: 7109 corp: 692/24Kb lim: 80 exec/s: 1459 rss: 675Mb L: 19/80 MS: 1 EraseBytes-
-#110910	REDUCE cov: 1130 ft: 7109 corp: 692/24Kb lim: 80 exec/s: 1459 rss: 675Mb L: 33/80 MS: 1 EraseBytes-
-#111029	NEW    cov: 1130 ft: 7110 corp: 693/24Kb lim: 80 exec/s: 1460 rss: 675Mb L: 75/80 MS: 4 InsertByte-ChangeBit-ShuffleBytes-CMP- DE: "z\x00\x00\x00"-
-#111136	REDUCE cov: 1130 ft: 7110 corp: 693/24Kb lim: 80 exec/s: 1443 rss: 675Mb L: 48/80 MS: 2 CopyPart-EraseBytes-
-=================================================================
-==66313==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x000103305691 at pc 0x000100f6f990 bp 0x00016eea1340 sp 0x00016eea1338
-READ of size 1 at 0x000103305691 thread T0
-    #0 0x100f6f98c in move_left main.c:185
-    #1 0x100f6e150 in delete main.c:457
-    #2 0x100f73504 in reverse_action main.c:1188
-    #3 0x100f72708 in undo main.c:1199
-    #4 0x100f6404c in execute main.c:1256
-    #5 0x100f5e9bc in editor main.c:1311
-    #6 0x100f5e6d8 in LLVMFuzzerTestOneInput main.c:1333
-    #7 0x100f9b9e4 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
-    #8 0x100f9b1c4 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
-    #9 0x100f9c840 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
-    #10 0x100f9d478 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
-    #11 0x100f8db5c in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
-    #12 0x100fb54a0 in main FuzzerMain.cpp:20
-    #13 0x1013590f0 in start+0x204 (dyld:arm64+0x50f0)
-    #14 0x12527ffffffffffc  (<unknown module>)
-
-0x000103305691 is located 0 bytes to the right of 1-byte region [0x000103305690,0x000103305691)
-allocated by thread T0 here:
-    #0 0x10143f6d8 in wrap_malloc+0x8c (libclang_rt.asan_osx_dynamic.dylib:arm64+0x3f6d8)
-    #1 0x100f695dc in insert main.c:386
-    #2 0x100f73c50 in reverse_action main.c:1192
-    #3 0x100f72708 in undo main.c:1199
-    #4 0x100f6404c in execute main.c:1256
-    #5 0x100f5e9bc in editor main.c:1311
-    #6 0x100f5e6d8 in LLVMFuzzerTestOneInput main.c:1333
-    #7 0x100f9b9e4 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
-    #8 0x100f9b1c4 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
-    #9 0x100f9c840 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
-    #10 0x100f9d478 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
-    #11 0x100f8db5c in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
-    #12 0x100fb54a0 in main FuzzerMain.cpp:20
-    #13 0x1013590f0 in start+0x204 (dyld:arm64+0x50f0)
-    #14 0x12527ffffffffffc  (<unknown module>)
-
-SUMMARY: AddressSanitizer: heap-buffer-overflow main.c:185 in move_left
-Shadow bytes around the buggy address:
-  0x007020680a80: fa fa fd fa fa fa fa fa fa fa fd fa fa fa fa fa
-  0x007020680a90: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
-  0x007020680aa0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
-  0x007020680ab0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
-  0x007020680ac0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
-=>0x007020680ad0: fa fa[01]fa fa fa fd fa fa fa fd fa fa fa fd fa
-  0x007020680ae0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fd
-  0x007020680af0: fa fa fd fa fa fa fd fa fa fa fa fa fa fa fd fa
-  0x007020680b00: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
-  0x007020680b10: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
-  0x007020680b20: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
-Shadow byte legend (one shadow byte represents 8 application bytes):
-  Addressable:           00
-  Partially addressable: 01 02 03 04 05 06 07 
-  Heap left redzone:       fa
-  Freed heap region:       fd
-  Stack left redzone:      f1
-  Stack mid redzone:       f2
-  Stack right redzone:     f3
-  Stack after return:      f5
-  Stack use after scope:   f8
-  Global redzone:          f9
-  Global init order:       f6
-  Poisoned by user:        f7
-  Container overflow:      fc
-  Array cookie:            ac
-  Intra object redzone:    bb
-  ASan internal:           fe
-  Left alloca redzone:     ca
-  Right alloca redzone:    cb
-==66313==ABORTING
-MS: 1 CopyPart-; base unit: 8e5e1a31109078d9f8a45fdc4a0466da598b53b2
-0x1a,0xa,0xa,0xa,0x2,0x5b,0xa,0xa,0xa,0xa,0xa,0xf6,0xa,0xa,0xa,0x9a,0x0,0x9,0x72,0x77,0x77,0xab,0x65,0x0,0x7a,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xf8,0x70,0xc,0x9,0x9,0x0,0x0,0x27,0x0,0x0,0x0,0x9,0x72,0x77,0x77,0xab,0x65,0x0,0x7a,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0x0,0xf8,0x70,0xc,0x9,0x9,0x0,0x0,0x27,0x0,0x65,0x0,0x7a,0x0,0x0,0xa,0xa,0x9a,0x92,0x9a,
-\x1a\x0a\x0a\x0a\x02[\x0a\x0a\x0a\x0a\x0a\xf6\x0a\x0a\x0a\x9a\x00\x09rww\xabe\x00z\x00\x00\x00\x00\x00\x00\x00\x00\xf8p\x0c\x09\x09\x00\x00'\x00\x00\x00\x09rww\xabe\x00z\x00\x00\x00\x00\x00\x00\x00\x00\xf8p\x0c\x09\x09\x00\x00'\x00e\x00z\x00\x00\x0a\x0a\x9a\x92\x9a
-artifact_prefix='./'; Test unit written to ./crash-ecdc458c1f856e72f62017a778452e28c318dbb4
-Base64: GgoKCgJbCgoKCgr2CgoKmgAJcnd3q2UAegAAAAAAAAAA+HAMCQkAACcAAAAJcnd3q2UAegAAAAAAAAAA+HAMCQkAACcAZQB6AAAKCpqSmg==
-zsh: abort      ./editor
-dwrr.editor: sub main.c
-
-"\x1a\x0a\x0a\x0a\x02\x5b\x0a\x0a\x0a\x0a\x0a\xf6\x0a\x0a\x0a\x9a\x00\x09\x72\x77\x77\xab\x65\x00\x7a\x00\x00\x00\x00\x00\x00\x00\x00\xf8\x70\x0c\x09\x09\x00\x00\x27\x00\x00\x00\x09\x72\x77\x77\xab\x65\x00\x7a\x00\x00\x00\x00\x00\x00\x00\x00\xf8\x70\x0c\x09\x09\x00\x00\x27\x00\x65\x00\x7a\x00\x00\x0a\x0a\x9a\x92\x9a"
-*/
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-
-
-
-1 corp: 961/38Kb lim: 285 exec/s: 70 rss: 984Mb L: 68/258 MS: 4 InsertRepeatedBytes-CrossOver-ChangeBit-EraseBytes-
-#347273	REDUCE cov: 1154 ft: 8371 corp: 961/37Kb lim: 293 exec/s: 70 rss: 984Mb L: 196/258 MS: 2 CopyPart-EraseBytes-
-=================================================================
-==32352==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x0001070e5ffa at pc 0x000104b5bbcc bp 0x00016b2b6380 sp 0x00016b2b6378
-READ of size 1 at 0x0001070e5ffa thread T0
-    #0 0x104b5bbc8 in move_left main.c:187
-    #1 0x104b66e88 in jump_column main.c:288
-    #2 0x104b669f8 in prompt_jump_column main.c:1063
-    #3 0x104b504e8 in execute main.c:1282
-    #4 0x104b4aec0 in editor main.c:1362
-    #5 0x104b4abdc in LLVMFuzzerTestOneInput main.c:1384
-    #6 0x104b879e4 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
-    #7 0x104b871c4 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
-    #8 0x104b88840 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
-    #9 0x104b89478 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
-    #10 0x104b79b5c in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
-    #11 0x104ba14a0 in main FuzzerMain.cpp:20
-    #12 0x104fd90f0 in start+0x204 (dyld:arm64+0x50f0)
-    #13 0x4e0ffffffffffffc  (<unknown module>)
-
-0x0001070e5ffa is located 0 bytes to the right of 42-byte region [0x0001070e5fd0,0x0001070e5ffa)
-allocated by thread T0 here:
-    #0 0x1050bf94c in wrap_realloc+0x94 (libclang_rt.asan_osx_dynamic.dylib:arm64+0x3f94c)
-    #1 0x104b56a1c in insert main.c:399
-    #2 0x104b5fe8c in reverse_action main.c:1221
-    #3 0x104b5e944 in undo main.c:1228
-    #4 0x104b50550 in execute main.c:1285
-    #5 0x104b4aec0 in editor main.c:1362
-    #6 0x104b4abdc in LLVMFuzzerTestOneInput main.c:1384
-    #7 0x104b879e4 in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
-    #8 0x104b871c4 in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
-    #9 0x104b88840 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
-    #10 0x104b89478 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
-    #11 0x104b79b5c in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
-    #12 0x104ba14a0 in main FuzzerMain.cpp:20
-    #13 0x104fd90f0 in start+0x204 (dyld:arm64+0x50f0)
-    #14 0x4e0ffffffffffffc  (<unknown module>)
-
-SUMMARY: AddressSanitizer: heap-buffer-overflow main.c:187 in move_left
-Shadow bytes around the buggy address:
-  0x007020e3cba0: fa fa fd fd fd fd fd fd fa fa fa fa fa fa fa fa
-  0x007020e3cbb0: fa fa fa fa fa fa fa fa fa fa fd fd fd fd fd fa
-  0x007020e3cbc0: fa fa fd fd fd fd fd fd fa fa fa fa fa fa fa fa
-  0x007020e3cbd0: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
-  0x007020e3cbe0: fa fa fd fd fd fd fd fd fa fa fd fd fd fd fd fa
-=>0x007020e3cbf0: fa fa fd fd fd fd fd fd fa fa 00 00 00 00 00[02]
-  0x007020e3cc00: fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa fa
-  0x007020e3cc10: fa fa fa fa fa fa fa fa fa fa fd fd fd fd fd fd
-  0x007020e3cc20: fa fa fd fd fd fd fd fa fa fa fa fa fa fa fa fa
-  0x007020e3cc30: fa fa fd fd fd fd fd fd fa fa fa fa fa fa fa fa
-  0x007020e3cc40: fa fa fd fd fd fd fd fa fa fa fd fd fd fd fd fa
-Shadow byte legend (one shadow byte represents 8 application bytes):
-  Addressable:           00
-  Partially addressable: 01 02 03 04 05 06 07 
-  Heap left redzone:       fa
-  Freed heap region:       fd
-  Stack left redzone:      f1
-  Stack mid redzone:       f2
-  Stack right redzone:     f3
-  Stack after return:      f5
-  Stack use after scope:   f8
-  Global redzone:          f9
-  Global init order:       f6
-  Poisoned by user:        f7
-  Container overflow:      fc
-  Array cookie:            ac
-  Intra object redzone:    bb
-  ASan internal:           fe
-  Left alloca redzone:     ca
-  Right alloca redzone:    cb
-==32352==ABORTING
-MS: 4 InsertRepeatedBytes-PersAutoDict-PersAutoDict-PersAutoDict- DE: "domain-po"-"\x00\x00\x00R"-":JR.\x01\x00\x00\x00"-; base unit: 937d96d5d341db240b8ec0c29bd302c70f8d1767
-0x7a,0x7a,0x76,0x31,0x72,0x7a,0x75,0x7a,0x76,0x7a,0x7a,0x72,0x7a,0x72,0x65,0xa,0xa,0x60,0x9d,0x9c,0x27,0x75,0x66,0x9d,0x24,0x61,0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x0,0x0,0x0,0x52,0xff,0xff,0xff,0xff,0xff,0xff,0x65,0x7e,0xb4,0x0,0x1e,0x52,0x74,0xa8,0x45,0x45,0xa,0x76,0x6a,0x75,0x66,0x9d,0x2c,0x64,0x6f,0x6d,0x61,0x69,0x6e,0x2d,0x70,0x6f,0xed,0x3a,0x4a,0x52,0x2e,0x1,0x0,0x0,0x0,0x52,0x74,0xa8,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0xff,0xff,0xff,0x45,0x45,0x45,0x45,0x45,0x45,0xa8,0x45,0x45,0x45,0x45,0x45,0x45,0x76,0x7a,0x75,0x66,0x72,0x7a,0x45,0x45,0x45,0x45,0x45,0x55,0x40,0x0,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x45,0x65,0x54,0x0,0x0,0x0,0x45,0x45,0xe,0x77,0x77,0x77,0x77,0x77,0x77,0x77,0x77,0x77,0x0,0x77,
-zzv1rzuzvzzrzre\x0a\x0a`\x9d\x9c'uf\x9d$a\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00R\xff\xff\xff\xff\xff\xffe~\xb4\x00\x1eRt\xa8EE\x0avjuf\x9d,domain-po\xed:JR.\x01\x00\x00\x00Rt\xa8EEEEEEE\xff\xff\xffEEEEEE\xa8EEEEEEvzufrzEEEEEU@\x00EEEEEEEEEEEEeT\x00\x00\x00EE\x0ewwwwwwwww\x00w
-artifact_prefix='./'; Test unit written to ./crash-9022d2bc16312f0c418c7a1cc75285d0a4237706
-Base64: enp2MXJ6dXp2enpyenJlCgpgnZwndWadJGH/////////AAAAUv///////2V+tAAeUnSoRUUKdmp1Zp0sZG9tYWluLXBv7TpKUi4BAAAAUnSoRUVFRUVFRf///0VFRUVFRahFRUVFRUV2enVmcnpFRUVFRVVAAEVFRUVFRUVFRUVFRWVUAAAARUUOd3d3d3d3d3d3AHc=
-zsh: abort      ./editor
-dwrr.editor:  
-
 
 
 */
+
+
 
