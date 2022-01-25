@@ -7,7 +7,7 @@
 //          written on 2101177.005105
 //           edited on 2111114.172631
 //           edited on 2112116.194022
-//         debugged on 2201237.181929
+//         debugged on 2201252.003830
 //
 //          tentatively named:   "t".
 //
@@ -48,10 +48,8 @@ struct buffer {
 	struct line* lines;
 	struct action* actions;
 
-	nat 
-		saved, mode, 
+	nat     saved, mode, 
 		count, capacity, 
-
 		line_number_width, needs_display_update,
 
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 	
@@ -62,34 +60,27 @@ struct buffer {
 		use_txt_extension_when_absent,
 		line_number_color, status_bar_color, alert_prompt_color, 
 		info_prompt_color, default_prompt_color,
+		action_count, head;
 
-		action_count, head
-	;
 	char message[4096];
 	char filename[4096];
 };
 
 struct logical_state {
-	nat 
-		saved, line_number_width,
-
+	nat     saved, line_number_width,
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 
-		vsl, vsc, 	vdc,    	lal,  lac
-	;
+		vsl, vsc, 	vdc,    	lal,  lac;
 };
 
 struct textbox {
 	char* data;
-	nat
-		count, capacity, prompt_length, 
-		c, vc, vs, vo
-	;
+	nat count, capacity, prompt_length, c, vc, vs, vo;
 };
 
 struct action { 
-	nat* children; 	// count: count    (array of indexes into action list)
-	char* text; 	// count: length
-	nat parent; 	// (index into action list)
+	nat* children; 
+	char* text;
+	nat parent;
 	nat type;
 	nat choice;
 	nat count;
@@ -105,11 +96,8 @@ static nat
 static char* screen = NULL;
 static struct textbox tb = {0};
 
-// file buffer data:
 static struct buffer* buffers = NULL;
-static nat 
-	buffer_count = 0,
-	active_index = 0;
+static nat buffer_count = 0, active_index = 0;
 
 // active buffer's registers:
 static struct buffer buffer = {0};
@@ -372,7 +360,15 @@ static inline void create_action(struct action new) {
 
 static inline void insert(char c, bool should_record) { 
 
-	if (should_record and zero_width(c) and (actions[head].type != insert_action or actions[head].text[0] == '\n')) return; 
+	if (should_record and zero_width(c) 
+		and not (
+			actions[head].type == insert_action and 
+			actions[head].text[0] != '\n' and
+			actions[head].post.lcl == lcl and 
+			actions[head].post.lcc == lcc and 
+			actions[head].count == 0
+		)
+	) return; 
 
 	struct action new_action = {0};
 	if (should_record and visual(c)) record_logical_state(&new_action.pre);
@@ -410,13 +406,16 @@ static inline void insert(char c, bool should_record) {
 	buffer.saved = false;
 
 	if (not should_record) return;
+
+	lac = lcc; lal = lcl;
+
 	if (zero_width(c)) {
 		actions[head].text = realloc(actions[head].text, (size_t) actions[head].length + 1);
 		actions[head].text[actions[head].length++] = c;
 		record_logical_state(&actions[head].post);
 		return;
 	}
-	
+
 	record_logical_state(&new_action.post);
 	new_action.type = insert_action;
 	new_action.text = malloc(1);
@@ -482,6 +481,8 @@ static inline void delete(bool should_record) {
 	buffer.saved = false;
 	
 	if (not should_record) return;
+
+	lac = lcc; lal = lcl;
 
 	record_logical_state(&new_action.post);
 	new_action.type = delete_action;
@@ -1109,14 +1110,17 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 	return string;
 }
 
-static inline bool anchor_is_invalid() {
-	if (lal >= count) return true;
-	if (lac > lines[lal].count) return true;
-	return false;
+static inline bool anchor_is_invalid_DELETE_ME() {
+	// if (lal >= count) return true;
+	// if (lac > lines[lal].count) return true;
+	// return false;
+
+	return true;            
+	// delete this entire function now. its not needed. anchor is always valid now, i think. 
 }
 
 static inline char* get_selection(nat* out) {
-	if (anchor_is_invalid()) goto empty;
+	if (anchor_is_invalid_DELETE_ME()) goto empty;
 	if (lal < lcl) return get_sel(out, lal, lac, lcl, lcc);
 	if (lcl < lal) return get_sel(out, lcl, lcc, lal, lac);
 	if (lac < lcc) return get_sel(out, lal, lac, lcl, lcc);
@@ -1126,6 +1130,7 @@ empty:	*out = 0;
 }
 
 static inline void paste() {
+if (not fuzz) {
 	FILE* file = popen("pbpaste", "r");
 	if (not file) { sprintf(message, "error: paste: popen(): %s", strerror(errno)); return; }
 
@@ -1137,6 +1142,9 @@ static inline void paste() {
 	// nat s_capacity = 256;
 
 	nat length = 0;
+
+	lac = lcc;
+	lal = lcl;
 
 	nat c = 0;
 	while ((c = fgetc(file)) != EOF) {
@@ -1156,6 +1164,36 @@ static inline void paste() {
 	new.text = string;
 	new.length = length;
 	create_action(new);
+} else {
+	// FILE* file = popen("pbpaste", "r");
+	// if (not file) { sprintf(message, "error: paste: popen(): %s", strerror(errno)); return; }
+
+	struct action new = {0};
+	record_logical_state(&new.pre);
+
+	char* string = malloc(256);
+
+	// nat s_capacity = 256;
+
+	nat length = 0;
+	lac = lcc;
+	lal = lcl;
+	// if (length + 1 >= s_capacity) string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + 1)));
+	if (not fuzz) abort(); 
+	string = realloc(string, (size_t) (length + 1));
+
+	string[length++] = (char) 'A';
+	insert((char)'A', 0);
+
+	// pclose(file);
+	sprintf(message, "pasted %ldb", length);
+
+	record_logical_state(&new.post);
+	new.type = paste_text_action;
+	new.text = string;
+	new.length = length;
+	create_action(new);
+}
 }
 
 static inline void cut_text() {
@@ -1173,7 +1211,7 @@ anchor_first:
 }
 
 static inline void cut() { 
-	if (anchor_is_invalid()) { sprintf(message, "?"); return; }
+	if (anchor_is_invalid_DELETE_ME()) { sprintf(message, "?"); return; }
 
 	struct action new = {0};
 	record_logical_state(&new.pre);
@@ -1190,7 +1228,7 @@ static inline void cut() {
 
 static inline void copy() {
 	if (fuzz) return;
-	if (anchor_is_invalid()) { sprintf(message, "?"); return; }
+	if (anchor_is_invalid_DELETE_ME()) { sprintf(message, "?"); return; }
 
 	FILE* file = popen("pbcopy", "w");
 	if (not file) { sprintf(message, "error: copy: popen(): %s", strerror(errno)); return; }
@@ -1206,9 +1244,9 @@ static inline void copy() {
 static inline void replay_action(struct action a) {
 	require_logical_state(&a.pre);
 	if (a.type == no_action) {}
-	else if (a.type == insert_action or a.type == paste_text_action) 
+	else if (a.type == insert_action or a.type == paste_text_action) {
 		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
-	else if (a.type == delete_action) delete(0); 
+	} else if (a.type == delete_action) delete(0); 
 	else if (a.type == cut_text_action) cut_text();
 	else if (a.type == anchor_action) {}
 	else sprintf(message, "?");
@@ -1219,11 +1257,11 @@ static inline void reverse_action(struct action a) {
 	require_logical_state(&a.post);
 	if (a.type == no_action) {}
 	else if (a.type == insert_action) delete(0);
-	else if (a.type == paste_text_action)
+	else if (a.type == paste_text_action) {
 		while (lcc > a.pre.lcc or lcl > a.pre.lcl) delete(0);
-	else if (a.type == delete_action or a.type == cut_text_action) 
+	} else if (a.type == delete_action or a.type == cut_text_action) {
 		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
-	else if (a.type == anchor_action) {}
+	} else if (a.type == anchor_action) {}
 	else sprintf(message, "?");
 	require_logical_state(&a.pre);
 }
@@ -1314,24 +1352,35 @@ static inline void execute(char c, char p) {
 
 		else if (c == 's') save();
 		else if (c == 'S') rename_file();
+	
+		else if (c == '_') memset(message, 0, sizeof message);
+
+		else if (c == '.') {}
+		else if (c == ',') {}
+
+		else if (c == ';') {}
+		else if (c == ':') {}
+
+		else if (c == 9) {} // ?
+		else if (c == 10) {} // ?
+		else if (c == 32) {} // nop?
+
 		else if (c == 27) interpret_escape_code();
 
 	} else if (buffer.mode == 2) {
 
 		if (c == 't') buffer.mode = 0;
 		else if (c == 'r') buffer.mode = 1;
-		else if (c == 's') show_status = not show_status; 
-		else if (c == 'n') show_line_numbers = not show_line_numbers;
-		else if (c == 'd') memset(message, 0, sizeof message);
+		else if (c == 's') show_status = not show_status;  // temp
+		else if (c == 'n') show_line_numbers = not show_line_numbers; // temp
 		
 	} else buffer.mode = 1;
 }
 
 static inline void editor(const uint8_t* input, size_t input_count) {
 
-	// printf("hi\n");
 
-	// FILE* file = fopen("crash-9022d2bc16312f0c418c7a1cc75285d0a4237706", "r");
+	// FILE* file = fopen("crash-b019392511ce17e97e5710b3e737866f804f99f3", "r");
 	// if (not file) { perror("open"); exit(1); }
 	// fseek(file, 0, SEEK_END);
 	// size_t crash_length = (size_t) ftell(file);
@@ -1344,17 +1393,36 @@ static inline void editor(const uint8_t* input, size_t input_count) {
 	// printf("\n\n\nstr = \"");
 	// for (size_t i = 0; i < input_count; i++) printf("\\x%02hhx", input[i]);
 	// printf("\";\n\n\n");
+
 	// exit(1);
+
+
+
 	
-	// const char* str = "\x6a\x75\x66\x61\x74\xa8\x75\x66\x72\x7a\x45";
+	// const char* str = "\x74\x43\x72\x77\x74\x92\x72\x77\x58\x78\x74\x72\x77\x78\x7a";
 
-	const char* str = "jufat\xa8ufrzE";   
+	const char* str = "ttrwt\x92rwXxtrwxz";  
 
-	// c  <exit>  anchor   insertmode    <unicode>    <exit>      cut       undo      jump@col0
+	//             char   char               exit   
+
+	//        insertmode   unicode           exit    
+
+	//        alternatedown    redo    
+
+	//        insertmode                     exit   
+
+	//        redo   undo 
+
+
 
 	input = (const uint8_t*) str;
+
 	input_count = strlen(str);
+
 	// input_count = 1000;
+
+
+
 
 	struct termios terminal;
 	if (not fuzz) {
@@ -1444,9 +1512,6 @@ f	- tc isa!!
 
 
 
-
-
-
 --------------------------------------------------------
 			DONE:
 --------------------------------------------------------
@@ -1485,17 +1550,7 @@ f	- tc isa!!
 
 
 
-
-
-
-
-
-
-
-
 ///////////////////////////////// old code //////////////////////////////////////////////
-
-
 
 // static inline void recalculate_position() {    // used when we modify wrap or tab width. i think...
 // 	int save_lcl = lcl, save_lcc = lcc;
@@ -1504,8 +1559,6 @@ f	- tc isa!!
 // 	jump_line(save_lcl);
 // 	jump_column(save_lcc);
 // }
-
-
 
 	// FILE* file = fopen("crash-c6c6ea3f9acfd5ca8ebcbb8e7e3e17846aca32bb", "r");
 	// fseek(file, 0, SEEK_END);        
@@ -1526,8 +1579,150 @@ f	- tc isa!!
 	// input_count = strlen(str);
 
 
+	// const char* str = "jufat\xa8ufrzE";   
+
+	// c  <exit>  anchor   insertmode    <unicode>    <exit>      cut       undo      jump@col0
+
+
+
+00	REDUCE cov: 1183 ft: 8920 corp: 1230/93Kb lim: 958 exec/s: 614 rss: 1452Mb L: 129/871 MS: 1 EraseBytes-
+#833346	REDUCE cov: 1183 ft: 8920 corp: 1230/93Kb lim: 967 exec/s: 613 rss: 1452Mb L: 28/871 MS: 1 EraseBytes-
+=================================================================
+==58956==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x000116f40c72 at pc 0x000102b33900 bp 0x00016d2dd380 sp 0x00016d2dd378
+READ of size 1 at 0x000116f40c72 thread T0
+    #0 0x102b338fc in move_left main.c:189
+    #1 0x102b31df8 in delete main.c:474
+    #2 0x102b37474 in reverse_action main.c:1257
+    #3 0x102b36678 in undo main.c:1269
+    #4 0x102b27c4c in execute main.c:1335
+    #5 0x102b225bc in editor main.c:1432
+    #6 0x102b222d8 in LLVMFuzzerTestOneInput main.c:1454
+    #7 0x102b5fa3c in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
+    #8 0x102b5f21c in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
+    #9 0x102b60898 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
+    #10 0x102b614d0 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
+    #11 0x102b51bb4 in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
+    #12 0x102b794f8 in main FuzzerMain.cpp:20
+    #13 0x102d290f0 in start+0x204 (dyld:arm64+0x50f0)
+    #14 0x8a16fffffffffffc  (<unknown module>)
+
+0x000116f40c72 is located 0 bytes to the right of 2-byte region [0x000116f40c70,0x000116f40c72)
+allocated by thread T0 here:
+    #0 0x10301394c in wrap_realloc+0x94 (libclang_rt.asan_osx_dynamic.dylib:arm64+0x3f94c)
+    #1 0x102b2e750 in insert main.c:407
+    #2 0x102b37bac in reverse_action main.c:1261
+    #3 0x102b36678 in undo main.c:1269
+    #4 0x102b27c4c in execute main.c:1335
+    #5 0x102b225bc in editor main.c:1432
+    #6 0x102b222d8 in LLVMFuzzerTestOneInput main.c:1454
+    #7 0x102b5fa3c in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
+    #8 0x102b5f21c in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
+    #9 0x102b60898 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
+    #10 0x102b614d0 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
+    #11 0x102b51bb4 in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
+    #12 0x102b794f8 in main FuzzerMain.cpp:20
+    #13 0x102d290f0 in start+0x204 (dyld:arm64+0x50f0)
+    #14 0x8a16fffffffffffc  (<unknown module>)
+
+SUMMARY: AddressSanitizer: heap-buffer-overflow main.c:189 in move_left
+Shadow bytes around the buggy address:
+  0x007022e08130: fa fa fd fa fa fa fd fa fa fa fd fd fa fa fa fa
+  0x007022e08140: fa fa fa fa fa fa fd fa fa fa fa fa fa fa fd fa
+  0x007022e08150: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x007022e08160: fa fa fd fa fa fa fa fa fa fa fd fa fa fa fd fa
+  0x007022e08170: fa fa fa fa fa fa fd fa fa fa fd fa fa fa fd fa
+=>0x007022e08180: fa fa fd fa fa fa fd fa fa fa fa fa fa fa[02]fa
+  0x007022e08190: fa fa fa fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x007022e081a0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x007022e081b0: fa fa 04 fa fa fa fd fa fa fa fd fa fa fa fd fa
+  0x007022e081c0: fa fa fd fa fa fa fd fa fa fa 00 fa fa fa fd fa
+  0x007022e081d0: fa fa fd fa fa fa fa fa fa fa fd fa fa fa fa fa
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==58956==ABORTING
+MS: 1 CrossOver-; base unit: 511a5fd4707ac55efabed80447aa2932a6e4a86c
+0x9,0x6c,0xd1,0xd1,0x7f,0x21,0xd,0xff,0x86,0xff,0x2c,0x2d,0x54,0x2c,0x77,0x9,0x61,0x77,0x72,0x9,0x77,0x0,0x9,0x9,0x0,0x0,0x0,0x25,0xd1,0x7b,0x72,0x77,0x9,0x61,0x77,0x45,0x78,0x72,0x28,0x78,0x8,0x70,0x6f,0x72,0x74,0x7f,0x7f,0xd3,0x76,0x85,0x7a,0xfd,0x72,0x77,0x9d,0x46,0x0,0x7a,0x7a,0x77,0x9d,0x46,0xfd,0x72,0x77,0x9d,0x46,0x0,0x7a,0x7a,0x33,0x78,0x72,0x7a,0x72,0x77,0x67,0x67,0x7a,0x67,0x67,0x7a,0x77,0x9d,0x46,0xfd,0x72,0x77,0x9d,0x46,0x0,0x7a,0x7a,0x33,0x78,0x72,0x7a,0x7a,0x35,0x78,0x92,0x81,0x0,
+\x09l\xd1\xd1\x7f!\x0d\xff\x86\xff,-T,w\x09awr\x09w\x00\x09\x09\x00\x00\x00%\xd1{rw\x09awExr(x\x08port\x7f\x7f\xd3v\x85z\xfdrw\x9dF\x00zzw\x9dF\xfdrw\x9dF\x00zz3xrzrwggzggzw\x9dF\xfdrw\x9dF\x00zz3xrzz5x\x92\x81\x00
+artifact_prefix='./'; Test unit written to ./crash-e26e7bb6538311c641076a3de56cd36a03b67851
+Base64: CWzR0X8hDf+G/ywtVCx3CWF3cgl3AAkJAAAAJdF7cncJYXdFeHIoeAhwb3J0f3/TdoV6/XJ3nUYAenp3nUb9cnedRgB6ejN4cnpyd2dnemdnenedRv1yd51GAHp6M3hyeno1eJKBAA==
+zsh: abort      
+
+
+	// const char* str = "ڗgrwet\x97rwzr";
+
+	//  <unicode>    g      <exit>    word-left      insertmode      <unicode>    <exit>     undo    cut
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==63825==ABORTING
+MS: 2 ChangeASCIIInt-CopyPart-; base unit: 68cfcc9ba8ac3a3d18faeaee33f6f960c50db109
+0xa,0x89,0xff,0x6e,0x73,0x74,0x92,0x72,0x77,0x58,0x50,0x43,0x9,0xa,0xa,0xa,0x73,0x74,0x92,0x72,0x77,0x58,0x50,0x43,0x9,0xff,0x3d,0xff,0xff,0xd,0x72,0x77,0x5a,0x7a,0x77,0xac,0x78,0x21,0x7a,0x5a,0x7a,0x77,0xac,0x78,0x21,0x7a,0x77,0xac,0x78,0x33,0x0,0x0,0x73,0x74,0x92,0x72,0x77,0x58,0xe2,0x50,0x43,0x9,0xff,0xff,0x77,0xac,0x78,0x33,0x0,0x0,0x73,0x74,0x92,0x72,0x77,0x58,0xe2,0x50,0x43,0x9,0xff,0xff,0xff,0xff,0xd,0x72,0x77,0x5a,0x7a,0x77,0xac,0x78,0x21,0x7a,0x77,0xac,0x78,0x32,0x0,0x0,0x0,0x0,0xac,0x78,0x21,0x7a,0x7f,0xbe,
+\x0a\x89\xffnst\x92rwXPC\x09\x0a\x0a\x0ast\x92rwXPC\x09\xff=\xff\xff\x0drwZzw\xacx!zZzw\xacx!zw\xacx3\x00\x00st\x92rwX\xe2PC\x09\xff\xffw\xacx3\x00\x00st\x92rwX\xe2PC\x09\xff\xff\xff\xff\x0drwZzw\xacx!zw\xacx2\x00\x00\x00\x00\xacx!z\x7f\xbe
+artifact_prefix='./'; Test unit written to ./crash-b019392511ce17e97e5710b3e737866f804f99f3
+Base64: Con/bnN0knJ3WFBDCQoKCnN0knJ3WFBDCf89//8NcndaeneseCF6Wnp3rHgheneseDMAAHN0knJ3WOJQQwn//3eseDMAAHN0knJ3WOJQQwn/////DXJ3Wnp3rHgheneseDIAAAAArHghen++
+zsh: abort      ./editor
+
+
+
+
+
+
+
+	// const char* str = "\x2d\x2c\x72\x77\x61\x74\x7f\x7f\xd3\x76\x85\x72\x77\x72\x7a\x7a";
+
+
+
+
+
+
+	// const char* str = "ttrwat\x7f\x7fgv\x85rwrzz";
+
+
+	//0     char   char   <exit>    
+
+	//1     anchor   insertmode    
+
+	//0     <backspace>   <backspace>     char    char    <unicode>    <exit>
+
+	//1     cut     undo   undo 
 
 */
-
 
 

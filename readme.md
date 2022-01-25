@@ -7,33 +7,37 @@ It's features and behavior are loosely based on that of TextEdit, ed, and vi/vim
 
 ### Features:
 
- - Fast and efficient
+ - Minimalist, fast and efficient
 
- - No dependancies
+ - Configurable key bindings
 
- - Supports Unicode UTF8 encoded text.
+ - Supports the UTF8 unicode encoding only.
 
  - Soft wrapping lines
 
  - Tab stops
 
- - Uses an undo tree system
+ - Copy/paste to global clipboard
 
  - Togglable line numbers and status bar
 
- - Copy/paste 
-
  - Multiple buffers
+
+ - Uses an undo tree system
+
+ - Programmable: Turing-complete human-readable machine-code for interface.
+
+ - No dependancies 
 
 
 ### Other notes:
 
  - VT100 terminal based
 
- - source code is currently only 1400 lines of code. 
+ - source code is currently only 1459 lines of code. 
 
  - No syntax highlighting, ever
 
  - Built-in file editor coming soon!
 
- - Minimalist Turing-complete machine-code ISA for interface.
+ - Better
