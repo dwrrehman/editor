@@ -7,7 +7,7 @@
 //          written on 2101177.005105
 //           edited on 2111114.172631
 //           edited on 2112116.194022
-//         debugged on 2201252.003830
+//         debugged on 2201252.173237
 //
 //          tentatively named:   "t".
 //
@@ -25,8 +25,14 @@
 #include <errno.h>
 #include <stdbool.h>
 
-#define fuzz 1
-#define use_main 1
+
+#include <stdint.h>
+
+
+
+
+// #define fuzz 0
+// #define use_main 0
 
 typedef ssize_t nat;
 
@@ -89,7 +95,6 @@ struct action {
 	struct logical_state post;
 };
 
-// application global data:
 static nat 
 	window_rows = 0, 
 	window_columns = 0;
@@ -99,7 +104,6 @@ static struct textbox tb = {0};
 static struct buffer* buffers = NULL;
 static nat buffer_count = 0, active_index = 0;
 
-// active buffer's registers:
 static struct buffer buffer = {0};
 static struct line* lines = NULL;
 static struct action* actions = NULL;
@@ -123,6 +127,14 @@ static inline void get_datetime(char datetime[16]) {
 	gettimeofday(&tv, NULL);
 	struct tm* tm_info = localtime(&tv.tv_sec);
 	strftime(datetime, 15, "%y%m%d%u.%H%M%S", tm_info);
+}
+
+static inline bool stdin_is_empty() {
+	fd_set readfds;
+	FD_ZERO(&readfds);
+	FD_SET(STDIN_FILENO, &readfds);
+	struct timeval timeout = {0};
+	return select(1, &readfds, NULL, NULL, &timeout) != 1;
 }
 
 static inline struct termios configure_terminal() {
@@ -319,8 +331,8 @@ static inline void move_word_right() {
 	));
 }
 
-static inline void record_logical_state(struct logical_state* pcond_out) { // get current state, fill into given pre/post-condtion.
-	struct logical_state* p = pcond_out; // respelling.
+static inline void record_logical_state(struct logical_state* pcond_out) {
+	struct logical_state* p = pcond_out; 
 
 	p->saved = buffer.saved;
 	p->line_number_width = line_number_width;
@@ -333,8 +345,8 @@ static inline void record_logical_state(struct logical_state* pcond_out) { // ge
 	p->lac = lac;
 }
 
-static inline void require_logical_state(struct logical_state* pcond_in) {   // set current state, based on a pre/post-condition.
-	struct logical_state* p = pcond_in; // respelling.
+static inline void require_logical_state(struct logical_state* pcond_in) {  
+	struct logical_state* p = pcond_in;
 
 	buffer.saved = p->saved;
 	line_number_width = p->line_number_width;
@@ -367,8 +379,7 @@ static inline void insert(char c, bool should_record) {
 			actions[head].post.lcl == lcl and 
 			actions[head].post.lcc == lcc and 
 			actions[head].count == 0
-		)
-	) return; 
+		)) return; 
 
 	struct action new_action = {0};
 	if (should_record and visual(c)) record_logical_state(&new_action.pre);
@@ -380,20 +391,21 @@ static inline void insert(char c, bool should_record) {
 		struct line new = {malloc((size_t) rest), rest, rest};
 		if (rest) memcpy(new.data, this->data + lcc, (size_t) rest);
 
-		// if (count + 1 > capacity) 
-		// 	lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
-		if (not fuzz) abort();
-		lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1));
+		
+		if (count + 1 >= capacity) 
+			lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
+		// if (not fuzz) abort();
+		// lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1));
 
 		memmove(lines + lcl + 2, lines + lcl + 1, sizeof(struct line) * (size_t)(count - (lcl + 1)));
 		lines[lcl + 1] = new;
 		count++;
 
 	} else {
-		// if (this->count + 1 > this->capacity) 
-		// 	this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
-		if (not fuzz) abort();
-		this->data = realloc(this->data, (size_t)(this->count + 1));
+		if (this->count + 1 >= this->capacity) 
+			this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
+		// if (not fuzz) abort();
+		// this->data = realloc(this->data, (size_t)(this->count + 1));
 
 		memmove(this->data + lcc + 1, this->data + lcc, (size_t) (this->count - lcc));
 		this->data[lcc] = c;
@@ -404,9 +416,7 @@ static inline void insert(char c, bool should_record) {
 	else move_right(1);
 
 	buffer.saved = false;
-
 	if (not should_record) return;
-
 	lac = lcc; lal = lcl;
 
 	if (zero_width(c)) {
@@ -438,13 +448,12 @@ static inline void delete(bool should_record) {
 		move_left(1);
 		struct line* new = lines + lcl;
 
-		// if (new->count + this->count > new->capacity)
-		// 	new->data = realloc(new->data, (size_t)(new->capacity = 8 * (new->capacity + this->count)));
-		if (not fuzz) abort();
-		new->data = realloc(new->data, (size_t)(new->count + this->count));
+		if (new->count + this->count >= new->capacity)
+			new->data = realloc(new->data, (size_t)(new->capacity = 8 * (new->capacity + this->count)));
+		// if (not fuzz) abort();
+		// new->data = realloc(new->data, (size_t)(new->count + this->count));
 
 		if (this->count) memcpy(new->data + new->count, this->data, (size_t) this->count);
-
 		free(this->data);
 
 		new->count += this->count;
@@ -452,8 +461,8 @@ static inline void delete(bool should_record) {
 			sizeof(struct line) * (size_t)(count - (lcl + 2)));
 		count--;
 
-		if (not fuzz) abort();
-		lines = realloc(lines, sizeof(struct line) * (size_t)count);
+		// if (not fuzz) abort();
+		// lines = realloc(lines, sizeof(struct line) * (size_t)count);
 
 		if (should_record) {
 			deleted_length = 1;
@@ -474,14 +483,12 @@ static inline void delete(bool should_record) {
 		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
 		this->count -= save - lcc;
 
-		if (not fuzz) abort();
-		this->data = realloc(this->data, (size_t)(this->count));
+		// if (not fuzz) abort();
+		// this->data = realloc(this->data, (size_t)(this->count));
 	}
 
 	buffer.saved = false;
-	
 	if (not should_record) return;
-
 	lac = lcc; lal = lcl;
 
 	record_logical_state(&new_action.post);
@@ -598,7 +605,7 @@ static inline void display() {
     
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", vsl + 1, vsc + 1 + line_number_width);
 
-	if (not fuzz) 
+	// if (not fuzz) 
 		write(1, screen, (size_t) length);
 }
 
@@ -618,7 +625,7 @@ static inline void textbox_move_right() {
 }
 
 static inline void textbox_insert(char c) {
-	if (tb.count + 1 > tb.capacity) 
+	if (tb.count + 1 >= tb.capacity) 
 		tb.data = realloc(tb.data, (size_t)(tb.capacity = 8 * (tb.capacity + 1)));
 	///TODO: do a realloc, so that we can detect memory bugs with the textbox.
 
@@ -654,18 +661,18 @@ static inline void textbox_display(const char* prompt, nat prompt_color) {
 
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", window_rows, tb.vs + 1 + tb.prompt_length);
 
-	if (not fuzz) 
+	// if (not fuzz) 
 		write(1, screen, (size_t) length);
 }
 
 static inline void print_above_textbox(char* write_message, nat color) {
 	nat length = sprintf(screen, "\033[%ld;1H\033[K\033[38;5;%ldm%s\033[m", window_rows - 1, color, write_message);
-	if (not fuzz) write(1, screen, (size_t) length);
+	// if (not fuzz) 
+		write(1, screen, (size_t) length);
 }
 
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
-	if (fuzz) return;     ///TODO: make this code tested by the fuzzer by supplying the input to its read calls. somehow.
-
+	// if (fuzz) return;     ///TODO: make this code tested by the fuzzer by supplying the input to its read calls. somehow.
 	tb.prompt_length = (nat) strlen(prompt_message);
 	do {
 		adjust_window_size();
@@ -674,6 +681,7 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 		read(0, &c, 1);
 		if (c == '\r' or c == '\n') break;
 		else if (c == '\t') { /*tab complete*/ }
+		else if (c == 27 and stdin_is_empty()) { tb.count = 0; break; }
 		else if (c == 27) {
 			read(0, &c, 1);
 			if (c == '[') {
@@ -682,7 +690,7 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 				else if (c == 'B') {}
 				else if (c == 'C') textbox_move_right();
 				else if (c == 'D') textbox_move_left();
-			} else if (c == 27) { tb.count = 0; break; }
+			}
 		} else if (c == 127) textbox_delete();
 		else textbox_insert(c);
 	} while (1);
@@ -695,7 +703,7 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 }
 
 static inline bool confirmed(const char* question) {
-	if (fuzz) return true;
+	// if (fuzz) return true;
 
 	char prompt_message[4096] = {0};
 	sprintf(prompt_message, "%s? (yes/no): ", question);
@@ -907,7 +915,8 @@ static inline void move_to_previous_buffer() {
 }
 
 static inline void open_file(const char* given_filename) {
-	if (fuzz) return;
+	// if (fuzz) return;
+
 	if (not strlen(given_filename)) return;
 	
 	FILE* file = fopen(given_filename, "r");
@@ -942,7 +951,7 @@ static inline void open_file(const char* given_filename) {
 }
 
 static inline void save() {
-	if (fuzz) return;
+	// if (fuzz) return;
 
 	if (not strlen(filename)) {
 	prompt_filename:
@@ -983,7 +992,7 @@ static inline void save() {
 }
 
 static inline void rename_file() {
-	if (fuzz) return;
+	// if (fuzz) return;
 
 	char new[4096] = {0};
 	prompt_filename:
@@ -1001,23 +1010,69 @@ static inline void rename_file() {
 	}
 }
 
+
+
+
+
+
+
 static inline void interpret_escape_code() {
-	if (fuzz) return;
+	// if (fuzz) return;
 
 	static nat scroll_counter = 0;
 	char c = 0;
-	read(0, &c, 1);      // TODO: make it so pressing escape once is sufficient. also add mouse support so that you can click to reposition the cursor. 
-	if (c == 27) buffer.mode = 1;
-	else if (c == '[') {
+	read(0, &c, 1);      // TODO: make it so pressing escape once is sufficient. 
+	
+
+
+	if (stdin_is_empty()) sprintf(message, "stdin buffer is empty!");
+		
+
+	// int n = 0;
+	// if (ioctl(0, I_NREAD, &n) == 0) {
+ //    		// we have exactly n bytes to read
+	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
+	// }
+
+	// n = 1;
+	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
+ //    		// we have exactly n bytes to read
+	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
+	// }
+
+	// n = 2;
+	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
+ //    		// we have exactly n bytes to read
+	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
+	// }
+
+	// n = 3;
+	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
+ //    		// we have exactly n bytes to read
+	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
+	// }
+
+
+
+
+
+			// also add mouse support so that you can click to reposition the cursor. 
+	
+	if (c == '[') {
 		read(0, &c, 1);
 		if (c == 'A') move_up();
 		else if (c == 'B') move_down();
 		else if (c == 'C') move_right(1);
 		else if (c == 'D') move_left(1);
-		else if (c == 32) { 
-			for (nat i = 0; i < 4; i++) {
-				read(0, &c, 1);
-			}
+		else if (c == 'M') { 
+			
+			char str[3] = {0};
+
+			read(0, str + 0, 1); // b
+			read(0, str + 1, 1); // x
+			read(0, str + 2, 1); // y
+
+			sprintf(message, "mouse reporting: [%d,%d,%d].", str[0],str[1],str[2]);
 		} 
 		else if (c == 77) {
 			read(0, &c, 1);
@@ -1065,7 +1120,7 @@ static inline void prompt_jump_column() {
 	sprintf(message, "jumped to %ld %ld", lcl, lcc);
 }
 
-static inline bool is_exit_sequence(char c, char p) {
+static inline bool is_exit_sequence(char c, char p) {  //todo: make this configurable. 
 	return c == 'w' and p == 'r' or c == 'f' and p == 'u';
 }
 
@@ -1074,35 +1129,35 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 	char* string = malloc(256);
 	nat length = 0;
 
-	// nat s_capacity = 256;
+	nat s_capacity = 256;
 
 	nat line = first_line, column = first_column;
 
 	while (line < last_line) {
 
-		// if (length + lines[line].count - column + 1 >= s_capacity) 
-		// 	string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + lines[line].count - column + 1)));
-		if (not fuzz) abort();
-		string = realloc(string, (size_t) (length + lines[line].count - column));
+		if (length + lines[line].count - column + 1 >= s_capacity) 
+			string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + lines[line].count - column + 1)));
+		// if (not fuzz) abort();
+		// string = realloc(string, (size_t) (length + lines[line].count - column));
 
 		if (lines[line].count - column) 
 			memcpy(string + length, lines[line].data + column, (size_t)(lines[line].count - column));
 
 		length += lines[line].count - column;
 
-		if (not fuzz) abort(); 
-		string = realloc(string, (size_t) (length + 1));
+		// if (not fuzz) abort(); 
+		// string = realloc(string, (size_t) (length + 1));
 
 		string[length++] = '\n';
-
 		line++;
 		column = 0;
 	}
 
-	// if (length + (last_column - column) >= s_capacity) 
-	// 	string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + last_column - column)));
-	if (not fuzz) abort();
-	string = realloc(string, (size_t) (length + last_column - column));	
+	if (length + last_column - column >= s_capacity) 
+		string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + last_column - column)));
+
+	// if (not fuzz) abort();
+	// string = realloc(string, (size_t) (length + last_column - column));	
 
 	if (last_column - column) memcpy(string + length, lines[line].data + column, (size_t)(last_column - column));
 	length += last_column - column;
@@ -1110,90 +1165,66 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 	return string;
 }
 
-static inline bool anchor_is_invalid_DELETE_ME() {
-	// if (lal >= count) return true;
-	// if (lac > lines[lal].count) return true;
-	// return false;
-
-	return true;            
-	// delete this entire function now. its not needed. anchor is always valid now, i think. 
-}
-
 static inline char* get_selection(nat* out) {
-	if (anchor_is_invalid_DELETE_ME()) goto empty;
 	if (lal < lcl) return get_sel(out, lal, lac, lcl, lcc);
 	if (lcl < lal) return get_sel(out, lcl, lcc, lal, lac);
 	if (lac < lcc) return get_sel(out, lal, lac, lcl, lcc);
 	if (lcc < lac) return get_sel(out, lcl, lcc, lal, lac);
-empty:	*out = 0;
+	*out = 0;
 	return NULL;
 }
 
 static inline void paste() {
-if (not fuzz) {
+// if (not fuzz) {
 	FILE* file = popen("pbpaste", "r");
 	if (not file) { sprintf(message, "error: paste: popen(): %s", strerror(errno)); return; }
-
 	struct action new = {0};
 	record_logical_state(&new.pre);
-
 	char* string = malloc(256);
-
-	// nat s_capacity = 256;
-
+	nat s_capacity = 256;
 	nat length = 0;
-
-	lac = lcc;
-	lal = lcl;
-
+	lac = lcc; lal = lcl;
 	nat c = 0;
 	while ((c = fgetc(file)) != EOF) {
-		// if (length + 1 >= s_capacity) string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + 1)));
-		if (not fuzz) abort(); 
-		string = realloc(string, (size_t) (length + 1));
-
+		if (length + 1 >= s_capacity) 
+			string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + 1)));
+		// if (not fuzz) abort(); 
+		// string = realloc(string, (size_t) (length + 1));
 		string[length++] = (char) c;
 		insert((char)c, 0);
 	}
-
 	pclose(file);
 	sprintf(message, "pasted %ldb", length);
-
 	record_logical_state(&new.post);
 	new.type = paste_text_action;
 	new.text = string;
 	new.length = length;
 	create_action(new);
-} else {
-	// FILE* file = popen("pbpaste", "r");
-	// if (not file) { sprintf(message, "error: paste: popen(): %s", strerror(errno)); return; }
+// } else {
+// 	// FILE* file = popen("pbpaste", "r");
+// 	// if (not file) { sprintf(message, "error: paste: popen(): %s", strerror(errno)); return; }
+// 	struct action new = {0};
+// 	record_logical_state(&new.pre);
+// 	char* string = malloc(256);
+// 	// nat s_capacity = 256;
+// 	nat length = 0;
+// 	lac = lcc;
+// 	lal = lcl;
+// 	// if (length + 1 >= s_capacity) string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + 1)));
 
-	struct action new = {0};
-	record_logical_state(&new.pre);
+// 	if (not fuzz) abort(); 
+// 	string = realloc(string, (size_t) (length + 1));
 
-	char* string = malloc(256);
-
-	// nat s_capacity = 256;
-
-	nat length = 0;
-	lac = lcc;
-	lal = lcl;
-	// if (length + 1 >= s_capacity) string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + 1)));
-	if (not fuzz) abort(); 
-	string = realloc(string, (size_t) (length + 1));
-
-	string[length++] = (char) 'A';
-	insert((char)'A', 0);
-
-	// pclose(file);
-	sprintf(message, "pasted %ldb", length);
-
-	record_logical_state(&new.post);
-	new.type = paste_text_action;
-	new.text = string;
-	new.length = length;
-	create_action(new);
-}
+// 	string[length++] = (char) 'A';
+// 	insert((char)'A', 0);
+// 	// pclose(file);
+// 	sprintf(message, "pasted %ldb", length);
+// 	record_logical_state(&new.post);
+// 	new.type = paste_text_action;
+// 	new.text = string;
+// 	new.length = length;
+// 	create_action(new);
+// }
 }
 
 static inline void cut_text() {
@@ -1211,8 +1242,6 @@ anchor_first:
 }
 
 static inline void cut() { 
-	if (anchor_is_invalid_DELETE_ME()) { sprintf(message, "?"); return; }
-
 	struct action new = {0};
 	record_logical_state(&new.pre);
 	nat deleted_length = 0;
@@ -1227,8 +1256,7 @@ static inline void cut() {
 }
 
 static inline void copy() {
-	if (fuzz) return;
-	if (anchor_is_invalid_DELETE_ME()) { sprintf(message, "?"); return; }
+	// if (fuzz) return;
 
 	FILE* file = popen("pbcopy", "w");
 	if (not file) { sprintf(message, "error: copy: popen(): %s", strerror(errno)); return; }
@@ -1249,7 +1277,7 @@ static inline void replay_action(struct action a) {
 	} else if (a.type == delete_action) delete(0); 
 	else if (a.type == cut_text_action) cut_text();
 	else if (a.type == anchor_action) {}
-	else sprintf(message, "?");
+	else sprintf(message, "error: unknown action");
 	require_logical_state(&a.post); 
 }
 
@@ -1262,7 +1290,7 @@ static inline void reverse_action(struct action a) {
 	} else if (a.type == delete_action or a.type == cut_text_action) {
 		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
 	} else if (a.type == anchor_action) {}
-	else sprintf(message, "?");
+	else sprintf(message, "error: unknown action");
 	require_logical_state(&a.pre);
 }
 
@@ -1309,6 +1337,7 @@ static inline void execute(char c, char p) {
 		if (is_exit_sequence(c, p)) { undo(); buffer.mode = 1; }
 		else if (c == '\r') insert('\n', 1);
 		else if (c == 127) delete(1);
+		else if (c == 27 and stdin_is_empty()) buffer.mode = 1;
 		else if (c == 27) interpret_escape_code();
 		else insert(c, 1);
 
@@ -1357,14 +1386,13 @@ static inline void execute(char c, char p) {
 
 		else if (c == '.') {}
 		else if (c == ',') {}
-
 		else if (c == ';') {}
 		else if (c == ':') {}
+		else if (c == '\t') {}
+		else if (c == '\n') {} 
+		else if (c == ' ') {}
 
-		else if (c == 9) {} // ?
-		else if (c == 10) {} // ?
-		else if (c == 32) {} // nop?
-
+		else if (c == 27 and stdin_is_empty()) buffer.mode = 1;
 		else if (c == 27) interpret_escape_code();
 
 	} else if (buffer.mode == 2) {
@@ -1379,7 +1407,6 @@ static inline void execute(char c, char p) {
 
 static inline void editor(const uint8_t* input, size_t input_count) {
 
-
 	// FILE* file = fopen("crash-b019392511ce17e97e5710b3e737866f804f99f3", "r");
 	// if (not file) { perror("open"); exit(1); }
 	// fseek(file, 0, SEEK_END);
@@ -1393,59 +1420,38 @@ static inline void editor(const uint8_t* input, size_t input_count) {
 	// printf("\n\n\nstr = \"");
 	// for (size_t i = 0; i < input_count; i++) printf("\\x%02hhx", input[i]);
 	// printf("\";\n\n\n");
-
 	// exit(1);
 
-
-
-	
 	// const char* str = "\x74\x43\x72\x77\x74\x92\x72\x77\x58\x78\x74\x72\x77\x78\x7a";
 
-	const char* str = "ttrwt\x92rwXxtrwxz";  
-
-	//             char   char               exit   
-
-	//        insertmode   unicode           exit    
-
-	//        alternatedown    redo    
-
-	//        insertmode                     exit   
-
-	//        redo   undo 
-
-
-
-	input = (const uint8_t*) str;
-
-	input_count = strlen(str);
-
+	// input = (const uint8_t*) str;
+	// input_count = strlen(str);
 	// input_count = 1000;
 
-
-
-
 	struct termios terminal;
-	if (not fuzz) {
+	// if (not fuzz) {
 		terminal = configure_terminal();
 		write(1, "\033[?1049h\033[?1000h", 16);
 		buffer.needs_display_update = 1;
-	}
+	// }
 	char p = 0, c = 0;
-	size_t input_index = 0; 
+	// size_t input_index = 0; 
 loop:
 	if (buffer.needs_display_update) {
 		adjust_window_size();
 		display();
 	}
-	if (fuzz) {
-		if (input_index >= input_count) goto done;
-		c = (char) input[input_index++];	
-	} else read(0, &c, 1);
+	// if (fuzz) {
+		// if (input_index >= input_count) goto done;
+		// c = (char) input[input_index++];	
+	// } else {
+		read(0, &c, 1);
+	// }
 	buffer.needs_display_update = 1;
 	execute(c, p);
 	p = c;
 	if (buffer_count) goto loop;
-done:
+// done:
 	while (buffer_count) close_active_buffer();
 	zero_registers();
 	free(screen);
@@ -1453,30 +1459,29 @@ done:
 	window_rows = 0;
 	window_columns = 0;
 
-	if (not fuzz) {
+	// if (not fuzz) {
 		write(1, "\033[?1049l\033[?1000l", 16);	
 		tcsetattr(0, TCSAFLUSH, &terminal);
-	}
+	// }
 }
 
-#if fuzz && !use_main
+// #if fuzz && !use_main
 
-int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
-int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
-	create_empty_buffer();
-	editor(input, size);
-	return 0;
-}
+// int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
+// int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
+// 	create_empty_buffer();
+// 	editor(input, size);
+// 	return 0;
+// }
 
-#else
-
+// #else
 int main(const int argc, const char** argv) {
 	if (argc <= 1) create_empty_buffer();
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
 	editor(NULL, 0);
 }
 
-#endif
+// #endif
 
 
 /*
@@ -1722,6 +1727,26 @@ zsh: abort      ./editor
 	//0     <backspace>   <backspace>     char    char    <unicode>    <exit>
 
 	//1     cut     undo   undo 
+
+
+
+
+
+
+
+
+	// const char* str = "ttrwt\x92rwXxtrwxz";  
+
+	//             char   char               exit   
+
+	//        insertmode   unicode           exit    
+
+	//        alternatedown    redo    
+
+	//        insertmode                     exit   
+
+	//        redo   undo 
+
 
 */
 
