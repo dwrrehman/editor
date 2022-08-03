@@ -1,0 +1,128 @@
+so basically, where we are in the editor right now, is this:
+===================================================================
+
+
+
+		REDO DISPLAY()
+
+
+	1. we need to modify the display code to give control sequences that are more like vim, according to the typescript output that i captured from vims output. 
+
+
+		the way vim does it, is via the H escape sequence, and jumping around and printing particular parts of the file, never printing whitespace. 
+
+			and then, before each frame, they clear the entire screen. which, makes sense. i guess that operation is very fast to do. 
+
+			we might to with this display model, i think. probably. 
+
+	
+
+
+
+
+
+
+
+		REDO SCROLLING + DISPLAY
+
+
+
+	1.1. i want to get scrolling like buttery smooth, like in vim. i think you use a terminal escape sequence for it, i think. 
+
+
+
+
+		there is a particular terminal sequence that we need to send, in order to make the terminal scroll the lines on the screen. 
+
+		we then simply have to print one extra line either at the bottom or top, in order to get the maximum possible scrolling smoothness. super cool. yayyyy
+
+					this would happen when the user moves down, or when they scroll using the trackpad. cool. 
+
+
+
+
+
+
+
+		VERIFY ITS BUG-FREE
+
+
+
+	2. once we do that, i think i want to vet the code alittle bit more,  and then do more fuzz testing, allowing for literally ALL PARTS of the editor to get fuzz tested. i want to know that this thing wont crash, basically. 
+
+
+		okay, so assuming that we implement that stuff, then id say we should work at getting the rest of the editor fuzz tested. 
+
+			and then we can work on implementing features. yeah. 
+
+		
+
+
+2207177.004225:
+
+	found a bug! its to do with tabs and the line wrapping.  its super challenging, actually. super non obvious what the solution is.. but i know ill get it. 
+
+
+		so yeah, once we finish that, i think i want to redo the display and scrolling code. at leastttt the scrolling code, i think. probably both though. 
+
+
+		thennnnn we can work on implementing new features. 
+
+
+			yay
+
+
+			other than that, the editor seems pretty bug free so far though. we have to do alot more testing once we figure out this tab bug, though. 
+
+
+
+
+
+
+			
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		ADD FUN/EASY FEATURES!
+
+
+	3. once display/scrolling is smooth as possible, AND the editor is 100% stable to use, THENNN i want to start working on:
+
+
+
+		- completely redo the keybindings to make it actually useable. 
+
+
+		- making it more user friendly:      add file tab completion.  
+
+
+		- add a file browser?... (simple one!)
+
+
+
+		- add a configuration file, to store the configurations of the editor. 
+
+
+		
+		- adding programming support        [INFINITE LOOP DANGER!!]
+		
+
+
+
+	EXTRA:
+	
+		- add "ed mode" support, kinda. ie, where we dont draw the screen every command, and text only prints when requested.
+
+
+

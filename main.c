@@ -4,13 +4,79 @@
 //     Designed with reliability, minimalism, 
 //     simplicity, and ergonimics in mind.
 //
+//          tentatively named:   "t".
+//
+// -------------------------------------------
+//
+//    change log:
 //          written on 2101177.005105
 //           edited on 2111114.172631
 //           edited on 2112116.194022
 //         debugged on 2201252.173237
-//
-//          tentatively named:   "t".
-//
+// 	   debugged on 2208022.211844
+
+
+/*
+
+------------------- bugs ----------------------
+
+
+
+[bug] 		- solve the two slow-unit-fffffff test cases that the fuzzer found. 
+
+
+[bug]		- test how the editor handles unicode characters with the new tab/wrap/display code. 
+
+
+[bug]		- scrolling down is not very smooth. we should be using the terminal scrolling mode. 
+			use the escape code sequences 
+			<ESC>[r    to enable scrolling on the whole screen
+			<ESC>[{start};{end}r   to enable scrolling on a range of rows of the screen.
+			<ESC>D    to scroll down
+			<ESC>M   to scroll up
+
+
+
+
+---------------- features ---------------
+
+
+[feature]	- rework the way the wrap_width disabling/dynamic adjusting works. 
+**
+
+
+[feature]	- init parameters from config file. 
+*
+
+
+[optional]	- (BIG) redesign how we are drawing the screen, to be based on drawing text that is isolated by 
+**			whitespace, and jumping the (invisible) cursor around the screen, to draw those areas.  
+			and clearing the screen before each frame of course,
+
+[optional]	- rebind the keybindings of the editor. 
+
+
+[feature]	- implment my programming language in it. 
+*
+
+
+[feature]		- add tab completion for file names, and a small file veiwer, when saving/renaming. 
+***
+
+
+------------------- fixed -----------------
+
+
+[FIXED]		- tab width and wrap width major bugs.
+
+[FIXED]		- the performance of our display function is not good. we are currently making an n^2 algorithm in order to draw the screen.
+
+
+
+*/
+
+
+
 #include <iso646.h>
 #include <termios.h>
 #include <stdio.h>
@@ -24,15 +90,15 @@
 #include <sys/time.h> 
 #include <errno.h>
 #include <stdbool.h>
-
-
 #include <stdint.h>
 
 
+#define is_fuzz_testing		1
 
 
-// #define fuzz 0
-// #define use_main 0
+#define memory_safe 	is_fuzz_testing
+#define fuzz 		is_fuzz_testing
+#define use_main    not is_fuzz_testing
 
 typedef ssize_t nat;
 
@@ -75,7 +141,7 @@ struct buffer {
 struct logical_state {
 	nat     saved, line_number_width,
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 
-		vsl, vsc, 	vdc,    	lal,  lac;
+		vsl, vsc, 	vdc,    	lal, lac;
 };
 
 struct textbox {
@@ -100,6 +166,10 @@ static nat
 	window_columns = 0;
 static char* screen = NULL;
 static struct textbox tb = {0};
+
+static size_t fuzz_input_index = 0; 
+static size_t fuzz_input_count = 0;
+static const uint8_t* fuzz_input = NULL;
 
 static struct buffer* buffers = NULL;
 static nat buffer_count = 0, active_index = 0;
@@ -130,6 +200,8 @@ static inline void get_datetime(char datetime[16]) {
 }
 
 static inline bool stdin_is_empty() {
+	if (fuzz) return fuzz_input_index >= fuzz_input_count;
+
 	fd_set readfds;
 	FD_ZERO(&readfds);
 	FD_SET(STDIN_FILENO, &readfds);
@@ -148,70 +220,73 @@ static inline struct termios configure_terminal() {
 			| (unsigned long)IXON );	
 	raw.c_lflag &= ~( (unsigned long)ECHO 
 			| (unsigned long)ICANON 
+			| (unsigned long)ISIG 
 			| (unsigned long)IEXTEN );
 	tcsetattr(0, TCSAFLUSH, &raw);
 	return save;
+}
+
+
+static inline nat compute_custom_vcc(nat given_lcc) {
+	nat v = 0;
+	for (nat c = 0; c < given_lcc; c++) {
+		char k = lines[lcl].data[c];
+		if (k == '\t') {
+			if (v + tab_width - v % tab_width <= wrap_width)
+				do v++; 
+				while (v % tab_width);
+			else v = 0;
+		} else if (visual(k)) {
+			if (v < wrap_width) v++; else v = 0;
+		}
+	}
+	return v;
 }
 
 static inline void compute_vcc() {
 	vcc = 0;
 	for (nat c = 0; c < lcc; c++) {
 		char k = lines[lcl].data[c];
-		if (vcc >= wrap_width) vcc = 0;
 		if (k == '\t') { 
-			do {
-				if (vcc >= wrap_width) vcc = 0;
-				vcc++; 
-			} while (vcc % tab_width); 
-		} else if (visual(k)) vcc++;
+			if (vcc + tab_width - vcc % tab_width <= wrap_width) 
+				do vcc++; 
+				while (vcc % tab_width);  
+			else vcc = 0;
+		} else if (visual(k)) {
+			if (vcc < wrap_width) vcc++; else vcc = 0;
+		}
 	}
 }
 
+
 static inline void move_left(bool change_desired) {
+
 	if (not lcc) {
 		if (not lcl) return;
-		lcl--; 
+		lcl--;
 		lcc = lines[lcl].count;
-visual_line_up: compute_vcc();
-visual_just_line_up: vcl--;
+ line_up: 	vcl--;
 		if (vsl) vsl--;
 		else if (vol) vol--;
+		compute_vcc();
 		if (vcc > window_columns - 1 - line_number_width) { 
-			vsc = window_columns - 1 - line_number_width; 
-			voc = vcc - vsc; 
-		} else { 
-			vsc = vcc;
-			voc = 0; 
-		}
+			vsc = window_columns - 1 - line_number_width;  voc = vcc - vsc; 
+		} else { vsc = vcc; voc = 0; }
 	} else {
-		nat save_lcc = lcc;
-		do lcc--; while (lcc and zero_width(
-			lines[lcl].
-			data[lcc]));
-		if (lines[lcl].data[lcc] == '\t') {
-			compute_vcc();
-			nat old_vcc = vcc;
-			for (nat c = lcc; c < save_lcc; c++) {
-				char k = lines[lcl].data[c];
-				if (old_vcc >= wrap_width) goto visual_just_line_up;
-				if (k == '\t') {
-					do {
-						if (old_vcc >= wrap_width) goto visual_just_line_up; 
-						old_vcc++; 
-					} while (old_vcc % tab_width); 
-				} else if (visual(k)) old_vcc++;
-			}
-			nat diff = old_vcc - vcc;
+		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
+		if (lines[lcl].data[lcc] == '\t') { 
+			const nat diff = tab_width - compute_custom_vcc(lcc) % tab_width;
+			if (vcc < diff) goto line_up;
+			vcc -= diff;
 			if (vsc >= diff) vsc -= diff;
 			else if (voc >= diff - vsc) { voc -= diff - vsc; vsc = 0; }
-
 		} else {
-			if (not vcc) goto visual_line_up;
-			vcc--; 
-			if (vsc) vsc--; 
-			else if (voc) voc--;
+			if (not vcc) goto line_up;
+			vcc--;
+			if (vsc) vsc--; else if (voc) voc--;
 		}
 	}
+
 	if (change_desired) vdc = vcc;
 }
 
@@ -220,38 +295,31 @@ static inline void move_right(bool change_desired) {
 	if (lcc >= lines[lcl].count) {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0; 
-		vcl++; vcc = 0; voc = 0; vsc = 0;
+line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
 		if (vsl < window_rows - 1 - show_status) vsl++; 
 		else vol++;
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
+			do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
+			if (vcc + tab_width - vcc % tab_width > wrap_width) goto line_down;
 			do {
-				if (wrap_width <= tab_width) break; 
-				
-				if (vcc >= wrap_width) {
-					vcl++; vcc = 0; voc = 0; vsc = 0;
-					if (vsl < window_rows - 1 - show_status) vsl++; 
-					else vol++;
-				}
-				vcc++;
+				vcc++; 
 				if (vsc < window_columns - 1 - line_number_width) vsc++;
 				else voc++;
-
-			} while (vcc % tab_width); 
+			} while (vcc % tab_width);
+			
 		} else {
-			if (vcc >= wrap_width) {
-				vcl++; vcc = 0; voc = 0; vsc = 0;
-				if (vsl < window_rows - 1 - show_status) vsl++; 
-				else vol++;
-			}
+			do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
+			if (vcc >= wrap_width) goto line_down;
 			vcc++; 
 			if (vsc < window_columns - 1 - line_number_width) vsc++; 
 			else voc++;
 		}
-		do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
-	}	
+	}
+
 	if (change_desired) vdc = vcc;
 }
+
 
 static inline void move_up() {
 	if (not vcl) {
@@ -275,7 +343,10 @@ static inline void move_down() {
 		move_right(0);
 	}
 	while (vcc < vdc and lcc < lines[lcl].count) {
+
 		if (lines[lcl].data[lcc] == '\t' and vcc + (tab_width - (vcc % tab_width)) > vdc) return;
+		// TODO: ^ WHAT IS THIS!?!?!?
+
 		move_right(0);
 	}
 }
@@ -391,21 +462,24 @@ static inline void insert(char c, bool should_record) {
 		struct line new = {malloc((size_t) rest), rest, rest};
 		if (rest) memcpy(new.data, this->data + lcc, (size_t) rest);
 
-		
-		if (count + 1 >= capacity) 
-			lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
-		// if (not fuzz) abort();
-		// lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1));
+		if (not memory_safe) {
+			if (count + 1 >= capacity) 
+				lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
+		} else {
+			lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1));
+		}
 
 		memmove(lines + lcl + 2, lines + lcl + 1, sizeof(struct line) * (size_t)(count - (lcl + 1)));
 		lines[lcl + 1] = new;
 		count++;
 
 	} else {
-		if (this->count + 1 >= this->capacity) 
-			this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
-		// if (not fuzz) abort();
-		// this->data = realloc(this->data, (size_t)(this->count + 1));
+		if (not memory_safe) {
+			if (this->count + 1 >= this->capacity) 
+				this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
+		} else {
+			this->data = realloc(this->data, (size_t)(this->count + 1));
+		}
 
 		memmove(this->data + lcc + 1, this->data + lcc, (size_t) (this->count - lcc));
 		this->data[lcc] = c;
@@ -448,10 +522,12 @@ static inline void delete(bool should_record) {
 		move_left(1);
 		struct line* new = lines + lcl;
 
-		if (new->count + this->count >= new->capacity)
-			new->data = realloc(new->data, (size_t)(new->capacity = 8 * (new->capacity + this->count)));
-		// if (not fuzz) abort();
-		// new->data = realloc(new->data, (size_t)(new->count + this->count));
+		if (not memory_safe) {
+			if (new->count + this->count >= new->capacity)
+				new->data = realloc(new->data, (size_t)(new->capacity = 8 * (new->capacity + this->count)));
+		} else {
+			new->data = realloc(new->data, (size_t)(new->count + this->count));
+		}
 
 		if (this->count) memcpy(new->data + new->count, this->data, (size_t) this->count);
 		free(this->data);
@@ -461,8 +537,11 @@ static inline void delete(bool should_record) {
 			sizeof(struct line) * (size_t)(count - (lcl + 2)));
 		count--;
 
-		// if (not fuzz) abort();
-		// lines = realloc(lines, sizeof(struct line) * (size_t)count);
+		if (not memory_safe) {
+			// do nothing.
+		} else {
+			lines = realloc(lines, sizeof(struct line) * (size_t)count);
+		}
 
 		if (should_record) {
 			deleted_length = 1;
@@ -483,8 +562,11 @@ static inline void delete(bool should_record) {
 		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
 		this->count -= save - lcc;
 
-		// if (not fuzz) abort();
-		// this->data = realloc(this->data, (size_t)(this->count));
+		if (not memory_safe) {
+			// do nothing.
+		} else {
+			this->data = realloc(this->data, (size_t)(this->count));
+		}
 	}
 
 	buffer.saved = false;
@@ -502,7 +584,7 @@ static inline void adjust_window_size() {
 	struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
 
-	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 20; window.ws_col = 40; }
+	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 15; window.ws_col = 50; }
 
 	if (window.ws_row != window_rows or window.ws_col != window_columns) {
 		window_rows = window.ws_row;
@@ -510,16 +592,34 @@ static inline void adjust_window_size() {
 		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));
 	}
 
-	if (not wrap_width) wrap_width = window_columns - 1 - line_number_width;
+	// 	TODO: 
+    	//
+	// 		redo this behaviour. make it so that you can explicitly disable wrapwidth (not just make it sudo-infinity), 
+	// 		or explicitly make it wrap to screen width, and dynamically adjust as the screen width changes!!!
+	// 
+
+	if (not wrap_width) wrap_width = (window_columns - 1) - (line_number_width);
+
 }
+
 
 static inline void display() {
 	nat length = 9; 
 	memcpy(screen, "\033[?25l\033[H", 9);
+	
+	nat sl = 0, sc = 0; 
+	nat vl = vol, vc = voc; 
 
-	nat line = 0, col = 0;
-	nat vl = 0, vc = 0;
-	nat sl = 0, sc = 0;
+	struct logical_state state = {0};
+	record_logical_state(&state);
+	while (1) { 
+		if (vcc == 0 and vcl == 0) break;
+		if (vcc == state.voc and vcl == state.vol) break;
+		move_left(0);
+	}
+
+ 	nat line = lcl, col = lcc; 
+	require_logical_state(&state); 
 
 	double f = floor(log10((double) count)) + 1;
 	int line_number_digits = (int)f;
@@ -532,32 +632,38 @@ static inline void display() {
 			if (not col) length += sprintf(screen + length, "\033[38;5;%ldm%*ld\033[0m  ", buffer.line_number_color, line_number_digits, line);
 			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
 		}
-            
-		do {
-			if (col >= lines[line].count) goto next_logical_line;
-			if (vc >= wrap_width) goto next_visual_line;
 
-			char k = lines[line].data[col];
+		do {
+			if (col >= lines[line].count) goto next_logical_line;  
+			
+			char k = lines[line].data[col++];
+
 			if (k == '\t') {
+
+				if (vc + (tab_width - vc % tab_width) > wrap_width) goto next_visual_line;
+
 				do { 
-					if (vc >= wrap_width) goto next_visual_line;
-					if (vc >= voc and vc < voc + window_columns - line_number_width
-					and vl >= vol and vl < vol + window_rows - show_status) {
-						screen[length++] = ' ';
-						sc++;
+					if (	vc >= voc and vc < voc + window_columns - line_number_width
+					and 	vl >= vol and vl < vol + window_rows - show_status
+					) {
+						screen[length++] = ' '; sc++;
 					}
 					vc++;
 				} while (vc % tab_width);
+
 			} else {
-				if (vc >= voc and vc < voc + window_columns - line_number_width
-				and vl >= vol and vl < vol + window_rows - show_status and
-				(sc or visual(k))) {
+				if (	vc >= voc and vc < voc + window_columns - line_number_width
+				and 	vl >= vol and vl < vol + window_rows - show_status 
+				and 	(sc or visual(k))
+				) { 
 					screen[length++] = k;
-					if (visual(k)) { sc++; }
+					if (visual(k)) sc++;	
 				}
-				if (visual(k)) vc++; 
+				if (visual(k)) {
+					if (vc >= wrap_width) goto next_visual_line; 
+					vc++; 
+				} 
 			}
-			col++;
 
 		} while (sc < window_columns - line_number_width or col < lines[line].count);
 
@@ -584,11 +690,11 @@ static inline void display() {
 
 		char datetime[16] = {0};
 		get_datetime(datetime);
-		nat status_length = sprintf(screen + length, " %s %ld %ld %ld %ld %ld %s %c  %s",
+		nat status_length = sprintf(screen + length, " %s [%ld][%ld %ld][%ld %ld][%ld %ld][%ld %ld][%ld %ld] %s %c  %s",
 			datetime, 
 			buffer.mode, 
 			active_index, buffer_count,
-			lcl, lcc, 
+			lcl, lcc, vcl, vcc, vsl, vsc, vol, voc, 
 			filename, 
 			buffer.saved ? 's' : 'e', 
 			message
@@ -605,7 +711,7 @@ static inline void display() {
     
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", vsl + 1, vsc + 1 + line_number_width);
 
-	// if (not fuzz) 
+	if (not fuzz) 
 		write(1, screen, (size_t) length);
 }
 
@@ -625,9 +731,13 @@ static inline void textbox_move_right() {
 }
 
 static inline void textbox_insert(char c) {
-	if (tb.count + 1 >= tb.capacity) 
-		tb.data = realloc(tb.data, (size_t)(tb.capacity = 8 * (tb.capacity + 1)));
-	///TODO: do a realloc, so that we can detect memory bugs with the textbox.
+
+	if (not memory_safe) {
+		if (tb.count + 1 >= tb.capacity) 
+			tb.data = realloc(tb.data, (size_t)(tb.capacity = 8 * (tb.capacity + 1)));
+	} else {
+		tb.data = realloc(tb.data, (size_t)(tb.count + 1));
+	}
 
 	memmove(tb.data + tb.c + 1, tb.data + tb.c, (size_t) (tb.count - tb.c));
 	tb.data[tb.c] = c;
@@ -641,6 +751,12 @@ static inline void textbox_delete() {
 	textbox_move_left();
 	memmove(tb.data + tb.c, tb.data + save, (size_t)(tb.count - save));
 	tb.count -= save - tb.c;
+
+	if (not memory_safe) {
+		// do nothing.
+	} else {
+		tb.data = realloc(tb.data, (size_t)(tb.count));
+	}
 }
 
 static inline void textbox_display(const char* prompt, nat prompt_color) {
@@ -661,31 +777,53 @@ static inline void textbox_display(const char* prompt, nat prompt_color) {
 
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", window_rows, tb.vs + 1 + tb.prompt_length);
 
-	// if (not fuzz) 
+	if (not fuzz) 
 		write(1, screen, (size_t) length);
 }
 
 static inline void print_above_textbox(char* write_message, nat color) {
 	nat length = sprintf(screen, "\033[%ld;1H\033[K\033[38;5;%ldm%s\033[m", window_rows - 1, color, write_message);
-	// if (not fuzz) 
+	if (not fuzz) 
 		write(1, screen, (size_t) length);
 }
 
+
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
-	// if (fuzz) return;     ///TODO: make this code tested by the fuzzer by supplying the input to its read calls. somehow.
+
 	tb.prompt_length = (nat) strlen(prompt_message);
 	do {
 		adjust_window_size();
 		textbox_display(prompt_message, color);
 		char c = 0;
-		read(0, &c, 1);
+		
+		if (fuzz) {
+			if (fuzz_input_index >= fuzz_input_count) break;
+			c = (char) fuzz_input[fuzz_input_index++];	
+		} else {
+			read(0, &c, 1);
+		}
+
 		if (c == '\r' or c == '\n') break;
 		else if (c == '\t') { /*tab complete*/ }
 		else if (c == 27 and stdin_is_empty()) { tb.count = 0; break; }
 		else if (c == 27) {
-			read(0, &c, 1);
-			if (c == '[') {
+
+			if (fuzz) {
+				if (fuzz_input_index >= fuzz_input_count) break;
+				c = (char) fuzz_input[fuzz_input_index++];	
+			} else {
 				read(0, &c, 1);
+			}
+
+			if (c == '[') {
+
+				if (fuzz) {
+					if (fuzz_input_index >= fuzz_input_count) break;
+					c = (char) fuzz_input[fuzz_input_index++];	
+				} else {
+					read(0, &c, 1);
+				}
+
 				if (c == 'A') {}
 				else if (c == 'B') {}
 				else if (c == 'C') textbox_move_right();
@@ -693,6 +831,11 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 			}
 		} else if (c == 127) textbox_delete();
 		else textbox_insert(c);
+
+		if (fuzz) { 
+			if (fuzz_input_index >= fuzz_input_count) break;
+		}
+
 	} while (1);
 	if (tb.count > out_size) tb.count = out_size;
 	memcpy(out, tb.data, (size_t) tb.count);
@@ -703,7 +846,6 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 }
 
 static inline bool confirmed(const char* question) {
-	// if (fuzz) return true;
 
 	char prompt_message[4096] = {0};
 	sprintf(prompt_message, "%s? (yes/no): ", question);
@@ -715,6 +857,8 @@ static inline bool confirmed(const char* question) {
 		else if (not strncmp(response, "no", 3)) return false;
 		else if (not strncmp(response, "", 1)) return false;
 		else print_above_textbox("please type \"yes\" or \"no\".", buffer.default_prompt_color);
+
+		if (fuzz) return true;
 	}
 }
 
@@ -839,11 +983,11 @@ static inline void initialize_registers() {
 	buffer.saved = true;
 	buffer.mode = 0;
 
-	wrap_width = 0; // init using file
+	wrap_width = 21; // init using file 
 	tab_width = 8; // init using file
 	line_number_width = 0;
 
-	show_status = 0; // init using file
+	show_status = 1; // init using file
 	show_line_numbers = 0; // init using file
 	buffer.needs_display_update = 1;
 
@@ -915,7 +1059,7 @@ static inline void move_to_previous_buffer() {
 }
 
 static inline void open_file(const char* given_filename) {
-	// if (fuzz) return;
+	if (fuzz) return;
 
 	if (not strlen(given_filename)) return;
 	
@@ -951,7 +1095,7 @@ static inline void open_file(const char* given_filename) {
 }
 
 static inline void save() {
-	// if (fuzz) return;
+	if (fuzz) return;
 
 	if (not strlen(filename)) {
 	prompt_filename:
@@ -992,7 +1136,7 @@ static inline void save() {
 }
 
 static inline void rename_file() {
-	// if (fuzz) return;
+	if (fuzz) return;
 
 	char new[4096] = {0};
 	prompt_filename:
@@ -1010,61 +1154,35 @@ static inline void rename_file() {
 	}
 }
 
-
-
-
-
-
-
 static inline void interpret_escape_code() {
-	// if (fuzz) return;
 
-	static nat scroll_counter = 0;
 	char c = 0;
-	read(0, &c, 1);      // TODO: make it so pressing escape once is sufficient. 
 	
-
-
-	if (stdin_is_empty()) sprintf(message, "stdin buffer is empty!");
-		
-
-	// int n = 0;
-	// if (ioctl(0, I_NREAD, &n) == 0) {
- //    		// we have exactly n bytes to read
-	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
-	// }
-
-	// n = 1;
-	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
- //    		// we have exactly n bytes to read
-	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
-	// }
-
-	// n = 2;
-	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
- //    		// we have exactly n bytes to read
-	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
-	// }
-
-	// n = 3;
-	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
- //    		// we have exactly n bytes to read
-	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
-	// }
-
-
-
-
-
-			// also add mouse support so that you can click to reposition the cursor. 
+	if (fuzz) {
+		if (fuzz_input_index >= fuzz_input_count) return;
+		c = (char) fuzz_input[fuzz_input_index++];	
+	} else {
+		read(0, &c, 1);
+	}
 	
 	if (c == '[') {
-		read(0, &c, 1);
+
+
+		if (fuzz) {
+			if (fuzz_input_index >= fuzz_input_count) return;
+			c = (char) fuzz_input[fuzz_input_index++];	
+		} else {
+			read(0, &c, 1);
+		}
+
 		if (c == 'A') move_up();
 		else if (c == 'B') move_down();
 		else if (c == 'C') move_right(1);
 		else if (c == 'D') move_left(1);
-		else if (c == 'M') { 
+
+		/*  TODO:   i need to completely redo the way that we scroll the screen, using mouse/trackpad scrolling. 
+
+		else if (c == 'M') {
 			
 			char str[3] = {0};
 
@@ -1074,24 +1192,38 @@ static inline void interpret_escape_code() {
 
 			sprintf(message, "mouse reporting: [%d,%d,%d].", str[0],str[1],str[2]);
 		} 
+
+
 		else if (c == 77) {
+
 			read(0, &c, 1);
+
 			if (c == 97) {
-				read(0, &c, 1); read(0, &c, 1);
-				scroll_counter++;
-				if (scroll_counter == buffer.scroll_speed) {
+
+				read(0, &c, 1); 
+				read(0, &c, 1);
+
+				// scroll_counter++;
+				// if (scroll_counter == buffer.scroll_speed) {
 					move_down();
-					scroll_counter = 0;
-				} else buffer.needs_display_update = 0;
+				// 	scroll_counter = 0;
+				// } else buffer.needs_display_update = 0;
+
 			} else if (c == 96) {
-				read(0, &c, 1); read(0, &c, 1);
-				scroll_counter++;
-				if (scroll_counter == buffer.scroll_speed) {
+
+				read(0, &c, 1); 
+				read(0, &c, 1);
+
+				// scroll_counter++;
+				// if (scroll_counter == buffer.scroll_speed) {
 					move_up();
-					scroll_counter = 0;
-				} else buffer.needs_display_update = 0;
-			}
+				//	scroll_counter = 0;
+				// } else buffer.needs_display_update = 0;
+			} 
 		}
+	
+		*/
+	
 	} 
 }
 
@@ -1134,30 +1266,36 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 	nat line = first_line, column = first_column;
 
 	while (line < last_line) {
-
-		if (length + lines[line].count - column + 1 >= s_capacity) 
-			string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + lines[line].count - column + 1)));
-		// if (not fuzz) abort();
-		// string = realloc(string, (size_t) (length + lines[line].count - column));
+		
+		if (not memory_safe) {
+			if (length + lines[line].count - column + 1 >= s_capacity) 
+				string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + lines[line].count - column + 1)));
+		} else {
+			string = realloc(string, (size_t) (length + lines[line].count - column));
+		}
 
 		if (lines[line].count - column) 
 			memcpy(string + length, lines[line].data + column, (size_t)(lines[line].count - column));
 
 		length += lines[line].count - column;
 
-		// if (not fuzz) abort(); 
-		// string = realloc(string, (size_t) (length + 1));
+		if (not memory_safe) {
+			// do nothing. 
+		} else {
+			string = realloc(string, (size_t) (length + 1));
+		}
 
 		string[length++] = '\n';
 		line++;
 		column = 0;
 	}
 
-	if (length + last_column - column >= s_capacity) 
-		string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + last_column - column)));
-
-	// if (not fuzz) abort();
-	// string = realloc(string, (size_t) (length + last_column - column));	
+	if (not memory_safe) {
+		if (length + last_column - column >= s_capacity) 
+		 	string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + last_column - column)));
+	} else {
+		string = realloc(string, (size_t) (length + last_column - column));	
+	}
 
 	if (last_column - column) memcpy(string + length, lines[line].data + column, (size_t)(last_column - column));
 	length += last_column - column;
@@ -1175,7 +1313,9 @@ static inline char* get_selection(nat* out) {
 }
 
 static inline void paste() {
-// if (not fuzz) {
+
+ if (not fuzz) {
+
 	FILE* file = popen("pbpaste", "r");
 	if (not file) { sprintf(message, "error: paste: popen(): %s", strerror(errno)); return; }
 	struct action new = {0};
@@ -1186,10 +1326,14 @@ static inline void paste() {
 	lac = lcc; lal = lcl;
 	nat c = 0;
 	while ((c = fgetc(file)) != EOF) {
-		if (length + 1 >= s_capacity) 
-			string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + 1)));
-		// if (not fuzz) abort(); 
-		// string = realloc(string, (size_t) (length + 1));
+
+		if (not memory_safe) {
+			if (length + 1 >= s_capacity) 
+				string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + 1)));
+		} else {
+			string = realloc(string, (size_t) (length + 1));
+		}
+
 		string[length++] = (char) c;
 		insert((char)c, 0);
 	}
@@ -1200,31 +1344,26 @@ static inline void paste() {
 	new.text = string;
 	new.length = length;
 	create_action(new);
-// } else {
-// 	// FILE* file = popen("pbpaste", "r");
-// 	// if (not file) { sprintf(message, "error: paste: popen(): %s", strerror(errno)); return; }
-// 	struct action new = {0};
-// 	record_logical_state(&new.pre);
-// 	char* string = malloc(256);
-// 	// nat s_capacity = 256;
-// 	nat length = 0;
-// 	lac = lcc;
-// 	lal = lcl;
-// 	// if (length + 1 >= s_capacity) string = realloc(string, (size_t) (s_capacity = 2 * (s_capacity + length + 1)));
 
-// 	if (not fuzz) abort(); 
-// 	string = realloc(string, (size_t) (length + 1));
 
-// 	string[length++] = (char) 'A';
-// 	insert((char)'A', 0);
-// 	// pclose(file);
-// 	sprintf(message, "pasted %ldb", length);
-// 	record_logical_state(&new.post);
-// 	new.type = paste_text_action;
-// 	new.text = string;
-// 	new.length = length;
-// 	create_action(new);
-// }
+ } else {
+ 	struct action new = {0};
+ 	record_logical_state(&new.pre);
+ 	char* string = malloc(256);
+ 	nat length = 0;
+ 	lac = lcc;
+ 	lal = lcl;
+ 	string = realloc(string, (size_t) (length + 1));
+ 	string[length++] = (char) 'A';
+ 	insert((char)'A', 0);
+ 	sprintf(message, "pasted %ldb", length);
+ 	record_logical_state(&new.post);
+ 	new.type = paste_text_action;
+ 	new.text = string;
+ 	new.length = length;
+ 	create_action(new);
+ }
+
 }
 
 static inline void cut_text() {
@@ -1256,7 +1395,7 @@ static inline void cut() {
 }
 
 static inline void copy() {
-	// if (fuzz) return;
+	if (fuzz) return;
 
 	FILE* file = popen("pbcopy", "w");
 	if (not file) { sprintf(message, "error: copy: popen(): %s", strerror(errno)); return; }
@@ -1405,9 +1544,150 @@ static inline void execute(char c, char p) {
 	} else buffer.mode = 1;
 }
 
-static inline void editor(const uint8_t* input, size_t input_count) {
+static inline void editor(const uint8_t* _input, size_t _input_count) {
 
-	// FILE* file = fopen("crash-b019392511ce17e97e5710b3e737866f804f99f3", "r");
+	struct termios terminal;
+	if (not fuzz) {
+		terminal = configure_terminal();
+		write(1, "\033[?1049h\033[?1000h\033[7l", 20);
+		buffer.needs_display_update = 1;
+	}
+	
+	if (fuzz) {
+		fuzz_input_index = 0; 
+		fuzz_input = _input;
+		fuzz_input_count = _input_count;
+	}
+
+	char p = 0, c = 0;
+	
+loop:
+	if (buffer.needs_display_update) {
+		adjust_window_size();
+		display();
+	}
+	if (fuzz) {
+		if (fuzz_input_index >= fuzz_input_count) goto done;
+		c = (char) fuzz_input[fuzz_input_index++];	
+	} else {
+		read(0, &c, 1);
+	}
+	buffer.needs_display_update = 1;
+	execute(c, p);
+	p = c;
+	if (buffer_count) goto loop;
+done:
+	while (buffer_count) close_active_buffer();
+	zero_registers();
+	free(screen);
+	screen = NULL;
+	window_rows = 0;
+	window_columns = 0;
+
+	if (not fuzz) {
+		write(1, "\033[?1049l\033[?1000l\033[7h", 20);	
+		tcsetattr(0, TCSAFLUSH, &terminal);
+	}
+}
+
+#if fuzz && !use_main
+
+int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
+int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
+	create_empty_buffer();
+	editor(input, size);
+	return 0;
+}
+
+#else
+
+int main(const int argc, const char** argv) {
+	if (argc <= 1) create_empty_buffer();
+	else for (int i = 1; i < argc; i++) open_file(argv[i]);
+	editor(NULL, 0);
+}
+
+#endif
+
+
+
+
+
+// ---------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// static nat scroll_counter = 0;
+
+	// DONE:    TODO: make it so pressing escape once is sufficient.
+
+	// if (stdin_is_empty()) sprintf(message, "stdin buffer is empty!");
+	// also add mouse support so that you can click to reposition the cursor. 
+
+
+
+
+
+
+		// todo: add    esc [ 2004 l       :   disable bracketed paste mode. because we arent babies, and dont care about copy paste attacks. 
+
+		// note:  we already have:  1049h   : switch to the alternate screen. 
+
+		//
+
+
+
+
+
+
+
+// FILE* file = fopen("crash-b019392511ce17e97e5710b3e737866f804f99f3", "r");
 	// if (not file) { perror("open"); exit(1); }
 	// fseek(file, 0, SEEK_END);
 	// size_t crash_length = (size_t) ftell(file);
@@ -1428,60 +1708,9 @@ static inline void editor(const uint8_t* input, size_t input_count) {
 	// input_count = strlen(str);
 	// input_count = 1000;
 
-	struct termios terminal;
-	// if (not fuzz) {
-		terminal = configure_terminal();
-		write(1, "\033[?1049h\033[?1000h", 16);
-		buffer.needs_display_update = 1;
-	// }
-	char p = 0, c = 0;
-	// size_t input_index = 0; 
-loop:
-	if (buffer.needs_display_update) {
-		adjust_window_size();
-		display();
-	}
-	// if (fuzz) {
-		// if (input_index >= input_count) goto done;
-		// c = (char) input[input_index++];	
-	// } else {
-		read(0, &c, 1);
-	// }
-	buffer.needs_display_update = 1;
-	execute(c, p);
-	p = c;
-	if (buffer_count) goto loop;
-// done:
-	while (buffer_count) close_active_buffer();
-	zero_registers();
-	free(screen);
-	screen = NULL;
-	window_rows = 0;
-	window_columns = 0;
 
-	// if (not fuzz) {
-		write(1, "\033[?1049l\033[?1000l", 16);	
-		tcsetattr(0, TCSAFLUSH, &terminal);
-	// }
-}
 
-// #if fuzz && !use_main
 
-// int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
-// int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
-// 	create_empty_buffer();
-// 	editor(input, size);
-// 	return 0;
-// }
-
-// #else
-int main(const int argc, const char** argv) {
-	if (argc <= 1) create_empty_buffer();
-	else for (int i = 1; i < argc; i++) open_file(argv[i]);
-	editor(NULL, 0);
-}
-
-// #endif
 
 
 /*
@@ -1750,4 +1979,364 @@ zsh: abort      ./editor
 
 */
 
+
+
+
+
+
+
+
+/*
+
+
+
+
+static inline void move_left(bool change_desired) {
+	if (not lcc) {
+		if (not lcl) return;
+		lcl--; 
+		lcc = lines[lcl].count;
+visual_line_up: compute_vcc();
+visual_just_line_up: vcl--;
+		if (vsl) vsl--;
+		else if (vol) vol--;
+		if (vcc > window_columns - 1 - line_number_width) { 
+			vsc = window_columns - 1 - line_number_width; 
+			voc = vcc - vsc; 
+		} else { 
+			vsc = vcc;
+			voc = 0; 
+		}
+	} else {
+		nat save_lcc = lcc;
+		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
+		if (lines[lcl].data[lcc] == '\t') {
+			
+
+			compute_vcc();
+			nat old_vcc = vcc;
+			for (nat c = lcc; c < save_lcc; c++) {
+				char k = lines[lcl].data[c];
+				if (old_vcc >= wrap_width) goto visual_just_line_up;
+				if (k == '\t') {
+					do {
+						if (old_vcc >= wrap_width) goto visual_just_line_up; 
+						old_vcc++; 
+					} while (old_vcc % tab_width); 
+				} else if (visual(k)) old_vcc++;
+			}
+			nat diff = old_vcc - vcc;
+			if (vsc >= diff) vsc -= diff;
+			else if (voc >= diff - vsc) { voc -= diff - vsc; vsc = 0; }
+
+
+
+
+
+
+		} else {
+			if (not vcc) goto visual_line_up;
+			vcc--; 
+			if (vsc) vsc--; 
+			else if (voc) voc--;
+		}
+	}
+	if (change_desired) vdc = vcc;
+}
+
+
+
+nat line = 0, col = 0; 
+	// this is not correct!  ---> we need to compute the logical version of VOC and VOL, and start here.
+
+	nat vl = vol, vc = voc; 
+	// i think these should be initialized to    VOL and VOC,       i think. 
+
+	nat sl = 0, sc = 0; 
+
+
+
+*/
+
+
+
+
+
+
+	// we cannot start out at zero, for the vc and vl,  or the line and col. 
+
+	// we actually need to try to START AT THE CURSOR,
+	//	(because we know that IT  is    AT LEAST     pretttttttyyyyy cloooossssseeeeee    to what we want. i think. 
+	
+	// and so, we can actually start at the cursor, and try to work backwards, (or search backwards, i mean)
+	// to try to find the Logical Column and Logical Line that corresponds with VO(L/C) (Visual Origin line and col),  
+	//  which is the crucial piece of information we need to start rendering. we need to know where in the text to 
+	// start printing out text from, and we know that position must be where ever VOL lands, in logical coordinates. 
+
+	// so yeah, thats how we get the performance of vim, in our scrolling, and display rendering, i think. that should do it. 
+
+
+	// so how do we compute the logical coordinates of VO(L/C)?   (VOL and VOC)
+
+
+
+	// this crucially releis on using the already existing piece of info,      vcc  and vcl 
+
+	// these two variables are          the visual cursor line/col
+
+	//      and they represent    the position of the cursor, in visual coordinates.  which the VOL and VOC are also based in. 
+
+	//      and so, like, we know what  the visual coordinates of the logical cursor are now. 
+
+
+	/// so heres the train of translations we need to do:
+
+	//         logical/visual cursor --->  move backwards char-wise in logical space, and keep track of your visual coords while doing it, (utilize "compute_vcc()"!!!). once you notice that your visual coords hit "VOL" and "VOC",   then note down what resultant logical coords you had to go to in order to reach this visual position, from the cursor. 
+
+	// that is what you need to initialize the variables "line" and "col" to. 
+
+
+	// additionally,    "vc" and "vl"       should now be initialized to   VOC    and  VOL.      which makes sense. 
+
+	// and sc and sl are still initialized to 0. thats totally good. 
+
+
+	// yay! we figured it out, basically. cool. moving backwards is always more computationally expensive than moving forward, i think, but this is definitely the right way to go, i think. yayyyyyyyyyyy
+
+	//  okay turns out i think we can literally use "move_left" to do most of the work for us!! as long as we revert back everything the way we found it lol. 
+
+
+
+
+
+
+
+	// int n = 0;
+	// if (ioctl(0, I_NREAD, &n) == 0) {
+ //    		// we have exactly n bytes to read
+	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
+	// }
+
+	// n = 1;
+	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
+ //    		// we have exactly n bytes to read
+	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
+	// }
+
+	// n = 2;
+	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
+ //    		// we have exactly n bytes to read
+	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
+	// }
+
+	// n = 3;
+	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
+ //    		// we have exactly n bytes to read
+	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
+	// }
+
+
+
+
+
+
+
+
+//	n	n	n	n	n	n	n	n	n	n	n	n	n	n	n	n	n	n		
+//ntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnegegett	
+
+
+
+
+
+
+
+
+/*
+
+
+
+
+			//todo: simplify this?...
+
+
+			compute_vcc();
+			nat old_vcc = vcc;
+			for (nat c = lcc; c < save_lcc; c++) {
+				char k = lines[lcl].data[c];
+				if (old_vcc >= wrap_width) goto visual_just_line_up;
+				if (k == '\t') {
+					do {
+						if (old_vcc >= wrap_width) goto visual_just_line_up; 
+						old_vcc++; 
+					} while (old_vcc % tab_width); 
+				} else if (visual(k)) old_vcc++;
+			}
+
+
+
+			nat diff = old_vcc - vcc;
+			if (vsc >= diff) vsc -= diff;
+			else if (voc >= diff - vsc) { voc -= diff - vsc; vsc = 0; }
+
+
+
+
+
+
+
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+//vt100 reference material: 
+//
+//    https://www2.ccs.neu.edu/research/gpc/VonaUtils/vona/terminal/vtansi.htm
+//
+
+
+
+
+
+
+
+
+
+
+
+// nat after_vcc = compute_custom_vcc(lcc);
+			// nat before_vcc = compute_custom_vcc(save_lcc);
+			// if (after_vcc > before_vcc) after_vcc = 0;      
+			// =0, because:  to put back after to be on the same line. ie, before it wrapped back to the previous line.   
+			// if "(after > before)", then it must be that our after_vcc is on the line above, 
+			//                        and before_vcc are on the line below
+			// ashtLNNN	ashoetn
+			// compute_custom_vcc(lcc); 
+
+
+			// int n = 0;
+			// n++;
+
+
+
+/*
+
+
+	big bug with tabs and wraping:
+
+
+
+
+
+okay, so i thought i figured out the bug, with this, and got the correct solution, and when i run it in the debugger, it seems to run pretty good, and do the correct thing, when going back on a tab that is being wrapped because of the wrap width, 
+
+			but then i ran it in release mode, and it still goes into an infinite loop... 
+
+
+				so i am not sure whats happening..... i think it has to do with the other movement commands?... not sure though... 
+
+						hmmm
+
+
+		
+
+
+
+
+
+
+
+
+	editor`::__sanitizer_cov_trace_const_cmp8() at FuzzerTracePC.cpp:495:1 [opt]
+    	frame #1: 0x000000010000d298 editor`move_left(change_desired=false) at main.c:241:10
+    	frame #2: 0x0000000100008d64 editor`display at main.c:603:66
+    	frame #3: 0x0000000100001ef8 editor`editor(_input="\t\t\t\t\t\xc1", _input_count=6) at main.c:1544:3
+    	frame #4: 0x0000000100001dcc editor`LLVMFuzzerTestOneInput(input="\t\t\t\t\t\xc1", size=6) at main.c:1575:2
+
+
+	
+
+
+
+
+			if (vcc + 1 <= wrap_width) {
+				vcc++; 
+				if (vsc < window_columns - 1 - line_number_width) vsc++; 
+				else voc++;
+			} else {
+				vcl++; vcc = 0; voc = 0; vsc = 0;
+				if (vsl < window_rows - 1 - show_status) vsl++; 
+				else vol++;
+			}
+
+
+
+
+
+							if (wrap_width <= tab_width) break; 
+							
+							if (vcc >= wrap_width) {
+								vcl++; vcc = 0; voc = 0; vsc = 0;
+								if (vsl < window_rows - 1 - show_status) vsl++; 
+								else vol++;
+							}
+
+
+
+
+
+
+
+
+
+
+// if (vc >= wrap_width) goto next_visual_line;      // do a dictoch on "<=ww" here and in tab section too.
+
+// delete me 
+
+
+
+
+
+
+
+
+
+			if (vcc + (tab_width - vcc % tab_width) <= wrap_width) {
+				do {
+					vcc++; if (vsc < window_columns - 1 - line_number_width) vsc++; else voc++;
+				} while (vcc % tab_width); 
+			} else {
+				vcl++; vcc = 0; voc = 0; vsc = 0;
+				if (vsl < window_rows - 1 - show_status) vsl++; 
+				else vol++;
+			}
+
+
+
+
+			if (vcc + 1 <= wrap_width) {
+				vcc++; 
+				if (vsc < window_columns - 1 - line_number_width) vsc++; 
+				else voc++;
+			} else {
+				vcl++; vcc = 0; voc = 0; vsc = 0;
+				if (vsl < window_rows - 1 - show_status) vsl++; 
+				else vol++;
+			}
+
+
+
+*/
 

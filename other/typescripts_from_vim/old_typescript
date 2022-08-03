@@ -1,0 +1,297 @@
+Script started on Thu Jul 14 01:29:56 2022
+[1m[7m%[27m[1m[0m                                                                                                                                                     
+ 
+]7;file://dwrr.local/Users/dwrr/Documents/projects/editor
+[0m[27m[24m[Jeditor: [K[?2004hvvim main.c[?2004l
+
+[?1049h[>4;2m[?1h=[?2004h[?1004h[1;45r[?12h[?12l[22;2t[22;1t[27m[29m[m[H[2J[?25l[45;1H"main.c" 2020L, 55954B[2;1H▽[6n[2;1H  [3;1HPzz\[0%m[6n[3;1H           [1;1H[>c]10;?]11;?[1;1H//  Daniel Warren Riaz Rehman's minimalist
+//        terminal-based text editor [2;38H[K[3;1H//[3;3H[K[4;1H//     Designed with reliability, minimalism,
+//     simplicity, and ergonimics in mind.
+//
+//[10Ctentatively named:   "t".
+//
+// -------------------------------------------
+//
+//    change log:
+//[10Cwritten on 2101177.005105
+//[11Cedited on 2111114.172631
+//[11Cedited on 2112116.194022
+//[9Cdebugged on 2201252.173237[19;1H/*[20;9Hcurrently we have some big problems with this:[23;17H- the performance of our display function is not good. we are currently making an n^2 algorithm in order to draw the screen, which makk[24;1Hes it bad to scroll down in a large file.[26;17H- the key bindings of the editor are totally out of wack.[28;17H- i want to implment my language in it.[33;1H*/[37;1H#include <iso646.h>
+#include <termios.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <ctype.h>[1;1H[?25h[27m[29m[m[H[2J[?25l[1;1H//  Daniel Warren Riaz Rehman's minimalist
+//[8Cterminal-based text editor
+//
+//     Designed with reliability, minimalism,
+//     simplicity, and ergonimics in mind.
+//
+//[10Ctentatively named:   "t".
+//
+// -------------------------------------------
+//
+//    change log:
+//[10Cwritten on 2101177.005105
+//[11Cedited on 2111114.172631
+//[11Cedited on 2112116.194022
+//[9Cdebugged on 2201252.173237[19;1H/*[20;9Hcurrently we have some big problems with this:[23;17H- the performance of our display function is not good. we are currently making an n^2 algorithm in order to draw the screen, which makk[24;1Hes it bad to scroll down in a large file.[26;17H- the key bindings of the editor are totally out of wack.[28;17H- i want to implment my language in it.[33;1H*/[37;1H#include <iso646.h>
+#include <termios.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <ctype.h>
+"main.c" 2020L, 55954B[1;1H[?25h
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[20;8H
+
+[23;8H
+
+[26;8H
+[28;8H
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[?25l[1;44r[44;1H
+[1;45r[44;1H#include <math.h>[45;1H[K[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H#include <time.h>
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H#include <sys/time.h>
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H#include <errno.h>
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H#include <stdbool.h>
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H#include <stdint.h>
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H#define memory_safe 0
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H#define fuzz 0
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H#define use_main 1
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Htypedef ssize_t nat;
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Henum action_type {
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hno_action,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hinsert_action,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hdelete_action,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hpaste_text_action,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hcut_text_action,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hanchor_action,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[37;18H[46m{[44;1H}[m;
+[?25h[?25l[1;44r[44;1H
+[1;45r[36;18H{[43;1H}
+[?25h[?25l[1;44r[1;1H[2M[1;45r[43;1Hstruct line {[44;9Hchar* data;[43;1H[?25h[44;8H[?25l[1;44r[44;1H
+[1;45r[44;9Hnat count, capacity;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[41;13H[46m{
+
+
+}[m;
+[?25h[?25l[1;44r[44;1H
+[1;45r[40;13H{
+
+
+}
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstruct buffer {
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hstruct line* lines;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hstruct action* actions;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hnat     saved, mode,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;17Hcount, capacity,[44;8H[?25h[43;8H[42;1H[41;8H[40;8H[39;1H[38;1H[?25l[34;13H[46m{
+
+
+}[?25h[?25l[m[34;13H{
+
+
+}[36;8H[?25h[?25l[34;13H[46m{
+
+
+}[?25h[?25l[m[34;13H{
+
+
+}
+[?25h
+[40;8H[41;8H
+[43;8H[44;8H[?25l[1;44r[44;1H
+[1;45r[44;17Hline_number_width, needs_display_update,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;17Hlcl, lcc,[7Cvcl, vcc,[7Cvol, voc,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;17Hvsl, vsc,[7Cvdc,[12Clal, lac,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;17Hwrap_width, tab_width,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;17Hscroll_speed, show_status, show_line_numbers,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;17Huse_txt_extension_when_absent,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;17Hline_number_color, status_bar_color, alert_prompt_color,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;17Hinfo_prompt_color, default_prompt_color,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;17Haction_count, head;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hchar message[4096];[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hchar filename[4096];[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[24;15H[46m{[44;1H}[m;
+[?25h[?25l[1;44r[44;1H
+[1;45r[23;15H{[43;1H}
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstruct logical_state {
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hnat     saved, line_number_width,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;17Hlcl, lcc,[7Cvcl, vcc,[7Cvol, voc,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;17Hvsl, vsc,[7Cvdc,[12Clal,  lac;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[40;22H[46m{[44;1H}[m;
+[?25h[?25l[1;44r[44;1H
+[1;45r[39;22H{[43;1H}
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstruct textbox {
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hchar* data;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hnat count, capacity, prompt_length, c, vc, vs, vo;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[41;16H[46m{
+
+
+}[m;
+[?25h[?25l[1;44r[44;1H
+[1;45r[40;16H{
+
+
+}
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstruct action {
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hnat* children;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hchar* text;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hnat parent;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hnat type;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hnat choice;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hnat count;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hnat length;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hstruct logical_state pre;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hstruct logical_state post;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[34;15H[46m{[44;1H}[m;
+[?25h[?25l[1;44r[44;1H
+[1;45r[33;15H{[43;1H}
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic nat
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hwindow_rows = 0,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hwindow_columns = 0;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic char* screen = NULL;
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic struct textbox tb = {0};
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic struct buffer* buffers = NULL;
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic nat buffer_count = 0, active_index = 0;
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic struct buffer buffer = {0};
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic struct line* lines = NULL;
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic struct action* actions = NULL;
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic nat
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hcount = 0, capacity = 0,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hline_number_width = 0, tab_width = 0, wrap_width = 0,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hshow_status = 0, show_line_numbers = 0,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hlcl = 0, lcc = 0, vcl = 0, vcc = 0, vol = 0,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hvoc = 0, vsl = 0, vsc = 0, vdc = 0, lal = 0, lac = 0,[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hhead, action_count;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic char message[4096] = {0};
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic char filename[4096] = {0};
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic inline bool visual(char c) { return not zero_width(c); }
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic inline bool file_exists(const char* f) { return access(f, F_OK) != -1; }
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1H[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic inline void get_datetime(char datetime[16]) {
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hstruct timeval tv;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hgettimeofday(&tv, NULL);[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hstruct tm* tm_info = localtime(&tv.tv_sec);[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hstrftime(datetime, 15, "%y%m%d%u.%H%M%S", tm_info);[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[39;52H[46m{[44;1H}[?25h[?25l[1;44r[m[44;1H
+[1;45r[38;52H{[43;1H}
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic inline bool stdin_is_empty() {
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hfd_set readfds;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9HFD_ZERO(&readfds);[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9HFD_SET(STDIN_FILENO, &readfds);[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hstruct timeval timeout = {0};[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hreturn select(1, &readfds, NULL, NULL, &timeout) != 1;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[38;37H[46m{[44;1H}[?25h[?25l[1;44r[m[44;1H
+[1;45r[37;37H{[43;1H}
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;1Hstatic inline struct termios configure_terminal() {
+[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hstruct termios save = {0};[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Htcgetattr(0, &save);[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hstruct termios raw = save;[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hraw.c_oflag &= ~( (unsigned long)OPOST );[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hraw.c_iflag &= ~( (unsigned long)BRKINT[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;25H| (unsigned long)ICRNL[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;25H| (unsigned long)INPCK[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;25H| (unsigned long)IXON );[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Hraw.c_lflag &= ~( (unsigned long)ECHO[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;25H| (unsigned long)ICANON[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;25H| (unsigned long)IEXTEN );[44;8H[?25h[?25l[1;44r[44;1H
+[1;45r[44;9Htcsetattr(0, TCSAFLUSH, &raw);[44;8H[?25h[?25l
+:[?25hq
+[?25l[?2004l[>4;m[23;2t[23;1t[45;1H[K[45;1H[?1004l[?2004l[?1l>[?25h[>4;m[?1049l[1m[7m%[27m[1m[0m                                                                                                                                                     
+ 
+]7;file://dwrr.local/Users/dwrr/Documents/projects/editor
+[0m[27m[24m[Jeditor: [K[?2004heexit[?2004l
+
+
+Saving session...
+...copying shared history...
+...saving history...truncating history files...
+...completed.
+
+Script done on Thu Jul 14 01:30:43 2022
