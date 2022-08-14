@@ -28,6 +28,9 @@
 [bug]		- test how the editor handles unicode characters with the new tab/wrap/display code. 
 
 
+[bug]		- test if the confirmed() code  (ie, overwriting, and discarding file stuff) works.
+
+
 [bug]		- scrolling down is not very smooth. we should be using the terminal scrolling mode. 
 			use the escape code sequences 
 			<ESC>[r    to enable scrolling on the whole screen
@@ -41,27 +44,34 @@
 ---------------- features ---------------
 
 
-[feature]	- rework the way the wrap_width disabling/dynamic adjusting works. 
+[feature]	- add tab completion for file names, and a small file veiwer, when saving/renaming. 
+***
+
+
+[feature]	- rework the way the      wrap_width        disabling/dynamic adjusting works. 
 **
+
+
+[optional]	- rebind the keybindings of the editor. 
+**
+
 
 
 [feature]	- init parameters from config file. 
 *
 
 
-[optional]	- (BIG) redesign how we are drawing the screen, to be based on drawing text that is isolated by 
-**			whitespace, and jumping the (invisible) cursor around the screen, to draw those areas.  
-			and clearing the screen before each frame of course,
-
-[optional]	- rebind the keybindings of the editor. 
-
-
 [feature]	- implment my programming language in it. 
 *
 
 
-[feature]		- add tab completion for file names, and a small file veiwer, when saving/renaming. 
-***
+[optional]	- (BIG) redesign how we are drawing the screen, to be based on drawing text that is isolated by 
+			whitespace, and jumping the (invisible) cursor around the screen, to draw those areas.  
+			and clearing the screen before each frame of course,
+
+
+
+
 
 
 ------------------- fixed -----------------
@@ -91,14 +101,17 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <signal.h>
+
+  
 
 
 #define is_fuzz_testing		1
 
+#define memory_safe 	1
 
-#define memory_safe 	is_fuzz_testing
 #define fuzz 		is_fuzz_testing
-#define use_main    not is_fuzz_testing
+#define use_main    	not is_fuzz_testing
 
 typedef ssize_t nat;
 
@@ -132,21 +145,29 @@ struct buffer {
 		use_txt_extension_when_absent,
 		line_number_color, status_bar_color, alert_prompt_color, 
 		info_prompt_color, default_prompt_color,
-		action_count, head;
+		action_count, head
+	;
 
 	char message[4096];
 	char filename[4096];
 };
 
 struct logical_state {
-	nat     saved, line_number_width,
+	nat     saved, line_number_width, 
+
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 
-		vsl, vsc, 	vdc,    	lal, lac;
+		vsl, vsc, 	vdc,    	lal, lac,
+
+		wrap_width, tab_width
+	;
 };
 
 struct textbox {
 	char* data;
-	nat count, capacity, prompt_length, c, vc, vs, vo;
+	nat 
+		count, capacity, prompt_length, 
+		c, vc, vs, vo
+	;
 };
 
 struct action { 
@@ -220,7 +241,6 @@ static inline struct termios configure_terminal() {
 			| (unsigned long)IXON );	
 	raw.c_lflag &= ~( (unsigned long)ECHO 
 			| (unsigned long)ICANON 
-			| (unsigned long)ISIG 
 			| (unsigned long)IEXTEN );
 	tcsetattr(0, TCSAFLUSH, &raw);
 	return save;
@@ -414,6 +434,9 @@ static inline void record_logical_state(struct logical_state* pcond_out) {
 	p->vsl = vsl;  p->vsc = vsc; 
 	p->vdc = vdc;  p->lal = lal;
 	p->lac = lac;
+
+	p->wrap_width = wrap_width;
+	p->tab_width = tab_width;
 }
 
 static inline void require_logical_state(struct logical_state* pcond_in) {  
@@ -428,6 +451,9 @@ static inline void require_logical_state(struct logical_state* pcond_in) {
 	vsl = p->vsl;  vsc = p->vsc; 
 	vdc = p->vdc;  lal = p->lal;
 	lac = p->lac;
+
+	wrap_width = p->wrap_width;
+	tab_width = p->tab_width;
 }
 
 static inline void create_action(struct action new) {
@@ -845,18 +871,21 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 	tb = (struct textbox){0};
 }
 
-static inline bool confirmed(const char* question) {
 
-	char prompt_message[4096] = {0};
-	sprintf(prompt_message, "%s? (yes/no): ", question);
+static inline bool confirmed(const char* question, const char* yes_action, const char* no_action) {
+
+	char prompt_message[4096] = {0}, invalid_response[4096] = {0};
+	sprintf(prompt_message, "%s? (%s/%s): ", question, yes_action, no_action);
+	sprintf(invalid_response, "please type \"%s\" or \"%s\".", yes_action, no_action);
+	
 	while (1) {
 		char response[10] = {0};
 		prompt(prompt_message, buffer.alert_prompt_color, response, sizeof response);
 		
-		if (not strncmp(response, "yes", 4)) return true;
-		else if (not strncmp(response, "no", 3)) return false;
-		else if (not strncmp(response, "", 1)) return false;
-		else print_above_textbox("please type \"yes\" or \"no\".", buffer.default_prompt_color);
+		if (not strcmp(response, yes_action)) return true;
+		else if (not strcmp(response, no_action)) return false;
+		else if (not strcmp(response, "")) return false;
+		else print_above_textbox(invalid_response, buffer.default_prompt_color);
 
 		if (fuzz) return true;
 	}
@@ -1094,6 +1123,63 @@ static inline void open_file(const char* given_filename) {
 	sprintf(message, "read %lub", length);
 }
 
+static inline void emergency_save_to_file() {
+	if (fuzz) return;
+
+	char dt[16] = {0};
+	get_datetime(dt);
+	
+	char local_filename[4096] = {0};
+	sprintf(local_filename, "EMERGENCY_FILE_SAVE__%s_.txt", dt);
+
+	FILE* file = fopen(local_filename, "w+");
+	if (not file) {
+		printf("emergency error: %s\n", strerror(errno));
+		return;
+	}
+	
+	unsigned long long bytes = 0;
+	for (nat i = 0; i < count; i++) {
+		bytes += fwrite(lines[i].data, sizeof(char), (size_t) lines[i].count, file);
+		if (i < count - 1) {
+			fputc('\n', file);
+			bytes++;
+		}
+	}
+
+	if (ferror(file)) {
+		printf("emergency error: %s\n", strerror(errno));
+		fclose(file);
+		return;
+	}
+
+	fclose(file);
+
+	printf("interrupt: emergency wrote %lldb;%ldl to %s\n", bytes, count, local_filename);
+}
+
+
+
+
+
+static void handle_signal_interrupt(int code) {
+
+	if (fuzz) exit(1);
+
+	printf(	"interrupt: caught signal SIGINT(%d), "
+		"emergency saving...\n\r", 
+		code);
+
+	emergency_save_to_file();
+
+	printf("press C to continue running process\n\r");
+	int c = getchar(); 
+	if (c != 'C') exit(1);
+}
+
+
+
+
 static inline void save() {
 	if (fuzz) return;
 
@@ -1102,7 +1188,7 @@ static inline void save() {
 		prompt("save as: ", buffer.default_prompt_color, filename, sizeof filename);
 		if (not strlen(filename)) { sprintf(message, "aborted save"); return; }
 		if (not strrchr(filename, '.') and buffer.use_txt_extension_when_absent) strcat(filename, ".txt");
-		if (file_exists(filename) and not confirmed("file already exists, overwrite")) {
+		if (file_exists(filename) and not confirmed("file already exists, overwrite", "overwrite", "no")) {
 			strcpy(filename, ""); goto prompt_filename;
 		}
 	}
@@ -1143,7 +1229,7 @@ static inline void rename_file() {
 	prompt("rename to: ", buffer.default_prompt_color, new, sizeof new);
 	if (not strlen(new)) { sprintf(message, "aborted rename"); return; }
 
-	if (file_exists(new) and not confirmed("file already exists, overwrite")) {
+	if (file_exists(new) and not confirmed("file already exists, overwrite", "overwrite", "no")) {
 		strcpy(new, ""); goto prompt_filename;
 	}
 
@@ -1323,7 +1409,8 @@ static inline void paste() {
 	char* string = malloc(256);
 	nat s_capacity = 256;
 	nat length = 0;
-	lac = lcc; lal = lcl;
+	lac = lcc; 
+	lal = lcl;
 	nat c = 0;
 	while ((c = fgetc(file)) != EOF) {
 
@@ -1470,6 +1557,16 @@ static inline void anchor() {
 	create_action(new);
 }
 
+static inline void recalculate_position() {
+	nat save_lcl = lcl, save_lcc = lcc;
+	move_top();
+	adjust_window_size();
+	jump_line(save_lcl);
+	jump_column(save_lcc);
+}
+
+
+
 static inline void execute(char c, char p) {
 	if (buffer.mode == 0) {
 
@@ -1516,19 +1613,20 @@ static inline void execute(char c, char p) {
 		else if (c == 'y') move_to_next_buffer();
 		else if (c == 'f') prompt_open();
     		else if (c == 'l') create_empty_buffer();
-		else if (c == 'q') { if (buffer.saved or confirmed("discard unsaved changes")) close_active_buffer(); }
+		else if (c == 'q') { if (buffer.saved or confirmed("discard unsaved changes", "discard", "no")) close_active_buffer(); }
 
 		else if (c == 's') save();
 		else if (c == 'S') rename_file();
 	
 		else if (c == '_') memset(message, 0, sizeof message);
 
-		else if (c == '.') {}
-		else if (c == ',') {}
-		else if (c == ';') {}
-		else if (c == ':') {}
+		else if (c == '.') { wrap_width = 30; recalculate_position(); }
+		else if (c == ':') { wrap_width = 20; recalculate_position(); }
+		else if (c == ',') { tab_width = 4; recalculate_position(); }
+		else if (c == ';') { tab_width = 8; recalculate_position(); }
+		
 		else if (c == '\t') {}
-		else if (c == '\n') {} 
+		else if (c == '\n') {}
 		else if (c == ' ') {}
 
 		else if (c == 27 and stdin_is_empty()) buffer.mode = 1;
@@ -1540,11 +1638,42 @@ static inline void execute(char c, char p) {
 		else if (c == 'r') buffer.mode = 1;
 		else if (c == 's') show_status = not show_status;  // temp
 		else if (c == 'n') show_line_numbers = not show_line_numbers; // temp
-		
+
+
 	} else buffer.mode = 1;
 }
 
 static inline void editor(const uint8_t* _input, size_t _input_count) {
+
+if ((0)) {
+
+	FILE* file = fopen("timeout-cf5744ac30fcc23932eaf10a64f5db7a2b419b06", "r");
+	if (not file) { perror("open"); exit(1); }
+	fseek(file, 0, SEEK_END);
+	size_t crash_length = (size_t) ftell(file);
+	char* crash = malloc(sizeof(char) * crash_length);
+	fseek(file, 0, SEEK_SET);
+	fread(crash, sizeof(char), crash_length, file);
+	fclose(file);
+	_input = (const uint8_t*) crash;
+	_input_count = crash_length;
+	printf("\n\n\nstr = \"");
+	for (size_t i = 0; i < _input_count; i++) printf("\\x%02hhx", _input[i]);
+	printf("\";\n\n\n");
+
+	exit(1);
+
+
+} else {
+
+	// const char* str = "\x09\x77\x72\x77\x2c\x7a";
+	//const char* str = "\t5rw,z";
+	//puts(str);
+	//_input = (const uint8_t*) str;
+	//_input_count = strlen(str);
+	// _input_count = 1000;
+
+}
 
 	struct termios terminal;
 	if (not fuzz) {
@@ -1604,6 +1733,7 @@ int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 int main(const int argc, const char** argv) {
 	if (argc <= 1) create_empty_buffer();
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
+	signal(SIGINT, handle_signal_interrupt);
 	editor(NULL, 0);
 }
 
