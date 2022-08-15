@@ -14,24 +14,51 @@
 //           edited on 2112116.194022
 //         debugged on 2201252.173237
 // 	   debugged on 2208022.211844
+// 	   debugged on 2208151.002947
+
 
 
 /*
+
+	things to add to make the editor useable full time:
+
+		- tab completion for file names
+
+		- simple file editor?
+
+		- config file for constants 
+
+		- be able to adjust wrap width, tab width,  etc,   within editor?  hmm, yeah... 
+
+
+		- 
+
+
 
 ------------------- bugs ----------------------
 
 
 
-[bug] 		- solve the two slow-unit-fffffff test cases that the fuzzer found. 
 
 
-[bug]		- test how the editor handles unicode characters with the new tab/wrap/display code. 
 
 
-[bug]		- test if the confirmed() code  (ie, overwriting, and discarding file stuff) works.
 
 
-[bug]		- scrolling down is not very smooth. we should be using the terminal scrolling mode. 
+
+[test]		- test if the confirmed() code  (ie, overwriting, and discarding file stuff) works.
+
+[test]		- test if the copy paste code is still working. 
+
+
+
+
+
+
+
+
+
+[bug/feature]		- scrolling down is not very smooth. we should be using the terminal scrolling mode. 
 			use the escape code sequences 
 			<ESC>[r    to enable scrolling on the whole screen
 			<ESC>[{start};{end}r   to enable scrolling on a range of rows of the screen.
@@ -39,6 +66,16 @@
 			<ESC>M   to scroll up
 
 
+
+
+
+
+
+
+x 	[bug] 		- solve the two slow-unit-fffffff test cases that the fuzzer found. 
+
+
+x 	[bug]		- test how the editor handles unicode characters with the new tab/wrap/display code. 
 
 
 ---------------- features ---------------
@@ -103,10 +140,8 @@
 #include <stdint.h>
 #include <signal.h>
 
-  
 
-
-#define is_fuzz_testing		1
+#define is_fuzz_testing		0
 
 #define memory_safe 	1
 
@@ -269,7 +304,7 @@ static inline void compute_vcc() {
 		char k = lines[lcl].data[c];
 		if (k == '\t') { 
 			if (vcc + tab_width - vcc % tab_width <= wrap_width) 
-				do vcc++; 
+				do vcc++;
 				while (vcc % tab_width);  
 			else vcc = 0;
 		} else if (visual(k)) {
@@ -289,7 +324,7 @@ static inline void move_left(bool change_desired) {
 		if (vsl) vsl--;
 		else if (vol) vol--;
 		compute_vcc();
-		if (vcc > window_columns - 1 - line_number_width) { 
+		if (vcc >= window_columns - 1 - line_number_width) { 
 			vsc = window_columns - 1 - line_number_width;  voc = vcc - vsc; 
 		} else { vsc = vcc; voc = 0; }
 	} else {
@@ -316,7 +351,7 @@ static inline void move_right(bool change_desired) {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0; 
 line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
-		if (vsl < window_rows - 1 - show_status) vsl++; 
+		if (vsl + 1 < window_rows - show_status) vsl++; 
 		else vol++;
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
@@ -324,7 +359,7 @@ line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
 			if (vcc + tab_width - vcc % tab_width > wrap_width) goto line_down;
 			do {
 				vcc++; 
-				if (vsc < window_columns - 1 - line_number_width) vsc++;
+				if (vsc + 1 < window_columns - line_number_width) vsc++;
 				else voc++;
 			} while (vcc % tab_width);
 			
@@ -332,7 +367,7 @@ line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
 			do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
 			if (vcc >= wrap_width) goto line_down;
 			vcc++; 
-			if (vsc < window_columns - 1 - line_number_width) vsc++; 
+			if (vsc + 1 < window_columns - line_number_width) vsc++; 
 			else voc++;
 		}
 	}
@@ -352,7 +387,7 @@ static inline void move_up() {
 	nat line_target = vcl - 1;
 	while (vcc and vcl > line_target) move_left(0); 
 	do move_left(0); while (vcc > vdc and vcl == line_target);
-	if (vcc > window_columns - 1 - line_number_width) { vsc = window_columns - 1 - line_number_width; voc = vcc - vsc; } 
+	if (vcc > window_columns - line_number_width) { vsc = window_columns - line_number_width; voc = vcc - vsc; } 
 	else { vsc = vcc; voc = 0; }
 }
 
@@ -614,7 +649,7 @@ static inline void adjust_window_size() {
 
 	if (window.ws_row != window_rows or window.ws_col != window_columns) {
 		window_rows = window.ws_row;
-		window_columns = window.ws_col;
+		window_columns = window.ws_col - 1; 
 		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));
 	}
 
@@ -639,8 +674,8 @@ static inline void display() {
 	struct logical_state state = {0};
 	record_logical_state(&state);
 	while (1) { 
-		if (vcc == 0 and vcl == 0) break;
-		if (vcc == state.voc and vcl == state.vol) break;
+		if (vcl <= 0 and vcc <= 0) break;
+		if (vcl <= state.vol and vcc <= state.voc) break;
 		move_left(0);
 	}
 
@@ -655,7 +690,7 @@ static inline void display() {
 		if (line >= count) goto next_visual_line;
 
 		if (show_line_numbers and vl >= vol and vl < vol + window_rows - show_status) {
-			if (not col) length += sprintf(screen + length, "\033[38;5;%ldm%*ld\033[0m  ", buffer.line_number_color, line_number_digits, line);
+			if (not col or (not sc and not sl)) length += sprintf(screen + length, "\033[38;5;%ldm%*ld\033[0m  ", buffer.line_number_color + (line == lcl ? 5 : 0), line_number_digits, line);
 			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
 		}
 
@@ -752,7 +787,7 @@ static inline void textbox_move_left() {
 static inline void textbox_move_right() {
 	if (tb.c >= tb.count) return;
 	tb.vc++; 
-	if (tb.vs < window_columns - 1 - tb.prompt_length) tb.vs++; else tb.vo++;
+	if (tb.vs < window_columns - tb.prompt_length) tb.vs++; else tb.vo++;
 	do tb.c++; while (tb.c < tb.count and zero_width(tb.data[tb.c]));
 }
 
@@ -790,7 +825,7 @@ static inline void textbox_display(const char* prompt, nat prompt_color) {
 	nat col = 0, vc = 0, sc = tb.prompt_length;
 	while (sc < window_columns and col < tb.count) {
 		char k = tb.data[col];
-		if (vc >= tb.vo and vc < tb.vo + window_columns - 1 - tb.prompt_length and (sc or visual(k))) {
+		if (vc >= tb.vo and vc < tb.vo + window_columns - tb.prompt_length and (sc or visual(k))) {
 			screen[length++] = k;
 			if (visual(k)) { sc++; }
 		}
@@ -1622,6 +1657,7 @@ static inline void execute(char c, char p) {
 
 		else if (c == '.') { wrap_width = 30; recalculate_position(); }
 		else if (c == ':') { wrap_width = 20; recalculate_position(); }
+		else if (c == '\\') { wrap_width = 0; recalculate_position(); }
 		else if (c == ',') { tab_width = 4; recalculate_position(); }
 		else if (c == ';') { tab_width = 8; recalculate_position(); }
 		
@@ -2130,8 +2166,8 @@ visual_line_up: compute_vcc();
 visual_just_line_up: vcl--;
 		if (vsl) vsl--;
 		else if (vol) vol--;
-		if (vcc > window_columns - 1 - line_number_width) { 
-			vsc = window_columns - 1 - line_number_width; 
+		if (vcc > window_columns - line_number_width) { 
+			vsc = window_columns - line_number_width; 
 			voc = vcc - vsc; 
 		} else { 
 			vsc = vcc;
