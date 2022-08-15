@@ -15,6 +15,7 @@
 //         debugged on 2201252.173237
 // 	   debugged on 2208022.211844
 // 	   debugged on 2208151.002947
+// 	   
 
 
 
@@ -71,13 +72,6 @@
 
 
 
-
-x 	[bug] 		- solve the two slow-unit-fffffff test cases that the fuzzer found. 
-
-
-x 	[bug]		- test how the editor handles unicode characters with the new tab/wrap/display code. 
-
-
 ---------------- features ---------------
 
 
@@ -117,6 +111,18 @@ x 	[bug]		- test how the editor handles unicode characters with the new tab/wrap
 [FIXED]		- tab width and wrap width major bugs.
 
 [FIXED]		- the performance of our display function is not good. we are currently making an n^2 algorithm in order to draw the screen.
+
+
+[FIXED]	 		- solve the two slow-unit-fffffff test cases that the fuzzer found. 
+
+
+[FIXED]			- test how the editor handles unicode characters with the new tab/wrap/display code. 
+
+
+
+
+
+
 
 
 
@@ -671,6 +677,20 @@ static inline void display() {
 	nat sl = 0, sc = 0; 
 	nat vl = vol, vc = voc; 
 
+	if (fuzz) {
+		if (lcl < 0) abort();
+		if (lcc < 0) abort();
+
+		if (vol < 0) abort();
+		if (voc < 0) abort();
+
+		if (vcl < 0) abort();
+		if (vcc < 0) abort();		
+		
+		if (vsl < 0) abort();
+		if (vsc < 0) abort();
+	}
+
 	struct logical_state state = {0};
 	record_logical_state(&state);
 	while (1) { 
@@ -1047,7 +1067,7 @@ static inline void initialize_registers() {
 	buffer.saved = true;
 	buffer.mode = 0;
 
-	wrap_width = 21; // init using file 
+	wrap_width = 0; // init using file 
 	tab_width = 8; // init using file
 	line_number_width = 0;
 
