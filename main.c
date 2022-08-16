@@ -23,16 +23,25 @@
 
 	things to add to make the editor useable full time:
 
-		- tab completion for file names
-
-		- simple file editor?
-
-		- config file for constants 
-
-		- be able to adjust wrap width, tab width,  etc,   within editor?  hmm, yeah... 
 
 
-		- 
+
+========================= REMAINING REQ. FEATURES ========================
+
+FILE VEIW:
+===========
+	[ ]	- tab completion for file names
+	[ ]	- simple file editor
+	[ ]	- seperate out path and filename, when saving. 
+	[ ]	- seperate out moving a file, and renaming a file. 
+
+
+CONFIG FILE:
+===========
+	[ ] 	- read and write to config file to store parameters
+	[ ] 	- be able to adjust parameters within editor using "set" command-line command.
+
+		
 
 
 
@@ -146,11 +155,18 @@
 #include <stdint.h>
 #include <signal.h>
 
+#include <dirent.h>
+
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+
+
 
 #define is_fuzz_testing		0
 
 #define memory_safe 	1
-
 #define fuzz 		is_fuzz_testing
 #define use_main    	not is_fuzz_testing
 
@@ -253,6 +269,18 @@ static char filename[4096] = {0};
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
 static inline bool file_exists(const char* f) { return access(f, F_OK) != -1; }
+
+static inline bool is_regular_file(const char *path) {
+	struct stat s;
+	stat(path, &s);
+	return S_ISREG(s.st_mode);
+}
+
+static inline bool is_directory(const char *path) {
+	struct stat s;
+	if (stat(path, &s)) return false;
+	return S_ISDIR(s.st_mode);
+}
 
 static inline void get_datetime(char datetime[16]) {
 	struct timeval tv;
@@ -420,6 +448,11 @@ static inline void jump_line(nat line) {
 static inline void jump_column(nat column) {
 	while (lcc < column and lcc < lines[lcl].count) move_right(1);
 	while (lcc > column and lcc) move_left(1);
+}
+
+static inline void jump_to(nat line, nat column) {
+	jump_line(line);
+	jump_column(column);
 }
 
 static inline void move_begin() {
@@ -769,13 +802,12 @@ static inline void display() {
 
 	if (show_status) {
 
-		char datetime[16] = {0};
-		get_datetime(datetime);
-		nat status_length = sprintf(screen + length, " %s [%ld][%ld %ld][%ld %ld][%ld %ld][%ld %ld][%ld %ld] %s %c  %s",
-			datetime, 
+		nat status_length = sprintf(screen + length, " %ld %ld %ld %ld %ld %s %c %s",
 			buffer.mode, 
 			active_index, buffer_count,
-			lcl, lcc, vcl, vcc, vsl, vsc, vol, voc, 
+			lcl, lcc, 
+
+			// vcl, vcc, vsl, vsc, vol, voc, 
 			filename, 
 			buffer.saved ? 's' : 'e', 
 			message
@@ -880,30 +912,29 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 		if (fuzz) {
 			if (fuzz_input_index >= fuzz_input_count) break;
 			c = (char) fuzz_input[fuzz_input_index++];	
-		} else {
-			read(0, &c, 1);
-		}
+		} else read(0, &c, 1);
 
 		if (c == '\r' or c == '\n') break;
-		else if (c == '\t') { /*tab complete*/ }
+		else if (c == '\t') {  // tab complete
+			
+		
+
+
+		}
 		else if (c == 27 and stdin_is_empty()) { tb.count = 0; break; }
 		else if (c == 27) {
 
 			if (fuzz) {
 				if (fuzz_input_index >= fuzz_input_count) break;
 				c = (char) fuzz_input[fuzz_input_index++];	
-			} else {
-				read(0, &c, 1);
-			}
+			} else read(0, &c, 1);
 
 			if (c == '[') {
 
 				if (fuzz) {
 					if (fuzz_input_index >= fuzz_input_count) break;
 					c = (char) fuzz_input[fuzz_input_index++];	
-				} else {
-					read(0, &c, 1);
-				}
+				} else read(0, &c, 1);
 
 				if (c == 'A') {}
 				else if (c == 'B') {}
@@ -1179,6 +1210,10 @@ static inline void open_file(const char* given_filename) {
 }
 
 static inline void emergency_save_to_file() {
+
+	// we need to do this for the current register'd buffer,     and all the other buffers too!!!
+
+
 	if (fuzz) return;
 
 	char dt[16] = {0};
@@ -1462,11 +1497,8 @@ static inline void paste() {
 	struct action new = {0};
 	record_logical_state(&new.pre);
 	char* string = malloc(256);
-	nat s_capacity = 256;
-	nat length = 0;
-	lac = lcc; 
-	lal = lcl;
-	nat c = 0;
+	nat s_capacity = 256, length = 0, c = 0;
+	lac = lcc; lal = lcl;
 	while ((c = fgetc(file)) != EOF) {
 
 		if (not memory_safe) {
@@ -1493,8 +1525,7 @@ static inline void paste() {
  	record_logical_state(&new.pre);
  	char* string = malloc(256);
  	nat length = 0;
- 	lac = lcc;
- 	lal = lcl;
+ 	lac = lcc; lal = lcl;
  	string = realloc(string, (size_t) (length + 1));
  	string[length++] = (char) 'A';
  	insert((char)'A', 0);
@@ -1507,6 +1538,21 @@ static inline void paste() {
  }
 
 }
+
+static void insert_string(const char* string, nat length) {
+	struct action new = {0};
+	record_logical_state(&new.pre);
+
+	for (nat i = 0; i < length; i++) 
+		insert((char) string[i], 0);
+	
+	record_logical_state(&new.post);
+	new.type = paste_text_action;
+	new.text = strndup(string, (size_t) length);
+	new.length = length;
+	create_action(new);
+}
+static void insert_cstring(const char* string) { insert_string(string, (nat) strlen(string)); }
 
 static inline void cut_text() {
 	if (lal < lcl) goto anchor_first;
@@ -1584,6 +1630,12 @@ static inline void undo() {
 	head = actions[head].parent;
 }
 
+static inline void undo_silent() {
+	if (not head) return;
+	reverse_action(actions[head]);
+	head = actions[head].parent;
+}
+
 static inline void redo() {
 	if (not actions[head].count) return;
 	head = actions[head].children[actions[head].choice];
@@ -1616,20 +1668,118 @@ static inline void recalculate_position() {
 	nat save_lcl = lcl, save_lcc = lcc;
 	move_top();
 	adjust_window_size();
-	jump_line(save_lcl);
-	jump_column(save_lcc);
+	jump_to(save_lcl, save_lcc);
 }
 
 
+
+static char user_selection[4096] = {0};
+static char current_path[4096] = {0};
+
+static inline void menu_display() {
+
+	// sprintf(message, "reading: %s ", current_path);
+	
+	DIR* directory = opendir(current_path);
+	if (not directory) { 
+		sprintf(message, "couldnt open path=%s, reason=%s", current_path, strerror(errno));	
+		return;
+	}
+
+	struct dirent *e = NULL;
+
+	nat length = (nat)strlen(current_path) + 2;
+	char* menu = calloc((size_t) length + 1, sizeof(char));
+
+	sprintf(menu, ":%s\n", current_path);
+	
+	while ((e = readdir(directory))) {
+
+		char path[4096] = {0};
+		strlcpy(path, current_path, sizeof path);
+		strlcat(path, e->d_name, sizeof path);
+
+		if (is_directory(path)) {
+			menu = realloc(menu, sizeof(char) * ((size_t) length + 3 + strlen(e->d_name))); 
+			sprintf(menu + length, "%s/\n", e->d_name);
+			length += 2 + strlen(e->d_name);
+		} else {
+			menu = realloc(menu, sizeof(char) * ((size_t) length + 2 + strlen(e->d_name))); 
+			sprintf(menu + length, "%s\n", e->d_name);
+			length += 1 + strlen(e->d_name);
+		}
+
+		
+	}
+
+	closedir(directory);
+
+	lal = lcl; lac = lcc;
+	insert_string(menu, length);
+	jump_to(lal, lac);
+	
+}
+
+static inline void menu_change() {
+
+	char* selection = strndup(lines[lcl].data, (size_t) lines[lcl].count);
+
+	if (not strcmp(selection, "../") ) { 		// or not strcmp(selection, "..")
+		if (strcmp(current_path, "/")) {
+			current_path[strlen(current_path) - 1] = 0;
+			*(1+strrchr(current_path, '/')) = 0;
+			sprintf(message, "current path: \"%s\"", current_path);
+		} else {
+			sprintf(message, "error: at root /");
+		}
+		
+	} else if (not strcmp(selection, "./") ) { 		// or not strcmp(selection, ".")
+		// do nothing.
+
+	} else {
+
+		char path[4096] = {0};
+		strlcpy(path, current_path, sizeof path);
+		strlcat(path, selection, sizeof path);
+
+		if (is_directory(path)) {
+			strlcat(current_path, selection, sizeof current_path);
+
+			// if (selection[strlen(selection) - 1] != '/')
+			// strcat(current_path, "/");
+
+			sprintf(message, "current path: \"%s\"", current_path);
+		} else {
+			sprintf(message, "error: not a directory");
+		}
+	}
+
+	
+}
+
+static inline void menu_select() {
+	char* line = strndup(lines[lcl].data, (size_t) lines[lcl].count);
+	strlcpy(user_selection, current_path, sizeof user_selection);
+	strlcat(user_selection, line, sizeof user_selection);
+	free(line);
+
+	sprintf(message, "selected: %s", user_selection);
+}
+
+static inline void insertdt() {
+	char datetime[16] = {0};
+	get_datetime(datetime);
+	insert_cstring(datetime);
+}
 
 static inline void execute(char c, char p) {
 	if (buffer.mode == 0) {
 
 		if (is_exit_sequence(c, p)) { undo(); buffer.mode = 1; }
-		else if (c == '\r') insert('\n', 1);
-		else if (c == 127) delete(1);
 		else if (c == 27 and stdin_is_empty()) buffer.mode = 1;
 		else if (c == 27) interpret_escape_code();
+		else if (c == 127) delete(1);
+		else if (c == '\r') insert('\n', 1);
 		else insert(c, 1);
 
 	} else if (buffer.mode == 1) {
@@ -1675,14 +1825,19 @@ static inline void execute(char c, char p) {
 	
 		else if (c == '_') memset(message, 0, sizeof message);
 
-		else if (c == '.') { wrap_width = 30; recalculate_position(); }
-		else if (c == ':') { wrap_width = 20; recalculate_position(); }
 		else if (c == '\\') { wrap_width = 0; recalculate_position(); }
-		else if (c == ',') { tab_width = 4; recalculate_position(); }
-		else if (c == ';') { tab_width = 8; recalculate_position(); }
 		
-		else if (c == '\t') {}
-		else if (c == '\n') {}
+
+		else if (c == '1')  insertdt();
+		else if (c == '\r') menu_select();
+		else if (c == '\t') menu_change();
+		else if (c == ':')  menu_display();
+		else if (c == ';') { 
+			menu_change();
+			undo_silent();
+			menu_display();
+		}
+
 		else if (c == ' ') {}
 
 		else if (c == 27 and stdin_is_empty()) buffer.mode = 1;
@@ -1703,7 +1858,7 @@ static inline void editor(const uint8_t* _input, size_t _input_count) {
 
 if ((0)) {
 
-	FILE* file = fopen("timeout-cf5744ac30fcc23932eaf10a64f5db7a2b419b06", "r");
+	FILE* file = fopen("slow-unit-51c51b79e2d54f513d863e36641ae7045c1f8e22", "r");
 	if (not file) { perror("open"); exit(1); }
 	fseek(file, 0, SEEK_END);
 	size_t crash_length = (size_t) ftell(file);
@@ -1720,15 +1875,14 @@ if ((0)) {
 	exit(1);
 
 
-} else {
+} 
+if ((0)) {
 
-	// const char* str = "\x09\x77\x72\x77\x2c\x7a";
-	//const char* str = "\t5rw,z";
-	//puts(str);
-	//_input = (const uint8_t*) str;
-	//_input_count = strlen(str);
-	// _input_count = 1000;
+	const char* str = "\x09\x77\x72\x77\x2c\x7a";
 
+	_input = (const uint8_t*) str;
+	// _input_count = strlen(str);
+	_input_count = 1000;
 }
 
 	struct termios terminal;
@@ -1746,6 +1900,8 @@ if ((0)) {
 
 	char p = 0, c = 0;
 	
+	strlcpy(current_path, "/Users/dwrr/Documents/projects/editor/", sizeof current_path);
+
 loop:
 	if (buffer.needs_display_update) {
 		adjust_window_size();
