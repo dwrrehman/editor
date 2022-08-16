@@ -900,6 +900,12 @@ static inline void print_above_textbox(char* write_message, nat color) {
 		write(1, screen, (size_t) length);
 }
 
+static inline void clear_above_textbox() {
+	nat length = sprintf(screen, "\033[%ld;1H\033[K", window_rows - 1);
+	if (not fuzz) 
+		write(1, screen, (size_t) length);
+}
+
 
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
 
@@ -957,6 +963,10 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 	tb = (struct textbox){0};
 }
 
+static inline bool equals(const char* s1, const char* s2) {
+	if (strlen(s1) != strlen(s2)) return false;
+	else return not strcmp(s1, s2);
+}
 
 static inline bool confirmed(const char* question, const char* yes_action, const char* no_action) {
 
@@ -965,12 +975,13 @@ static inline bool confirmed(const char* question, const char* yes_action, const
 	sprintf(invalid_response, "please type \"%s\" or \"%s\".", yes_action, no_action);
 	
 	while (1) {
-		char response[10] = {0};
+		char response[4096] = {0};
 		prompt(prompt_message, buffer.alert_prompt_color, response, sizeof response);
-		
-		if (not strcmp(response, yes_action)) return true;
-		else if (not strcmp(response, no_action)) return false;
-		else if (not strcmp(response, "")) return false;
+		clear_above_textbox();
+
+		if (equals(response, yes_action)) return true;
+		else if (equals(response, no_action)) return false;
+		else if (equals(response, "")) return false;
 		else print_above_textbox(invalid_response, buffer.default_prompt_color);
 
 		if (fuzz) return true;
@@ -1274,13 +1285,19 @@ static inline void save() {
 	if (fuzz) return;
 
 	if (not strlen(filename)) {
+
 	prompt_filename:
+
 		prompt("save as: ", buffer.default_prompt_color, filename, sizeof filename);
+
 		if (not strlen(filename)) { sprintf(message, "aborted save"); return; }
+
 		if (not strrchr(filename, '.') and buffer.use_txt_extension_when_absent) strcat(filename, ".txt");
+
 		if (file_exists(filename) and not confirmed("file already exists, overwrite", "overwrite", "no")) {
 			strcpy(filename, ""); goto prompt_filename;
 		}
+
 	}
 
 	FILE* file = fopen(filename, "w+");
@@ -1724,8 +1741,8 @@ static inline void menu_change() {
 
 	char* selection = strndup(lines[lcl].data, (size_t) lines[lcl].count);
 
-	if (not strcmp(selection, "../") ) { 		// or not strcmp(selection, "..")
-		if (strcmp(current_path, "/")) {
+	if (equals(selection, "../") ) { 		// or not strcmp(selection, "..")
+		if (not equals(current_path, "/")) {
 			current_path[strlen(current_path) - 1] = 0;
 			*(1+strrchr(current_path, '/')) = 0;
 			sprintf(message, "current path: \"%s\"", current_path);
@@ -1733,7 +1750,7 @@ static inline void menu_change() {
 			sprintf(message, "error: at root /");
 		}
 		
-	} else if (not strcmp(selection, "./") ) { 		// or not strcmp(selection, ".")
+	} else if (equals(selection, "./") ) { 		// or not strcmp(selection, ".")
 		// do nothing.
 
 	} else {
