@@ -18,12 +18,8 @@
 // 	   
 
 
-
 /*
-
 	things to add to make the editor useable full time:
-
-
 
 
 ========================= REMAINING REQ. FEATURES ========================
@@ -31,9 +27,9 @@
 FILE VEIW:
 ===========
 	[ ]	- tab completion for file names
-	[ ]	- simple file editor
 	[ ]	- seperate out path and filename, when saving. 
-	[ ]	- seperate out moving a file, and renaming a file. 
+	[ ]	- - seperate out moving a file, and renaming a file. 
+	[x]	- simple file editor
 
 
 CONFIG FILE:
@@ -50,13 +46,6 @@ CONFIG FILE:
 
 
 
-
-
-
-
-
-
-[test]		- test if the confirmed() code  (ie, overwriting, and discarding file stuff) works.
 
 [test]		- test if the copy paste code is still working. 
 
@@ -97,6 +86,8 @@ CONFIG FILE:
 
 
 
+
+
 [feature]	- init parameters from config file. 
 *
 
@@ -114,6 +105,11 @@ CONFIG FILE:
 
 
 
+
+
+
+
+
 ------------------- fixed -----------------
 
 
@@ -122,12 +118,12 @@ CONFIG FILE:
 [FIXED]		- the performance of our display function is not good. we are currently making an n^2 algorithm in order to draw the screen.
 
 
-[FIXED]	 		- solve the two slow-unit-fffffff test cases that the fuzzer found. 
+[FIXED]	 	- solve the two slow-unit-fffffff test cases that the fuzzer found. 
 
 
-[FIXED]			- test how the editor handles unicode characters with the new tab/wrap/display code. 
+[FIXED]		- test how the editor handles unicode characters with the new tab/wrap/display code. 
 
-
+[FIXED]		- test if the confirmed() code  (ie, overwriting, and discarding file stuff) works.
 
 
 
@@ -1445,10 +1441,6 @@ static inline void prompt_jump_column() {
 	sprintf(message, "jumped to %ld %ld", lcl, lcc);
 }
 
-static inline bool is_exit_sequence(char c, char p) {  //todo: make this configurable. 
-	return c == 'w' and p == 'r' or c == 'f' and p == 'u';
-}
-
 static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last_line, nat last_column) {
 	
 	char* string = malloc(256);
@@ -1789,10 +1781,16 @@ static inline void insertdt() {
 	insert_cstring(datetime);
 }
 
+static inline bool is_exit_sequence(char c, char p) { 
+	 //todo: make this configurable. 
+	return ;
+}
+
+
 static inline void execute(char c, char p) {
 	if (buffer.mode == 0) {
 
-		if (is_exit_sequence(c, p)) { undo(); buffer.mode = 1; }
+		if (c == 'c' and p == 'h') { undo(); buffer.mode = 1; }
 		else if (c == 27 and stdin_is_empty()) buffer.mode = 1;
 		else if (c == 27) interpret_escape_code();
 		else if (c == 127) delete(1);
@@ -1800,6 +1798,114 @@ static inline void execute(char c, char p) {
 		else insert(c, 1);
 
 	} else if (buffer.mode == 1) {
+
+
+
+		// alternate keybinding for movement:
+
+		/*
+			en   eo    ep    ei         for begin, end, top and bottom
+
+			ek     column jump
+
+			el 	line jump
+
+			l    o   	for word movement 
+
+		
+			n u p i       for char movement 
+
+			
+							g y   for character searching? .... hmmm not sure about this one
+
+		
+		
+
+			k is a dead stop key for something
+
+							or opens a command window, im not sure
+
+										yeah, probably a command text line, so that you can send a command. 
+
+				instead of ":"     like in vim
+
+
+					so yeah
+
+							now we have "h" as a dead stop  key again   yayy
+
+
+							
+
+
+					and also        a         might also be a dead stop 
+
+
+
+										not sure 
+
+
+
+
+								but we also have c and v    those are dual seq too
+
+
+							
+
+								and i think thats it
+
+
+
+
+					basically, i want to remove all capital letters. thats my goal. 
+
+
+
+							use only dead stops, where it makes sense. 
+
+
+								so yeah. 
+
+
+
+	basically, the rule of thumb is, if you are going to be pressing it  mulitple times in a row,  quite often,  then you need a single key
+		but if not, it can be a dual seq with some deadstop key     for ergonomic combinations that make sense, of course. 
+
+
+				the goal is for them to be done with one hand, always. its one movement.
+
+
+
+						much like how workman does things, lol
+
+
+						so yeah
+
+
+
+
+	
+
+
+
+
+		
+
+	
+			
+
+				*/
+
+
+
+
+
+
+
+
+
+
+
 
 		if (c == 't') buffer.mode = 0;
 		else if (c == 'h') buffer.mode = 2;
@@ -1826,39 +1932,45 @@ static inline void execute(char c, char p) {
 		else if (c == 'Z') alternate_up();
 		else if (c == 'X') alternate_down();
 
-		else if (c == 'a') anchor();
-		else if (c == 'c') copy();
-		else if (c == 'r') cut();  
-		else if (c == 'v') paste();    
+		else if (c == 'r') cut();     
 
-		else if (c == 'g') move_to_previous_buffer();
-		else if (c == 'y') move_to_next_buffer();
-		else if (c == 'f') prompt_open();
-    		else if (c == 'l') create_empty_buffer();
+		else if (c == 'a') anchor();  // make this a dual letter keycommand?
+		else if (c == 'c') copy();    // definitely make this a dual letter keycommand.
+		else if (c == 'v') paste();    // make this a dual letter keycommand.
+
+		else if (c == 'g') move_to_previous_buffer();  // make these both dual letter commands. 
+		else if (c == 'y') move_to_next_buffer();      //
+		else if (c == 'l') create_empty_buffer();     // make this a dual letter command. 
+
+		
+    		else if (c == 's') save();            // have a written out command, AND have this keybinding. 
 		else if (c == 'q') { if (buffer.saved or confirmed("discard unsaved changes", "discard", "no")) close_active_buffer(); }
 
-		else if (c == 's') save();
-		else if (c == 'S') rename_file();
 	
-		else if (c == '_') memset(message, 0, sizeof message);
-
-		else if (c == '\\') { wrap_width = 0; recalculate_position(); }
+		else if (c == 'f') prompt_open();      				// unbind this.  make this a written out command.
+		else if (c == 'S') rename_file();     				// unbind this. make this a written-out command. 
+		else if (c == '_') memset(message, 0, sizeof message);    	// unbind this. make this a written out command
+		else if (c == '\\') { wrap_width = 0; recalculate_position(); }  // make this part of the set command. 
 		
 
-		else if (c == '1')  insertdt();
+
+		// im not sure what to do about these....
+
 		else if (c == '\r') menu_select();
 		else if (c == '\t') menu_change();
 		else if (c == ':')  menu_display();
-		else if (c == ';') { 
-			menu_change();
-			undo_silent();
-			menu_display();
-		}
+		else if (c == ';') { menu_change(); undo_silent(); menu_display(); }
 
-		else if (c == ' ') {}
+
+
+		else if (c == '1')  insertdt();
+
+		else if (c == ' ') {} // nop
 
 		else if (c == 27 and stdin_is_empty()) buffer.mode = 1;
 		else if (c == 27) interpret_escape_code();
+
+
 
 	} else if (buffer.mode == 2) {
 
