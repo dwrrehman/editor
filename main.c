@@ -19,10 +19,49 @@
 
 
 /*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 	things to add to make the editor useable full time:
 
 
 ========================= REMAINING REQ. FEATURES ========================
+
+
+
+
 
 FILE VEIW:
 ===========
@@ -38,8 +77,20 @@ CONFIG FILE:
 	[ ] 	- be able to adjust parameters within editor using "set" command-line command.
 
 		
+SAFETY:
+=========
+
+	[ ]	- make an autosave feature, that saves the file to an autosave directory every time it changes. i think. or at least, when theres downtime. yeah. dont do it while typing, obviously. dont wait until user saves to write the file to SOMEWHERE in disk. we need to not loose anything. 
 
 
+
+
+DOC:
+==================
+
+	[ ] 	- document the new keybinding of the editor in a manual_v2.txt file!
+
+	[ ] 	- 
 
 ------------------- bugs ----------------------
 
@@ -51,6 +102,7 @@ CONFIG FILE:
 
 
 
+[test]		- test if word movement is working
 
 
 
@@ -78,7 +130,7 @@ CONFIG FILE:
 
 
 [feature]	- rework the way the      wrap_width        disabling/dynamic adjusting works. 
-**
+***
 
 
 [optional]	- rebind the keybindings of the editor. 
@@ -153,6 +205,12 @@ CONFIG FILE:
 
 #include <dirent.h>
 
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -186,7 +244,7 @@ struct buffer {
 	struct line* lines;
 	struct action* actions;
 
-	nat     saved, mode, 
+	nat     saved, mode, autosaved,
 		count, capacity, 
 		line_number_width, needs_display_update,
 
@@ -206,7 +264,7 @@ struct buffer {
 };
 
 struct logical_state {
-	nat     saved, line_number_width, 
+	nat     saved, autosaved, line_number_width, 
 
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 
 		vsl, vsc, 	vdc,    	lal, lac,
@@ -261,6 +319,18 @@ static nat
 
 static char message[4096] = {0};
 static char filename[4096] = {0};
+
+static pthread_mutex_t mutex;
+static pthread_t autosave_thread;
+
+
+
+	// todo: make these a buffer parameter!
+
+static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
+static const nat autosave_frequency = 8;     
+
+
 
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
@@ -496,6 +566,7 @@ static inline void record_logical_state(struct logical_state* pcond_out) {
 	struct logical_state* p = pcond_out; 
 
 	p->saved = buffer.saved;
+	p->autosaved = buffer.autosaved;
 	p->line_number_width = line_number_width;
 
 	p->lcl = lcl;  p->lcc = lcc; 	
@@ -513,6 +584,7 @@ static inline void require_logical_state(struct logical_state* pcond_in) {
 	struct logical_state* p = pcond_in;
 
 	buffer.saved = p->saved;
+	buffer.autosaved = p->autosaved;
 	line_number_width = p->line_number_width;
 
 	lcl = p->lcl;  lcc = p->lcc; 	
@@ -586,6 +658,7 @@ static inline void insert(char c, bool should_record) {
 	else move_right(1);
 
 	buffer.saved = false;
+	buffer.autosaved = false;
 	if (not should_record) return;
 	lac = lcc; lal = lcl;
 
@@ -666,6 +739,7 @@ static inline void delete(bool should_record) {
 	}
 
 	buffer.saved = false;
+	buffer.autosaved = false;
 	if (not should_record) return;
 	lac = lcc; lal = lcl;
 
@@ -709,13 +783,10 @@ static inline void display() {
 	if (fuzz) {
 		if (lcl < 0) abort();
 		if (lcc < 0) abort();
-
 		if (vol < 0) abort();
 		if (voc < 0) abort();
-
 		if (vcl < 0) abort();
-		if (vcc < 0) abort();		
-		
+		if (vcc < 0) abort();
 		if (vsl < 0) abort();
 		if (vsc < 0) abort();
 	}
@@ -798,14 +869,17 @@ static inline void display() {
 
 	if (show_status) {
 
-		nat status_length = sprintf(screen + length, " %ld %ld %ld %ld %ld %s %c %s",
+		nat status_length = sprintf(screen + length, " %ld %ld %ld %ld %ld %s %c%c %s",
 			buffer.mode, 
 			active_index, buffer_count,
 			lcl, lcc, 
 
-			// vcl, vcc, vsl, vsc, vol, voc, 
 			filename, 
+			
 			buffer.saved ? 's' : 'e', 
+
+			buffer.autosaved ? ' ' : '*',
+
 			message
 		);
 		length += status_length;
@@ -990,6 +1064,7 @@ static inline void store_current_data_to_buffer() {
 	const nat b = active_index;
 	
 	buffers[b].saved = buffer.saved;
+	buffers[b].autosaved = buffer.autosaved;
 	buffers[b].mode = buffer.mode;
 
 	buffers[b].wrap_width = wrap_width;
@@ -1033,6 +1108,7 @@ static inline void load_buffer_data_into_registers() {
 	struct buffer this = buffers[active_index];
 	
 	buffer.saved = this.saved;
+	buffer.autosaved = this.autosaved;
 	buffer.mode = this.mode;
 
 	wrap_width = this.wrap_width;
@@ -1103,6 +1179,7 @@ static inline void zero_registers() {
 static inline void initialize_registers() {
 	
 	buffer.saved = true;
+	buffer.autosaved = true;
 	buffer.mode = 0;
 
 	wrap_width = 0; // init using file 
@@ -1208,6 +1285,7 @@ static inline void open_file(const char* given_filename) {
 	free(text); 
 	fclose(file);
 	buffer.saved = true; 
+	buffer.autosaved = true; 
 	buffer.mode = 1; 
 	move_top();
 	strcpy(filename, given_filename);
@@ -1216,18 +1294,22 @@ static inline void open_file(const char* given_filename) {
 	sprintf(message, "read %lub", length);
 }
 
+static inline void generate_hex_string(char id[32]) {
+	sprintf(id, "%08x%08x", rand(), rand());
+}
+
 static inline void emergency_save_to_file() {
-
-	// we need to do this for the current register'd buffer,     and all the other buffers too!!!
-
-
+	
 	if (fuzz) return;
 
 	char dt[16] = {0};
 	get_datetime(dt);
+
+	char id[32] = {0};
+	generate_hex_string(id);
 	
 	char local_filename[4096] = {0};
-	sprintf(local_filename, "EMERGENCY_FILE_SAVE__%s_.txt", dt);
+	sprintf(local_filename, "EMERGENCY_FILE_SAVE__%s__%s__.txt", dt, id);
 
 	FILE* file = fopen(local_filename, "w+");
 	if (not file) {
@@ -1252,9 +1334,69 @@ static inline void emergency_save_to_file() {
 
 	fclose(file);
 
-	printf("interrupt: emergency wrote %lldb;%ldl to %s\n", bytes, count, local_filename);
+	printf("interrupt: emergency wrote %lldb;%ldl to %s\n\r", bytes, count, local_filename);
 }
 
+static inline void emergency_save_all_buffers() {
+
+	store_current_data_to_buffer();
+
+	nat saved_active_index = active_index;
+	for (int i = 0; i < buffer_count; i++) {
+		
+		active_index = i;
+		load_buffer_data_into_registers();
+		emergency_save_to_file(); 
+
+		sleep(1);
+	}
+	
+	active_index = saved_active_index;
+	load_buffer_data_into_registers();
+}
+
+
+static inline void autosave() {
+
+	if (fuzz) return;
+
+	
+
+
+	char dt[16] = {0};
+	get_datetime(dt);
+
+	char local_filename[4096] = {0};
+	sprintf(local_filename, "%sautosave_%s_.txt", autosave_directory, dt);
+
+
+	FILE* file = fopen(local_filename, "w+");
+	if (not file) {
+		printf("emergency error: %s\n", strerror(errno));
+		return;
+	}
+	
+	unsigned long long bytes = 0;
+	for (nat i = 0; i < count; i++) {
+		bytes += fwrite(lines[i].data, sizeof(char), (size_t) lines[i].count, file);
+		if (i < count - 1) {
+			fputc('\n', file);
+			bytes++;
+		}
+	}
+
+	if (ferror(file)) {
+		printf("emergency error: %s\n", strerror(errno));
+		fclose(file);
+		return;
+	}
+
+	fclose(file);
+
+	// sprintf(message, "autosaved %lldb;%ldl to %s", bytes, count, local_filename);
+
+	buffer.autosaved = true;
+}
 
 
 
@@ -1267,11 +1409,13 @@ static void handle_signal_interrupt(int code) {
 		"emergency saving...\n\r", 
 		code);
 
-	emergency_save_to_file();
+	srand((unsigned)time(NULL));
 
-	printf("press C to continue running process\n\r");
+	emergency_save_all_buffers();
+
+	printf("press '.' to continue running process\n\r");
 	int c = getchar(); 
-	if (c != 'C') exit(1);
+	if (c != '.') exit(1);
 }
 
 
@@ -1781,11 +1925,6 @@ static inline void insertdt() {
 	insert_cstring(datetime);
 }
 
-static inline bool is_exit_sequence(char c, char p) { 
-	 //todo: make this configurable. 
-	return ;
-}
-
 
 static inline void execute(char c, char p) {
 	if (buffer.mode == 0) {
@@ -1983,45 +2122,34 @@ static inline void execute(char c, char p) {
 	} else buffer.mode = 1;
 }
 
+
+
+static void* autosaver(void* unused) {
+
+	while (1) {
+		sleep(autosave_frequency);
+		pthread_mutex_lock(&mutex);
+		if (not buffer_count) break;
+		if (not buffer.autosaved) autosave();
+		pthread_mutex_unlock(&mutex);
+	}
+
+	return unused;
+}
+
 static inline void editor(const uint8_t* _input, size_t _input_count) {
 
-if ((0)) {
-
-	FILE* file = fopen("slow-unit-51c51b79e2d54f513d863e36641ae7045c1f8e22", "r");
-	if (not file) { perror("open"); exit(1); }
-	fseek(file, 0, SEEK_END);
-	size_t crash_length = (size_t) ftell(file);
-	char* crash = malloc(sizeof(char) * crash_length);
-	fseek(file, 0, SEEK_SET);
-	fread(crash, sizeof(char), crash_length, file);
-	fclose(file);
-	_input = (const uint8_t*) crash;
-	_input_count = crash_length;
-	printf("\n\n\nstr = \"");
-	for (size_t i = 0; i < _input_count; i++) printf("\\x%02hhx", _input[i]);
-	printf("\";\n\n\n");
-
-	exit(1);
-
-
-} 
-if ((0)) {
-
-	const char* str = "\x09\x77\x72\x77\x2c\x7a";
-
-	_input = (const uint8_t*) str;
-	// _input_count = strlen(str);
-	_input_count = 1000;
-}
 
 	struct termios terminal;
 	if (not fuzz) {
 		terminal = configure_terminal();
 		write(1, "\033[?1049h\033[?1000h\033[7l", 20);
 		buffer.needs_display_update = 1;
-	}
-	
-	if (fuzz) {
+		pthread_mutex_init(&mutex, NULL);
+		pthread_mutex_lock(&mutex);
+		pthread_create(&autosave_thread, NULL, &autosaver, NULL);
+
+	} else {
 		fuzz_input_index = 0; 
 		fuzz_input = _input;
 		fuzz_input_count = _input_count;
@@ -2040,7 +2168,9 @@ loop:
 		if (fuzz_input_index >= fuzz_input_count) goto done;
 		c = (char) fuzz_input[fuzz_input_index++];	
 	} else {
+		pthread_mutex_unlock(&mutex);
 		read(0, &c, 1);
+		pthread_mutex_lock(&mutex);
 	}
 	buffer.needs_display_update = 1;
 	execute(c, p);
@@ -2057,6 +2187,9 @@ done:
 	if (not fuzz) {
 		write(1, "\033[?1049l\033[?1000l\033[7h", 20);	
 		tcsetattr(0, TCSAFLUSH, &terminal);
+		pthread_mutex_unlock(&mutex);
+		pthread_detach(autosave_thread);
+		pthread_mutex_destroy(&mutex);
 	}
 }
 
@@ -2125,7 +2258,38 @@ int main(const int argc, const char** argv) {
 
 
 
+/*
 
+if ((0)) {
+
+	FILE* file = fopen("slow-unit-51c51b79e2d54f513d863e36641ae7045c1f8e22", "r");
+	if (not file) { perror("open"); exit(1); }
+	fseek(file, 0, SEEK_END);
+	size_t crash_length = (size_t) ftell(file);
+	char* crash = malloc(sizeof(char) * crash_length);
+	fseek(file, 0, SEEK_SET);
+	fread(crash, sizeof(char), crash_length, file);
+	fclose(file);
+	_input = (const uint8_t*) crash;
+	_input_count = crash_length;
+	printf("\n\n\nstr = \"");
+	for (size_t i = 0; i < _input_count; i++) printf("\\x%02hhx", _input[i]);
+	printf("\";\n\n\n");
+
+	exit(1);
+
+
+} 
+if ((0)) {
+
+	const char* str = "\x09\x77\x72\x77\x2c\x7a";
+
+	_input = (const uint8_t*) str;
+	// _input_count = strlen(str);
+	_input_count = 1000;
+}
+
+*/
 
 
 
