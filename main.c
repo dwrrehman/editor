@@ -74,13 +74,21 @@ FILE VEIW:
 CONFIG FILE:
 ===========
 	[ ] 	- read and write to config file to store parameters
-	[ ] 	- be able to adjust parameters within editor using "set" command-line command.
+	[ ] 	- be able to adjust config parameters within editor using "set" command-line command.
 
+
+UI:
+===========
+	[ ] 	- implement a command line, that parses arguments via whitespace..? 
+			single char commands only, for built in ones, i think? 
+
+	[ ] 	- be able to adjust config parameters within editor using "set" command-line command.
+	
 		
 SAFETY:
 =========
 
-	[ ]	- make an autosave feature, that saves the file to an autosave directory every time it changes. i think. or at least, when theres downtime. yeah. dont do it while typing, obviously. dont wait until user saves to write the file to SOMEWHERE in disk. we need to not loose anything. 
+	[x]	- make an autosave feature, that saves the file to an autosave directory every time it changes. i think. or at least, when theres downtime. yeah. dont do it while typing, obviously. dont wait until user saves to write the file to SOMEWHERE in disk. we need to not loose anything. 
 
 
 
@@ -133,8 +141,7 @@ DOC:
 ***
 
 
-[optional]	- rebind the keybindings of the editor. 
-**
+
 
 
 
@@ -158,6 +165,9 @@ DOC:
 
 
 
+
+DONE: [optional]	x- rebind the keybindings of the editor. 
+**
 
 
 
@@ -1360,9 +1370,6 @@ static inline void autosave() {
 
 	if (fuzz) return;
 
-	
-
-
 	char dt[16] = {0};
 	get_datetime(dt);
 
@@ -1393,8 +1400,6 @@ static inline void autosave() {
 
 	fclose(file);
 
-	// sprintf(message, "autosaved %lldb;%ldl to %s", bytes, count, local_filename);
-
 	buffer.autosaved = true;
 }
 
@@ -1410,15 +1415,12 @@ static void handle_signal_interrupt(int code) {
 		code);
 
 	srand((unsigned)time(NULL));
-
 	emergency_save_all_buffers();
 
 	printf("press '.' to continue running process\n\r");
 	int c = getchar(); 
 	if (c != '.') exit(1);
 }
-
-
 
 
 static inline void save() {
@@ -1890,17 +1892,12 @@ static inline void menu_change() {
 		// do nothing.
 
 	} else {
-
 		char path[4096] = {0};
 		strlcpy(path, current_path, sizeof path);
 		strlcat(path, selection, sizeof path);
 
 		if (is_directory(path)) {
 			strlcat(current_path, selection, sizeof current_path);
-
-			// if (selection[strlen(selection) - 1] != '/')
-			// strcat(current_path, "/");
-
 			sprintf(message, "current path: \"%s\"", current_path);
 		} else {
 			sprintf(message, "error: not a directory");
@@ -1927,6 +1924,7 @@ static inline void insertdt() {
 
 
 static inline void execute(char c, char p) {
+
 	if (buffer.mode == 0) {
 
 		if (c == 'c' and p == 'h') { undo(); buffer.mode = 1; }
@@ -2025,16 +2023,18 @@ static inline void execute(char c, char p) {
 
 	
 
+		heres the keys that we are using mainly, in the editor.   trying not to make too many exceptions. 
+			these are the keys that are ergonomic to type. 
 
 
+		  d r             u p 
+		a s h t         n e o i 
+		     m c       k l 
 
-		
 
 	
-			
 
-				*/
-
+	*/
 
 
 
@@ -2042,83 +2042,148 @@ static inline void execute(char c, char p) {
 
 
 
+		if (c == 'q') { if (buffer.saved or confirmed("discard unsaved changes", "discard", "no")) close_active_buffer(); }
 
 
+	
+	// -------------------------------------------
 
+	//ashm:
+		else if (c == 'a') {}
+		else if (c == 's') save();
+		// h is deadstop
+		else if (c == 'm') {}
+	// drtc:
+		else if (c == 'd') anchor(); 
+		else if (c == 'r') cut();
+		else if (c == 't') buffer.mode = 0;
+		else if (c == 'c') buffer.mode = 2;
 
-		if (c == 't') buffer.mode = 0;
-		else if (c == 'h') buffer.mode = 2;
+	// -------------------------------------------
 
-		else if (c == 'n') move_left(1);
+	// ioel:
 		else if (c == 'i') move_right(1);
+		else if (c == 'o') move_word_right();
+		// e is deadstop
+		else if (c == 'l') move_word_left();
+	// punk:
 		else if (c == 'p') move_up();
 		else if (c == 'u') move_down();
-
-		else if (c == 'e') move_word_left();
-		else if (c == 'o') move_word_right();
-
-		else if (c == 'N') move_begin();
-		else if (c == 'I') move_end();
-
-		else if (c == 'P') move_top();
-		else if (c == 'U') move_bottom();
-
-		else if (c == 'E') prompt_jump_column();
-		else if (c == 'O') prompt_jump_line();
-
-		else if (c == 'z') undo();
-		else if (c == 'x') redo();
-		else if (c == 'Z') alternate_up();
-		else if (c == 'X') alternate_down();
-
-		else if (c == 'r') cut();     
-
-		else if (c == 'a') anchor();  // make this a dual letter keycommand?
-		else if (c == 'c') copy();    // definitely make this a dual letter keycommand.
-		else if (c == 'v') paste();    // make this a dual letter keycommand.
-
-		else if (c == 'g') move_to_previous_buffer();  // make these both dual letter commands. 
-		else if (c == 'y') move_to_next_buffer();      //
-		else if (c == 'l') create_empty_buffer();     // make this a dual letter command. 
+		else if (c == 'n') move_left(1);
+		else if (c == 'k') {}
 
 		
-    		else if (c == 's') save();            // have a written out command, AND have this keybinding. 
-		else if (c == 'q') { if (buffer.saved or confirmed("discard unsaved changes", "discard", "no")) close_active_buffer(); }
+	// dead stops:
+	// ---------------------------------------------------
 
-	
-		else if (c == 'f') prompt_open();      				// unbind this.  make this a written out command.
-		else if (c == 'S') rename_file();     				// unbind this. make this a written-out command. 
-		else if (c == '_') memset(message, 0, sizeof message);    	// unbind this. make this a written out command
-		else if (c == '\\') { wrap_width = 0; recalculate_position(); }  // make this part of the set command. 
+	// e: leio
+		else if (c == 'l' and p == 'e') prompt_jump_line();
+		else if (c == 'o' and p == 'e') move_end();
+		else if (c == 'e' and p == 'e') redo();
+		else if (c == 'i' and p == 'e') move_bottom();
+	//    knup:
+		else if (c == 'k' and p == 'e') prompt_jump_column();
+		else if (c == 'n' and p == 'e') move_begin();
+		else if (c == 'u' and p == 'e') alternate_down();
+		else if (c == 'p' and p == 'e') move_top();
 		
+		else if (c == 'y' and p == 'e') move_to_previous_buffer();
+		
+	// h: ashm
+		
+		else if (c == 'a' and p == 'h') {}
+		else if (c == 's' and p == 'h') {}
+		else if (c == 'h' and p == 'h') undo();
+		else if (c == 'm' and p == 'h') copy(); 
+	//    drtc		
+		else if (c == 'd' and p == 'h') {}
+		else if (c == 'r' and p == 'h') alternate_up();
+		else if (c == 't' and p == 'h') create_empty_buffer();
+		else if (c == 'c' and p == 'h') paste(); 
+		
+		else if (c == 'g' and p == 'h') move_to_next_buffer();
 
 
-		// im not sure what to do about these....
-
-		else if (c == '\r') menu_select();
-		else if (c == '\t') menu_change();
-		else if (c == ':')  menu_display();
-		else if (c == ';') { menu_change(); undo_silent(); menu_display(); }
 
 
+	// other:
 
-		else if (c == '1')  insertdt();
-
-		else if (c == ' ') {} // nop
+		else if (c == ' ') {/* do nothing */}
 
 		else if (c == 27 and stdin_is_empty()) buffer.mode = 1;
 		else if (c == 27) interpret_escape_code();
 
 
 
+
+
+	// -----------------------------------------
+	
+
+
+	// keybingings to change still:
+
+		else if (c == 'E') show_status = not show_status;            // unbind this.  make this a written out command.
+		else if (c == 'N') show_line_numbers = not show_line_numbers;    // unbind this.  make this a written out command.
+
+		else if (c == 'F') prompt_open();      				// unbind this.  make this a written out command.
+		else if (c == 'S') rename_file();     				// unbind this. make this a written-out command. 
+
+		else if (c == '_') memset(message, 0, sizeof message);    	// unbind this. make this a written out command
+		else if (c == '\\') { wrap_width = 0; recalculate_position(); }  // make this part of the set command. 
+	
+		// im not sure what to do about these....
+
+		else if (c == '\r') menu_select();         // make this a written out command...
+		else if (c == '\"') menu_change();         // make this a written out command...
+		else if (c == ';')  menu_display();        // make this a written out command...
+
+		else if (c == '\'') { menu_change(); undo_silent(); menu_display(); }      // make this a written out command...
+
+
+		else if (c == '1')  insertdt();      // make this a written out command...
+		
+
+		
 	} else if (buffer.mode == 2) {
+		
+		buffer.mode = 1;
+		// this is where command-line mode will happen. 
 
-		if (c == 't') buffer.mode = 0;
-		else if (c == 'r') buffer.mode = 1;
-		else if (c == 's') show_status = not show_status;  // temp
-		else if (c == 'n') show_line_numbers = not show_line_numbers; // temp
+		char command[4096] = {0};
 
+		// prompt(".", color:gray, command, sizeof command);
 
+		array_of_commands = split_command(using: '.');
+
+		for each command in array: {
+
+			if (equals(command, "")) {/* do nothing */}
+
+			else if (equals(command, "test1")) {}
+
+			else if (equals(command, "test2")) {}
+
+			else if (equals(command, "test3")) {}
+
+			else if (equals(command, "test4")) {}
+
+			else {
+				sprintf(message, "command not recognized: %s", command);
+			}
+
+		}
+
+			// todo:  implement a global history for the prompt textbox!!!!
+			/*
+					very important. 
+
+							also, save it to the config file..? not sure... hmm.. yeah... 
+
+							we should have a directory that we save all of our config files to. 
+
+				*/		
+		
 	} else buffer.mode = 1;
 }
 
