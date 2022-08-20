@@ -279,6 +279,8 @@ static nat
 
 static char message[4096] = {0};
 static char filename[4096] = {0};
+static char user_selection[4096] = {0};
+static char current_path[4096] = {0};
 
 static pthread_mutex_t mutex;
 static pthread_t autosave_thread;
@@ -300,6 +302,11 @@ static inline bool is_regular_file(const char *path) {
 }
 
 */
+
+static inline bool equals(const char* s1, const char* s2) {
+	if (strlen(s1) != strlen(s2)) return false;
+	else return not strcmp(s1, s2);
+}
 
 static inline bool is_directory(const char *path) {
 	struct stat s;
@@ -458,7 +465,8 @@ static inline void move_down() {
 	}
 	while (vcc < vdc and lcc < lines[lcl].count) {
 
-		if (lines[lcl].data[lcc] == '\t' and vcc + (tab_width - (vcc % tab_width)) > vdc) return;
+		if (lines[lcl].data[lcc] == '\t' and 
+			vcc + (tab_width - (vcc % tab_width)) > vdc) return;
 		// TODO: ^ WHAT IS THIS!?!?!?
 
 		move_right(0);
@@ -959,11 +967,13 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 		} else read(0, &c, 1);
 
 		if (c == '\r' or c == '\n') break;
-		else if (c == '\t') {  // tab complete
+		else if (c == '\t') {  // tab complete :   simply paste the user selection?...
 			
-		
+			const nat path_length = (nat) strlen(user_selection);
 
-
+			for (nat i = 0; i < path_length; i++) 
+				textbox_insert(user_selection[i]);
+			
 		}
 		else if (c == 27 and stdin_is_empty()) { tb.count = 0; break; }
 		else if (c == 27) {
@@ -999,11 +1009,6 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 	out[out_size - 1] = 0;
 	free(tb.data);
 	tb = (struct textbox){0};
-}
-
-static inline bool equals(const char* s1, const char* s2) {
-	if (strlen(s1) != strlen(s2)) return false;
-	else return not strcmp(s1, s2);
 }
 
 static inline bool confirmed(const char* question, const char* yes_action, const char* no_action) {
@@ -1470,49 +1475,43 @@ static inline void interpret_escape_code() {
 		else if (c == 'C') move_right(1);
 		else if (c == 'D') move_left(1);
 
-		/*  TODO:   i need to completely redo the way that we scroll the screen, using mouse/trackpad scrolling. 
+		//  TODO:   i need to completely redo the way that we scroll the screen, using mouse/trackpad scrolling. 
 
 		else if (c == 'M') {
-			
-			char str[3] = {0};
-
-			read(0, str + 0, 1); // b
-			read(0, str + 1, 1); // x
-			read(0, str + 2, 1); // y
-
-			sprintf(message, "mouse reporting: [%d,%d,%d].", str[0],str[1],str[2]);
-		} 
-
-
-		else if (c == 77) {
 
 			read(0, &c, 1);
 
 			if (c == 97) {
 
-				read(0, &c, 1); 
-				read(0, &c, 1);
+				char str[3] = {0};
+				read(0, str + 0, 1); // x
+				read(0, str + 1, 1); // y
+				sprintf(message, "scroll reporting: [%d:%d:%d]", c, str[0], str[1]);
 
-				// scroll_counter++;
-				// if (scroll_counter == buffer.scroll_speed) {
-					move_down();
-				// 	scroll_counter = 0;
-				// } else buffer.needs_display_update = 0;
+				
+				move_down();   // temp
+				
 
 			} else if (c == 96) {
 
-				read(0, &c, 1); 
-				read(0, &c, 1);
+				char str[3] = {0};
+				read(0, str + 0, 1); // x
+				read(0, str + 1, 1); // y
+				sprintf(message, "scroll reporting: [%d:%d:%d]", c, str[0], str[1]);
 
-				// scroll_counter++;
-				// if (scroll_counter == buffer.scroll_speed) {
-					move_up();
-				//	scroll_counter = 0;
-				// } else buffer.needs_display_update = 0;
-			} 
+	
+				move_up();     // temp
+				
+			} else {
+				char str[3] = {0};
+				read(0, str + 0, 1); // x
+				read(0, str + 1, 1); // y
+
+				sprintf(message, "mouse reporting: [%d:%d:%d].", c, str[0], str[1]);
+			}
 		}
 	
-		*/
+	
 	
 	} 
 }
@@ -1646,7 +1645,6 @@ static inline void paste() {
  	new.length = length;
  	create_action(new);
  }
-
 }
 
 static void insert_string(const char* string, nat length) {
@@ -1781,14 +1779,7 @@ static inline void recalculate_position() {
 	jump_to(save_lcl, save_lcc);
 }
 
-
-
-static char user_selection[4096] = {0};
-static char current_path[4096] = {0};
-
-static inline void menu_display() {
-
-	// sprintf(message, "reading: %s ", current_path);
+static inline void open_directory() {
 	
 	DIR* directory = opendir(current_path);
 	if (not directory) { 
@@ -1824,15 +1815,14 @@ static inline void menu_display() {
 
 	lal = lcl; lac = lcc;
 	insert_string(menu, length);
-	jump_to(lal, lac);
-	
+	jump_to(lal, lac);	
 }
 
-static inline void menu_change() {
+static inline void change_directory() {
 
 	char* selection = strndup(lines[lcl].data, (size_t) lines[lcl].count);
 
-	if (equals(selection, "../") ) { 		// or not strcmp(selection, "..")
+	if (equals(selection, "../") ) {
 		if (not equals(current_path, "/")) {
 			current_path[strlen(current_path) - 1] = 0;
 			*(1+strrchr(current_path, '/')) = 0;
@@ -1841,7 +1831,7 @@ static inline void menu_change() {
 			sprintf(message, "error: at root /");
 		}
 		
-	} else if (equals(selection, "./") ) { 		// or not strcmp(selection, ".")
+	} else if (equals(selection, "./") ) {
 		// do nothing.
 
 	} else {
@@ -1856,16 +1846,13 @@ static inline void menu_change() {
 			sprintf(message, "error: not a directory");
 		}
 	}
-
-	
 }
 
-static inline void menu_select() {
+static inline void file_select() {
 	char* line = strndup(lines[lcl].data, (size_t) lines[lcl].count);
 	strlcpy(user_selection, current_path, sizeof user_selection);
 	strlcat(user_selection, line, sizeof user_selection);
 	free(line);
-
 	sprintf(message, "selected: %s", user_selection);
 }
 
@@ -1917,46 +1904,36 @@ static inline void execute(char c, char p) {
 
 		if (c == ' ') {} // nop
 
-	// e: lio
 		else if (c == 'l' and p == 'e') prompt_jump_line();
 		else if (c == 'o' and p == 'e') move_end();
 		else if (c == 'i' and p == 'e') move_bottom();
-	//    knup:
 		else if (c == 'k' and p == 'e') prompt_jump_column();
 		else if (c == 'n' and p == 'e') move_begin();
 		else if (c == 'u' and p == 'e') alternate_decr();
 		else if (c == 'p' and p == 'e') move_top();
 		
-	// h: asm
 		else if (c == 'a' and p == 'h') move_to_previous_buffer();
 		else if (c == 's' and p == 'h') move_to_next_buffer();
-		else if (c == 'm' and p == 'h') copy(); 
-	//    drtc		
+		else if (c == 'm' and p == 'h') copy(); 		
 		else if (c == 'd' and p == 'h') prompt_open();
 		else if (c == 'r' and p == 'h') alternate_incr();
 		else if (c == 't' and p == 'h') create_empty_buffer();
 		else if (c == 'c' and p == 'h') paste(); 
 
-	//ashm:
 		else if (c == 'a') anchor(); 
 		else if (c == 's') save();
 		else if (c == 'm') { buffer.mode = 2; goto command_mode; }
-	// drt c:
 		else if (c == 'd') delete(1);
 		else if (c == 'r') cut();
 		else if (c == 't') buffer.mode = 0;
-
 		else if (c == 'c') undo();
 
-	// ioel:
 		else if (c == 'i') move_right(1);
 		else if (c == 'o') move_word_right();
 		else if (c == 'l') move_word_left();
-	// pun k:
 		else if (c == 'p') move_up();
 		else if (c == 'u') move_down();
 		else if (c == 'n') move_left(1);
-
 		else if (c == 'k') redo();
 
 		else if (c == 'q') { 
@@ -1967,7 +1944,9 @@ static inline void execute(char c, char p) {
 		else if (c == 27) interpret_escape_code();
 
 	} else if (buffer.mode == 2) {
-	command_mode:;
+
+		command_mode: buffer.mode = 1;
+
 		char string[4096] = {0};
 		prompt(" •• ", 82, string, sizeof string);
 		
@@ -1993,10 +1972,10 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "rename")) rename_file();
 			else if (equals(command, "save")) save();
 			else if (equals(command, "autosave")) autosave();
-			else if (equals(command, "dive")) { menu_change(); undo_silent(); menu_display(); }
-			else if (equals(command, "menuchange")) menu_change(); 
-			else if (equals(command, "menudisplay")) menu_display();
-			else if (equals(command, "menuselect")) menu_select();
+			else if (equals(command, "in")) { menu_change(); undo_silent(); menu_display(); }
+			else if (equals(command, "menuchange")) menu_change();     // rename this.
+			else if (equals(command, "menudisplay")) menu_display();   // rename this.
+			else if (equals(command, "select")) menu_select();      // rename this function. file_select() i think.
 			else if (equals(command, "clearmessage")) memset(message, 0, sizeof message);
 			else if (equals(command, "numbers")) show_line_numbers = not show_line_numbers;
 			else if (equals(command, "status")) show_status = not show_status;
@@ -2028,7 +2007,16 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "mode0")) buffer.mode = 0;
 			else if (equals(command, "mode1")) buffer.mode = 1;
 			else if (equals(command, "mode2")) buffer.mode = 2;
-			else if (equals(command, "commandcount")) sprintf(message, "testing: %d", command_count);
+
+			else if (equals(command, "commandcount")) sprintf(message, "command count = %d", command_count);
+
+			else if (equals(command, "currentpath")) sprintf(message, "current path = %s", current_path);
+
+			else if (equals(command, "resetpath")) 
+		strlcpy(current_path, "/Users/dwrr/Documents/projects/editor/", sizeof current_path);
+
+			else if (equals(command, "selection")) sprintf(message, "user selected = %s", user_selection);
+
 			else if (equals(command, "wrapresizetemp")) { wrap_width = 0; recalculate_position(); }
 			else if (equals(command, "quit")) {
 				if (buffer.saved or confirmed("discard unsaved changes", "discard", "no")) 
@@ -2058,7 +2046,6 @@ static void* autosaver(void* unused) {
 
 static inline void editor(const uint8_t* _input, size_t _input_count) {
 
-
 	struct termios terminal;
 	if (not fuzz) {
 		terminal = configure_terminal();
@@ -2077,7 +2064,6 @@ static inline void editor(const uint8_t* _input, size_t _input_count) {
 	char p = 0, c = 0;
 	
 	strlcpy(current_path, "/Users/dwrr/Documents/projects/editor/", sizeof current_path);
-
 loop:
 	if (buffer.needs_display_update) {
 		adjust_window_size();
@@ -2172,13 +2158,6 @@ int main(const int argc, const char** argv) {
 
 /*
 
-
-
-
-
-
-
-
 	char buffer[4096] = {0};
 	printf("input: ");
 	fgets(buffer, sizeof buffer, stdin);
@@ -2207,22 +2186,6 @@ int array_count = 0;
 	}
 
 	puts("]\ndone!");
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2256,13 +2219,6 @@ int array_count = 0;
 
 
 	exit(1);
-*/
-
-
-
-
-
-/*
 
 
 
@@ -2335,8 +2291,9 @@ int array_count = 0;
 
 							we should have a directory that we save all of our config files to. 
 
-				*/		
-		
+				*/	
+
+
 
 
 
