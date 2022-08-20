@@ -22,38 +22,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	things to add to make the editor useable full time:
 
 
@@ -68,7 +36,7 @@ FILE VEIW:
 	[ ]	- tab completion for file names
 	[ ]	- seperate out path and filename, when saving. 
 	[ ]	- - seperate out moving a file, and renaming a file. 
-	[x]	- simple file editor
+	[x]	- simple file viewer
 
 
 CONFIG FILE:
@@ -79,10 +47,10 @@ CONFIG FILE:
 
 UI:
 ===========
-	[ ] 	- implement a command line, that parses arguments via whitespace..? 
+	[x] 	- implement a command line, that parses arguments via whitespace..? 
 			single char commands only, for built in ones, i think? 
 
-	[ ] 	- be able to adjust config parameters within editor using "set" command-line command.
+	[x] 	- be able to adjust config parameters within editor using "set" command-line command.
 	
 		
 SAFETY:
@@ -127,9 +95,6 @@ DOC:
 
 
 
-
-
-
 ---------------- features ---------------
 
 
@@ -139,10 +104,6 @@ DOC:
 
 [feature]	- rework the way the      wrap_width        disabling/dynamic adjusting works. 
 ***
-
-
-
-
 
 
 
@@ -163,12 +124,8 @@ DOC:
 
 
 
-
-
-
 DONE: [optional]	x- rebind the keybindings of the editor. 
 **
-
 
 
 
@@ -186,11 +143,6 @@ DONE: [optional]	x- rebind the keybindings of the editor.
 [FIXED]		- test how the editor handles unicode characters with the new tab/wrap/display code. 
 
 [FIXED]		- test if the confirmed() code  (ie, overwriting, and discarding file stuff) works.
-
-
-
-
-
 
 
 */
@@ -224,8 +176,6 @@ DONE: [optional]	x- rebind the keybindings of the editor.
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
-
 
 
 #define is_fuzz_testing		0
@@ -333,24 +283,23 @@ static char filename[4096] = {0};
 static pthread_mutex_t mutex;
 static pthread_t autosave_thread;
 
-
-
 	// todo: make these a buffer parameter!
-
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
 static const nat autosave_frequency = 8;     
-
-
 
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
 static inline bool file_exists(const char* f) { return access(f, F_OK) != -1; }
+
+/*
 
 static inline bool is_regular_file(const char *path) {
 	struct stat s;
 	stat(path, &s);
 	return S_ISREG(s.st_mode);
 }
+
+*/
 
 static inline bool is_directory(const char *path) {
 	struct stat s;
@@ -987,9 +936,18 @@ static inline void clear_above_textbox() {
 }
 
 
+static inline nat unicode_strlen(const char* string) {
+	nat i = 0, length = 0;
+	while (string[i]) {
+		if (visual(string[i])) length++;
+		i++;
+	}
+	return length;
+}
+
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
 
-	tb.prompt_length = (nat) strlen(prompt_message);
+	tb.prompt_length = unicode_strlen(prompt_message);
 	do {
 		adjust_window_size();
 		textbox_display(prompt_message, color);
@@ -1403,9 +1361,6 @@ static inline void autosave() {
 	buffer.autosaved = true;
 }
 
-
-
-
 static void handle_signal_interrupt(int code) {
 
 	if (fuzz) exit(1);
@@ -1800,12 +1755,12 @@ static inline void redo() {
 	replay_action(actions[head]);
 }
 
-static inline void alternate_up() {
+static inline void alternate_incr() {
 	if (actions[head].choice + 1 < actions[head].count) actions[head].choice++;
 	sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
 }
 
-static inline void alternate_down() {
+static inline void alternate_decr() {
 	if (actions[head].choice) actions[head].choice--;
 	sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
 }
@@ -1863,8 +1818,6 @@ static inline void menu_display() {
 			sprintf(menu + length, "%s\n", e->d_name);
 			length += 1 + strlen(e->d_name);
 		}
-
-		
 	}
 
 	closedir(directory);
@@ -1922,6 +1875,32 @@ static inline void insertdt() {
 	insert_cstring(datetime);
 }
 
+static inline char** split(char* string, char delim, int* array_count) {
+
+	int a_count = 0;
+	char** array = NULL;
+	int start = 0, i = 0;
+	const int length = (int)strlen(string);
+
+	for (; i < length; i++) {
+		if (string[i] == delim) {
+			string[i] = 0;
+			if (strlen(string + start)) {
+				array = realloc(array, sizeof(char*) * (size_t)(a_count + 1));
+				array[a_count++] = strdup(string + start);
+			}
+			start = i + 1;
+		}
+	}
+
+	if (strlen(string + start)) {
+		array = realloc(array, sizeof(char*) * (size_t)(a_count + 1));
+		array[a_count++] = strdup(string + start);
+	}
+
+	*array_count = a_count;
+	return array;
+}
 
 static inline void execute(char c, char p) {
 
@@ -1936,258 +1915,133 @@ static inline void execute(char c, char p) {
 
 	} else if (buffer.mode == 1) {
 
+		if (c == ' ') {} // nop
 
-
-		// alternate keybinding for movement:
-
-		/*
-			en   eo    ep    ei         for begin, end, top and bottom
-
-			ek     column jump
-
-			el 	line jump
-
-			l    o   	for word movement 
-
-		
-			n u p i       for char movement 
-
-			
-							g y   for character searching? .... hmmm not sure about this one
-
-		
-		
-
-			k is a dead stop key for something
-
-							or opens a command window, im not sure
-
-										yeah, probably a command text line, so that you can send a command. 
-
-				instead of ":"     like in vim
-
-
-					so yeah
-
-							now we have "h" as a dead stop  key again   yayy
-
-
-							
-
-
-					and also        a         might also be a dead stop 
-
-
-
-										not sure 
-
-
-
-
-								but we also have c and v    those are dual seq too
-
-
-							
-
-								and i think thats it
-
-
-
-
-					basically, i want to remove all capital letters. thats my goal. 
-
-
-
-							use only dead stops, where it makes sense. 
-
-
-								so yeah. 
-
-
-
-	basically, the rule of thumb is, if you are going to be pressing it  mulitple times in a row,  quite often,  then you need a single key
-		but if not, it can be a dual seq with some deadstop key     for ergonomic combinations that make sense, of course. 
-
-
-				the goal is for them to be done with one hand, always. its one movement.
-
-
-
-						much like how workman does things, lol
-
-
-						so yeah
-
-
-
-
-	
-
-		heres the keys that we are using mainly, in the editor.   trying not to make too many exceptions. 
-			these are the keys that are ergonomic to type. 
-
-
-		  d r             u p 
-		a s h t         n e o i 
-		     m c       k l 
-
-
-	
-
-	*/
-
-
-
-
-
-
-
-		if (c == 'q') { if (buffer.saved or confirmed("discard unsaved changes", "discard", "no")) close_active_buffer(); }
-
-
-	
-	// -------------------------------------------
-
-	//ashm:
-		else if (c == 'a') {}
-		else if (c == 's') save();
-		// h is deadstop
-		else if (c == 'm') {}
-	// drtc:
-		else if (c == 'd') anchor(); 
-		else if (c == 'r') cut();
-		else if (c == 't') buffer.mode = 0;
-		else if (c == 'c') buffer.mode = 2;
-
-	// -------------------------------------------
-
-	// ioel:
-		else if (c == 'i') move_right(1);
-		else if (c == 'o') move_word_right();
-		// e is deadstop
-		else if (c == 'l') move_word_left();
-	// punk:
-		else if (c == 'p') move_up();
-		else if (c == 'u') move_down();
-		else if (c == 'n') move_left(1);
-		else if (c == 'k') {}
-
-		
-	// dead stops:
-	// ---------------------------------------------------
-
-	// e: leio
+	// e: lio
 		else if (c == 'l' and p == 'e') prompt_jump_line();
 		else if (c == 'o' and p == 'e') move_end();
-		else if (c == 'e' and p == 'e') redo();
 		else if (c == 'i' and p == 'e') move_bottom();
 	//    knup:
 		else if (c == 'k' and p == 'e') prompt_jump_column();
 		else if (c == 'n' and p == 'e') move_begin();
-		else if (c == 'u' and p == 'e') alternate_down();
+		else if (c == 'u' and p == 'e') alternate_decr();
 		else if (c == 'p' and p == 'e') move_top();
 		
-		else if (c == 'y' and p == 'e') move_to_previous_buffer();
-		
-	// h: ashm
-		
-		else if (c == 'a' and p == 'h') {}
-		else if (c == 's' and p == 'h') {}
-		else if (c == 'h' and p == 'h') undo();
+	// h: asm
+		else if (c == 'a' and p == 'h') move_to_previous_buffer();
+		else if (c == 's' and p == 'h') move_to_next_buffer();
 		else if (c == 'm' and p == 'h') copy(); 
 	//    drtc		
-		else if (c == 'd' and p == 'h') {}
-		else if (c == 'r' and p == 'h') alternate_up();
+		else if (c == 'd' and p == 'h') prompt_open();
+		else if (c == 'r' and p == 'h') alternate_incr();
 		else if (c == 't' and p == 'h') create_empty_buffer();
 		else if (c == 'c' and p == 'h') paste(); 
-		
-		else if (c == 'g' and p == 'h') move_to_next_buffer();
 
+	//ashm:
+		else if (c == 'a') anchor(); 
+		else if (c == 's') save();
+		else if (c == 'm') { buffer.mode = 2; goto command_mode; }
+	// drt c:
+		else if (c == 'd') delete(1);
+		else if (c == 'r') cut();
+		else if (c == 't') buffer.mode = 0;
 
+		else if (c == 'c') undo();
 
+	// ioel:
+		else if (c == 'i') move_right(1);
+		else if (c == 'o') move_word_right();
+		else if (c == 'l') move_word_left();
+	// pun k:
+		else if (c == 'p') move_up();
+		else if (c == 'u') move_down();
+		else if (c == 'n') move_left(1);
 
-	// other:
+		else if (c == 'k') redo();
 
-		else if (c == ' ') {/* do nothing */}
-
-		else if (c == 27 and stdin_is_empty()) buffer.mode = 1;
+		else if (c == 'q') { 
+			if (buffer.saved or confirmed("discard unsaved changes", "discard", "no")) 
+				close_active_buffer(); 
+		}		
+		else if (c == 27 and stdin_is_empty()) {}
 		else if (c == 27) interpret_escape_code();
 
-
-
-
-
-	// -----------------------------------------
-	
-
-
-	// keybingings to change still:
-
-		else if (c == 'E') show_status = not show_status;            // unbind this.  make this a written out command.
-		else if (c == 'N') show_line_numbers = not show_line_numbers;    // unbind this.  make this a written out command.
-
-		else if (c == 'F') prompt_open();      				// unbind this.  make this a written out command.
-		else if (c == 'S') rename_file();     				// unbind this. make this a written-out command. 
-
-		else if (c == '_') memset(message, 0, sizeof message);    	// unbind this. make this a written out command
-		else if (c == '\\') { wrap_width = 0; recalculate_position(); }  // make this part of the set command. 
-	
-		// im not sure what to do about these....
-
-		else if (c == '\r') menu_select();         // make this a written out command...
-		else if (c == '\"') menu_change();         // make this a written out command...
-		else if (c == ';')  menu_display();        // make this a written out command...
-
-		else if (c == '\'') { menu_change(); undo_silent(); menu_display(); }      // make this a written out command...
-
-
-		else if (c == '1')  insertdt();      // make this a written out command...
-		
-
-		
 	} else if (buffer.mode == 2) {
+	command_mode:;
+		char string[4096] = {0};
+		prompt(" •• ", 82, string, sizeof string);
 		
-		buffer.mode = 1;
-		// this is where command-line mode will happen. 
+		nat length = (nat) strlen(string);
+		char* d = calloc((size_t) length + 1, sizeof(char));
+		nat d_length = 0;
 
-		char command[4096] = {0};
-
-		// prompt(".", color:gray, command, sizeof command);
-
-		array_of_commands = split_command(using: '.');
-
-		for each command in array: {
-
-			if (equals(command, "")) {/* do nothing */}
-
-			else if (equals(command, "test1")) {}
-
-			else if (equals(command, "test2")) {}
-
-			else if (equals(command, "test3")) {}
-
-			else if (equals(command, "test4")) {}
-
-			else {
-				sprintf(message, "command not recognized: %s", command);
-			}
-
+		for (nat i = 0; i < length; i++) {
+			if ((unsigned char) string[i] < 33) continue;
+			d[d_length++] = string[i];
 		}
 
-			// todo:  implement a global history for the prompt textbox!!!!
-			/*
-					very important. 
+		d[d_length] = 0;
+		int command_count = 0;
+		char** commands = split(d, '.', &command_count);
 
-							also, save it to the config file..? not sure... hmm.. yeah... 
+		for (int i = 0; i < command_count; i++) {
+			const char* command = commands[i];
 
-							we should have a directory that we save all of our config files to. 
+			     if (equals(command, "donothing")) {}
+			else if (equals(command, "datetime")) insertdt();
+			else if (equals(command, "open")) prompt_open();
+			else if (equals(command, "rename")) rename_file();
+			else if (equals(command, "save")) save();
+			else if (equals(command, "autosave")) autosave();
+			else if (equals(command, "dive")) { menu_change(); undo_silent(); menu_display(); }
+			else if (equals(command, "menuchange")) menu_change(); 
+			else if (equals(command, "menudisplay")) menu_display();
+			else if (equals(command, "menuselect")) menu_select();
+			else if (equals(command, "clearmessage")) memset(message, 0, sizeof message);
+			else if (equals(command, "numbers")) show_line_numbers = not show_line_numbers;
+			else if (equals(command, "status")) show_status = not show_status;
+			else if (equals(command, "cut")) cut();
+			else if (equals(command, "delete")) delete(1);
+			else if (equals(command, "anchor")) anchor();
+			else if (equals(command, "paste")) paste();
+			else if (equals(command, "copy")) copy();
+			else if (equals(command, "undo")) undo();
+			else if (equals(command, "redo")) redo();
+			else if (equals(command, "alternateincr")) alternate_incr();
+			else if (equals(command, "alternatedecr")) alternate_decr();
+			else if (equals(command, "moveright")) move_right(1);
+			else if (equals(command, "moveleft")) move_left(1);
+			else if (equals(command, "moveup")) move_up();
+			else if (equals(command, "movedown")) move_down();
+			else if (equals(command, "movewordright")) move_word_right();
+			else if (equals(command, "movewordleft")) move_word_left();
+			else if (equals(command, "movebegin")) move_begin();
+			else if (equals(command, "moveend")) move_end();
+			else if (equals(command, "movetop")) move_top();
+			else if (equals(command, "movebottom")) move_bottom();
+			else if (equals(command, "jumpline")) prompt_jump_line();
+			else if (equals(command, "jumpcolumn")) prompt_jump_column();
+			else if (equals(command, "new")) create_empty_buffer();
+			else if (equals(command, "nextbuffer")) move_to_next_buffer();
+			else if (equals(command, "previousbuffer")) move_to_previous_buffer();
+			else if (equals(command, "test")) {}
+			else if (equals(command, "mode0")) buffer.mode = 0;
+			else if (equals(command, "mode1")) buffer.mode = 1;
+			else if (equals(command, "mode2")) buffer.mode = 2;
+			else if (equals(command, "commandcount")) sprintf(message, "testing: %d", command_count);
+			else if (equals(command, "wrapresizetemp")) { wrap_width = 0; recalculate_position(); }
+			else if (equals(command, "quit")) {
+				if (buffer.saved or confirmed("discard unsaved changes", "discard", "no")) 
+					close_active_buffer(); 
 
-				*/		
-		
+			} else {
+				sprintf(message, "command not recognized: %s", command);
+				break;
+			}
+		}
+
 	} else buffer.mode = 1;
 }
-
-
 
 static void* autosaver(void* unused) {
 
@@ -2231,7 +2085,7 @@ loop:
 	}
 	if (fuzz) {
 		if (fuzz_input_index >= fuzz_input_count) goto done;
-		c = (char) fuzz_input[fuzz_input_index++];	
+		c = (char) fuzz_input[fuzz_input_index++];
 	} else {
 		pthread_mutex_unlock(&mutex);
 		read(0, &c, 1);
@@ -2258,6 +2112,7 @@ done:
 	}
 }
 
+
 #if fuzz && !use_main
 
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
@@ -2277,9 +2132,6 @@ int main(const int argc, const char** argv) {
 }
 
 #endif
-
-
-
 
 
 // ---------------------------------------------------------------------------------------------------
@@ -2318,369 +2170,93 @@ int main(const int argc, const char** argv) {
 
 
 
-
-
-
-
-
 /*
 
-if ((0)) {
 
-	FILE* file = fopen("slow-unit-51c51b79e2d54f513d863e36641ae7045c1f8e22", "r");
-	if (not file) { perror("open"); exit(1); }
-	fseek(file, 0, SEEK_END);
-	size_t crash_length = (size_t) ftell(file);
-	char* crash = malloc(sizeof(char) * crash_length);
-	fseek(file, 0, SEEK_SET);
-	fread(crash, sizeof(char), crash_length, file);
-	fclose(file);
-	_input = (const uint8_t*) crash;
-	_input_count = crash_length;
-	printf("\n\n\nstr = \"");
-	for (size_t i = 0; i < _input_count; i++) printf("\\x%02hhx", _input[i]);
-	printf("\";\n\n\n");
+
+
+
+
+
+
+	char buffer[4096] = {0};
+	printf("input: ");
+	fgets(buffer, sizeof buffer, stdin);
+	buffer[strlen(buffer) - 1] = 0;
+
+
+int array_count = 0;
+	char* string = buffer;
+
+	nat length = (nat) strlen(string);
+	char* d = calloc((size_t) length + 1, sizeof(char));
+	nat d_length = 0;
+
+	for (nat i = 0; i < length; i++) {
+		if ((unsigned char) string[i] < 33) continue;
+		d[d_length++] = string[i];
+	}
+
+	d[d_length] = 0;
+
+	char** array = split(d, '.', &array_count);
+
+	printf("(%d)[ ", array_count);
+	for (int i = 0; i < array_count; i++) {
+		printf("\"%s\" ", array[i]);
+	}
+
+	puts("]\ndone!");
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	char buffer[4096] = {0};
+	printf("input: ");
+	fgets(buffer, sizeof buffer, stdin);
+	buffer[strlen(buffer) - 1] = 0;
+
+	char* d = string;
+	char* s = string;
+
+	do while(isspace(*s)) s++; while(*d++ = *s++);
+
+
+
+	int array_count = 0;
+	char* string = buffer;
+	char** array = split(d, ' ', &array_count);
+
+	printf("(%d)[ ", array_count);
+	for (int i = 0; i < array_count; i++) {
+		printf("\"%s\" ", array[i]);
+	}
+
+	puts("]\ndone!");
+
+
+
+
+
 
 	exit(1);
-
-
-} 
-if ((0)) {
-
-	const char* str = "\x09\x77\x72\x77\x2c\x7a";
-
-	_input = (const uint8_t*) str;
-	// _input_count = strlen(str);
-	_input_count = 1000;
-}
-
 */
-
-
-
-
-
-
-
-
-// static nat scroll_counter = 0;
-
-	// DONE:    TODO: make it so pressing escape once is sufficient.
-
-	// if (stdin_is_empty()) sprintf(message, "stdin buffer is empty!");
-	// also add mouse support so that you can click to reposition the cursor. 
-
-
-
-
-
-
-		// todo: add    esc [ 2004 l       :   disable bracketed paste mode. because we arent babies, and dont care about copy paste attacks. 
-
-		// note:  we already have:  1049h   : switch to the alternate screen. 
-
-		//
-
-
-
-
-
-
-
-// FILE* file = fopen("crash-b019392511ce17e97e5710b3e737866f804f99f3", "r");
-	// if (not file) { perror("open"); exit(1); }
-	// fseek(file, 0, SEEK_END);
-	// size_t crash_length = (size_t) ftell(file);
-	// char* crash = malloc(sizeof(char) * crash_length);
-	// fseek(file, 0, SEEK_SET);
-	// fread(crash, sizeof(char), crash_length, file);
-	// fclose(file);
-	// input = (const uint8_t*) crash;
-	// input_count = crash_length;
-	// printf("\n\n\nstr = \"");
-	// for (size_t i = 0; i < input_count; i++) printf("\\x%02hhx", input[i]);
-	// printf("\";\n\n\n");
-	// exit(1);
-
-	// const char* str = "\x74\x43\x72\x77\x74\x92\x72\x77\x58\x78\x74\x72\x77\x78\x7a";
-
-	// input = (const uint8_t*) str;
-	// input_count = strlen(str);
-	// input_count = 1000;
-
-
-
-
-
-
-/*
-
-	todo: 
---------------------------
-
-
-f	- file manager and tab completion
-
-f	- config file for init values.
-
-f	- tc isa!!
-
-
-		
-	- make the machine code virtual machine interpreter:
-
-
-		- implement the editor ISA, 
-		- figure out how to allow for it to be TC.
-		- make it ergonmic for a human to type, while being fast/efficient and minimalist.
-		
-			- - then later on, we can make the scripting language which will compile to the editor ISA machine code.
-
-
-		- - easy to use by design,
-		- - allow for repitions and macros by design,
-		- - allow for commands with arbitary spelling
-		- - extensible command context/enviornments,
-		- - unified command system: buffer commands vs prompted commands. 
-
-
-
-
---------------------------------------------------------
-			DONE:
---------------------------------------------------------
-
-
-	features:
-----------------------------
-
-
-	x	- make the line numbers and column numbers 0-based everywhere. just do it. 
-
-	x	- make scroll counter a local static variable in the internpret escape code function.
-
-	x	- write the delete_buffers and delete_lines functions. 
-
-	x	- we need to put most of the state for the registers that's not essential in a buffer data structure. 
-
-	x	- make the code use "nat"'s instead of int's.    using the typedef:   // typedef nat ssize_t; 
-
-	x	- redo the undo-tree code so that it uses a flat array datastructure- not a pointer based tree. 
-
-	x	- make a simple and robust copy/paste system, that can support system clipboard.
-
-	bugs:
-----------------------------
-
-	x 	- this editor has a HUGE memory leak. we need to fix this.
-
-	x	- negative size param, delete(), from cut(). 
-
-	x	- memory leak because of x:undo(); 
-
-	x	- a possible crashing bug of undo()/move_left(), although i'm not sure yet...
-
-	x 	- vdc not correct, with unicode.  
-
-
-
-///////////////////////////////// old code //////////////////////////////////////////////
-
-// static inline void recalculate_position() {    // used when we modify wrap or tab width. i think...
-// 	int save_lcl = lcl, save_lcc = lcc;
-// 	move_top();
-// 	adjust_window_size();
-// 	jump_line(save_lcl);
-// 	jump_column(save_lcc);
-// }
-
-	// FILE* file = fopen("crash-c6c6ea3f9acfd5ca8ebcbb8e7e3e17846aca32bb", "r");
-	// fseek(file, 0, SEEK_END);        
-	// size_t crash_length = (size_t) ftell(file);
-	// char* crash = malloc(sizeof(char) * crash_length);
-	// fseek(file, 0, SEEK_SET);
-	// fread(crash, sizeof(char), crash_length, file);
-	// fclose(file);
-	// input = (const uint8_t*) crash;
-	// input_count = crash_length;
-	// printf("\n\n\nstr = \"");
-	// for (size_t i = 0; i < input_count; i++) printf("\\x%02hhx", input[i]);
-	// printf("\";\n\n\n");
-	// exit(1);
-
-	// const char* str = "x\r\r\r\xfc\x01\x79\x72\x77\x58\x61\x65\x72\x65\x76\x72";
-	// input = (const uint8_t*) str;
-	// input_count = strlen(str);
-
-
-	// const char* str = "jufat\xa8ufrzE";   
-
-	// c  <exit>  anchor   insertmode    <unicode>    <exit>      cut       undo      jump@col0
-
-
-
-00	REDUCE cov: 1183 ft: 8920 corp: 1230/93Kb lim: 958 exec/s: 614 rss: 1452Mb L: 129/871 MS: 1 EraseBytes-
-#833346	REDUCE cov: 1183 ft: 8920 corp: 1230/93Kb lim: 967 exec/s: 613 rss: 1452Mb L: 28/871 MS: 1 EraseBytes-
-=================================================================
-==58956==ERROR: AddressSanitizer: heap-buffer-overflow on address 0x000116f40c72 at pc 0x000102b33900 bp 0x00016d2dd380 sp 0x00016d2dd378
-READ of size 1 at 0x000116f40c72 thread T0
-    #0 0x102b338fc in move_left main.c:189
-    #1 0x102b31df8 in delete main.c:474
-    #2 0x102b37474 in reverse_action main.c:1257
-    #3 0x102b36678 in undo main.c:1269
-    #4 0x102b27c4c in execute main.c:1335
-    #5 0x102b225bc in editor main.c:1432
-    #6 0x102b222d8 in LLVMFuzzerTestOneInput main.c:1454
-    #7 0x102b5fa3c in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
-    #8 0x102b5f21c in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
-    #9 0x102b60898 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
-    #10 0x102b614d0 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
-    #11 0x102b51bb4 in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
-    #12 0x102b794f8 in main FuzzerMain.cpp:20
-    #13 0x102d290f0 in start+0x204 (dyld:arm64+0x50f0)
-    #14 0x8a16fffffffffffc  (<unknown module>)
-
-0x000116f40c72 is located 0 bytes to the right of 2-byte region [0x000116f40c70,0x000116f40c72)
-allocated by thread T0 here:
-    #0 0x10301394c in wrap_realloc+0x94 (libclang_rt.asan_osx_dynamic.dylib:arm64+0x3f94c)
-    #1 0x102b2e750 in insert main.c:407
-    #2 0x102b37bac in reverse_action main.c:1261
-    #3 0x102b36678 in undo main.c:1269
-    #4 0x102b27c4c in execute main.c:1335
-    #5 0x102b225bc in editor main.c:1432
-    #6 0x102b222d8 in LLVMFuzzerTestOneInput main.c:1454
-    #7 0x102b5fa3c in fuzzer::Fuzzer::ExecuteCallback(unsigned char const*, unsigned long) FuzzerLoop.cpp:611
-    #8 0x102b5f21c in fuzzer::Fuzzer::RunOne(unsigned char const*, unsigned long, bool, fuzzer::InputInfo*, bool, bool*) FuzzerLoop.cpp:514
-    #9 0x102b60898 in fuzzer::Fuzzer::MutateAndTestOne() FuzzerLoop.cpp:757
-    #10 0x102b614d0 in fuzzer::Fuzzer::Loop(std::__1::vector<fuzzer::SizedFile, fuzzer::fuzzer_allocator<fuzzer::SizedFile> >&) FuzzerLoop.cpp:895
-    #11 0x102b51bb4 in fuzzer::FuzzerDriver(int*, char***, int (*)(unsigned char const*, unsigned long)) FuzzerDriver.cpp:906
-    #12 0x102b794f8 in main FuzzerMain.cpp:20
-    #13 0x102d290f0 in start+0x204 (dyld:arm64+0x50f0)
-    #14 0x8a16fffffffffffc  (<unknown module>)
-
-SUMMARY: AddressSanitizer: heap-buffer-overflow main.c:189 in move_left
-Shadow bytes around the buggy address:
-  0x007022e08130: fa fa fd fa fa fa fd fa fa fa fd fd fa fa fa fa
-  0x007022e08140: fa fa fa fa fa fa fd fa fa fa fa fa fa fa fd fa
-  0x007022e08150: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
-  0x007022e08160: fa fa fd fa fa fa fa fa fa fa fd fa fa fa fd fa
-  0x007022e08170: fa fa fa fa fa fa fd fa fa fa fd fa fa fa fd fa
-=>0x007022e08180: fa fa fd fa fa fa fd fa fa fa fa fa fa fa[02]fa
-  0x007022e08190: fa fa fa fa fa fa fd fa fa fa fd fa fa fa fd fa
-  0x007022e081a0: fa fa fd fa fa fa fd fa fa fa fd fa fa fa fd fa
-  0x007022e081b0: fa fa 04 fa fa fa fd fa fa fa fd fa fa fa fd fa
-  0x007022e081c0: fa fa fd fa fa fa fd fa fa fa 00 fa fa fa fd fa
-  0x007022e081d0: fa fa fd fa fa fa fa fa fa fa fd fa fa fa fa fa
-Shadow byte legend (one shadow byte represents 8 application bytes):
-  Addressable:           00
-  Partially addressable: 01 02 03 04 05 06 07 
-  Heap left redzone:       fa
-  Freed heap region:       fd
-  Stack left redzone:      f1
-  Stack mid redzone:       f2
-  Stack right redzone:     f3
-  Stack after return:      f5
-  Stack use after scope:   f8
-  Global redzone:          f9
-  Global init order:       f6
-  Poisoned by user:        f7
-  Container overflow:      fc
-  Array cookie:            ac
-  Intra object redzone:    bb
-  ASan internal:           fe
-  Left alloca redzone:     ca
-  Right alloca redzone:    cb
-==58956==ABORTING
-MS: 1 CrossOver-; base unit: 511a5fd4707ac55efabed80447aa2932a6e4a86c
-0x9,0x6c,0xd1,0xd1,0x7f,0x21,0xd,0xff,0x86,0xff,0x2c,0x2d,0x54,0x2c,0x77,0x9,0x61,0x77,0x72,0x9,0x77,0x0,0x9,0x9,0x0,0x0,0x0,0x25,0xd1,0x7b,0x72,0x77,0x9,0x61,0x77,0x45,0x78,0x72,0x28,0x78,0x8,0x70,0x6f,0x72,0x74,0x7f,0x7f,0xd3,0x76,0x85,0x7a,0xfd,0x72,0x77,0x9d,0x46,0x0,0x7a,0x7a,0x77,0x9d,0x46,0xfd,0x72,0x77,0x9d,0x46,0x0,0x7a,0x7a,0x33,0x78,0x72,0x7a,0x72,0x77,0x67,0x67,0x7a,0x67,0x67,0x7a,0x77,0x9d,0x46,0xfd,0x72,0x77,0x9d,0x46,0x0,0x7a,0x7a,0x33,0x78,0x72,0x7a,0x7a,0x35,0x78,0x92,0x81,0x0,
-\x09l\xd1\xd1\x7f!\x0d\xff\x86\xff,-T,w\x09awr\x09w\x00\x09\x09\x00\x00\x00%\xd1{rw\x09awExr(x\x08port\x7f\x7f\xd3v\x85z\xfdrw\x9dF\x00zzw\x9dF\xfdrw\x9dF\x00zz3xrzrwggzggzw\x9dF\xfdrw\x9dF\x00zz3xrzz5x\x92\x81\x00
-artifact_prefix='./'; Test unit written to ./crash-e26e7bb6538311c641076a3de56cd36a03b67851
-Base64: CWzR0X8hDf+G/ywtVCx3CWF3cgl3AAkJAAAAJdF7cncJYXdFeHIoeAhwb3J0f3/TdoV6/XJ3nUYAenp3nUb9cnedRgB6ejN4cnpyd2dnemdnenedRv1yd51GAHp6M3hyeno1eJKBAA==
-zsh: abort      
-
-
-	// const char* str = "ڗgrwet\x97rwzr";
-
-	//  <unicode>    g      <exit>    word-left      insertmode      <unicode>    <exit>     undo    cut
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  Intra object redzone:    bb
-  ASan internal:           fe
-  Left alloca redzone:     ca
-  Right alloca redzone:    cb
-==63825==ABORTING
-MS: 2 ChangeASCIIInt-CopyPart-; base unit: 68cfcc9ba8ac3a3d18faeaee33f6f960c50db109
-0xa,0x89,0xff,0x6e,0x73,0x74,0x92,0x72,0x77,0x58,0x50,0x43,0x9,0xa,0xa,0xa,0x73,0x74,0x92,0x72,0x77,0x58,0x50,0x43,0x9,0xff,0x3d,0xff,0xff,0xd,0x72,0x77,0x5a,0x7a,0x77,0xac,0x78,0x21,0x7a,0x5a,0x7a,0x77,0xac,0x78,0x21,0x7a,0x77,0xac,0x78,0x33,0x0,0x0,0x73,0x74,0x92,0x72,0x77,0x58,0xe2,0x50,0x43,0x9,0xff,0xff,0x77,0xac,0x78,0x33,0x0,0x0,0x73,0x74,0x92,0x72,0x77,0x58,0xe2,0x50,0x43,0x9,0xff,0xff,0xff,0xff,0xd,0x72,0x77,0x5a,0x7a,0x77,0xac,0x78,0x21,0x7a,0x77,0xac,0x78,0x32,0x0,0x0,0x0,0x0,0xac,0x78,0x21,0x7a,0x7f,0xbe,
-\x0a\x89\xffnst\x92rwXPC\x09\x0a\x0a\x0ast\x92rwXPC\x09\xff=\xff\xff\x0drwZzw\xacx!zZzw\xacx!zw\xacx3\x00\x00st\x92rwX\xe2PC\x09\xff\xffw\xacx3\x00\x00st\x92rwX\xe2PC\x09\xff\xff\xff\xff\x0drwZzw\xacx!zw\xacx2\x00\x00\x00\x00\xacx!z\x7f\xbe
-artifact_prefix='./'; Test unit written to ./crash-b019392511ce17e97e5710b3e737866f804f99f3
-Base64: Con/bnN0knJ3WFBDCQoKCnN0knJ3WFBDCf89//8NcndaeneseCF6Wnp3rHgheneseDMAAHN0knJ3WOJQQwn//3eseDMAAHN0knJ3WOJQQwn/////DXJ3Wnp3rHgheneseDIAAAAArHghen++
-zsh: abort      ./editor
-
-
-
-
-
-
-
-	// const char* str = "\x2d\x2c\x72\x77\x61\x74\x7f\x7f\xd3\x76\x85\x72\x77\x72\x7a\x7a";
-
-
-
-
-
-
-	// const char* str = "ttrwat\x7f\x7fgv\x85rwrzz";
-
-
-	//0     char   char   <exit>    
-
-	//1     anchor   insertmode    
-
-	//0     <backspace>   <backspace>     char    char    <unicode>    <exit>
-
-	//1     cut     undo   undo 
-
-
-
-
-
-
-
-
-	// const char* str = "ttrwt\x92rwXxtrwxz";  
-
-	//             char   char               exit   
-
-	//        insertmode   unicode           exit    
-
-	//        alternatedown    redo    
-
-	//        insertmode                     exit   
-
-	//        redo   undo 
-
-
-*/
-
-
-
 
 
 
@@ -2691,307 +2267,57 @@ zsh: abort      ./editor
 
 
 
-static inline void move_left(bool change_desired) {
-	if (not lcc) {
-		if (not lcl) return;
-		lcl--; 
-		lcc = lines[lcl].count;
-visual_line_up: compute_vcc();
-visual_just_line_up: vcl--;
-		if (vsl) vsl--;
-		else if (vol) vol--;
-		if (vcc > window_columns - line_number_width) { 
-			vsc = window_columns - line_number_width; 
-			voc = vcc - vsc; 
-		} else { 
-			vsc = vcc;
-			voc = 0; 
-		}
-	} else {
-		nat save_lcc = lcc;
-		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
-		if (lines[lcl].data[lcc] == '\t') {
-			
-
-			compute_vcc();
-			nat old_vcc = vcc;
-			for (nat c = lcc; c < save_lcc; c++) {
-				char k = lines[lcl].data[c];
-				if (old_vcc >= wrap_width) goto visual_just_line_up;
-				if (k == '\t') {
-					do {
-						if (old_vcc >= wrap_width) goto visual_just_line_up; 
-						old_vcc++; 
-					} while (old_vcc % tab_width); 
-				} else if (visual(k)) old_vcc++;
-			}
-			nat diff = old_vcc - vcc;
-			if (vsc >= diff) vsc -= diff;
-			else if (voc >= diff - vsc) { voc -= diff - vsc; vsc = 0; }
 
 
 
 
 
 
-		} else {
-			if (not vcc) goto visual_line_up;
-			vcc--; 
-			if (vsc) vsc--; 
-			else if (voc) voc--;
-		}
-	}
-	if (change_desired) vdc = vcc;
-}
 
 
 
-nat line = 0, col = 0; 
-	// this is not correct!  ---> we need to compute the logical version of VOC and VOL, and start here.
+//while (i < length and string[i] == delim) ++i; 
+//printf("B start=%d, i=%d\n", start, i);
+//if (i < length) i++;
+//printf("A start=%d, i=%d\n", start, i);
+//printf("Q start=%d, i=%d\n", start, i);
+//while (i < length and string[i] == delim) ++i; 
+//string[i] = 0;
+//	if (i < length) i++;
+//	start = i;
 
-	nat vl = vol, vc = voc; 
-	// i think these should be initialized to    VOL and VOC,       i think. 
-
-	nat sl = 0, sc = 0; 
-
-
+//printf("B start=%d, i=%d\n", start, i);
 
 */
 
 
 
 
-
-
-	// we cannot start out at zero, for the vc and vl,  or the line and col. 
-
-	// we actually need to try to START AT THE CURSOR,
-	//	(because we know that IT  is    AT LEAST     pretttttttyyyyy cloooossssseeeeee    to what we want. i think. 
-	
-	// and so, we can actually start at the cursor, and try to work backwards, (or search backwards, i mean)
-	// to try to find the Logical Column and Logical Line that corresponds with VO(L/C) (Visual Origin line and col),  
-	//  which is the crucial piece of information we need to start rendering. we need to know where in the text to 
-	// start printing out text from, and we know that position must be where ever VOL lands, in logical coordinates. 
-
-	// so yeah, thats how we get the performance of vim, in our scrolling, and display rendering, i think. that should do it. 
-
-
-	// so how do we compute the logical coordinates of VO(L/C)?   (VOL and VOC)
-
-
-
-	// this crucially releis on using the already existing piece of info,      vcc  and vcl 
-
-	// these two variables are          the visual cursor line/col
-
-	//      and they represent    the position of the cursor, in visual coordinates.  which the VOL and VOC are also based in. 
-
-	//      and so, like, we know what  the visual coordinates of the logical cursor are now. 
-
-
-	/// so heres the train of translations we need to do:
-
-	//         logical/visual cursor --->  move backwards char-wise in logical space, and keep track of your visual coords while doing it, (utilize "compute_vcc()"!!!). once you notice that your visual coords hit "VOL" and "VOC",   then note down what resultant logical coords you had to go to in order to reach this visual position, from the cursor. 
-
-	// that is what you need to initialize the variables "line" and "col" to. 
-
-
-	// additionally,    "vc" and "vl"       should now be initialized to   VOC    and  VOL.      which makes sense. 
-
-	// and sc and sl are still initialized to 0. thats totally good. 
-
-
-	// yay! we figured it out, basically. cool. moving backwards is always more computationally expensive than moving forward, i think, but this is definitely the right way to go, i think. yayyyyyyyyyyy
-
-	//  okay turns out i think we can literally use "move_left" to do most of the work for us!! as long as we revert back everything the way we found it lol. 
-
-
-
-
-
-
-
-	// int n = 0;
-	// if (ioctl(0, I_NREAD, &n) == 0) {
- //    		// we have exactly n bytes to read
-	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
-	// }
-
-	// n = 1;
-	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
- //    		// we have exactly n bytes to read
-	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
-	// }
-
-	// n = 2;
-	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
- //    		// we have exactly n bytes to read
-	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
-	// }
-
-	// n = 3;
-	// if (ioctl(0, I_NREAD, &n) == 0 && n > 0) {
- //    		// we have exactly n bytes to read
-	// 	sprintf(message, "info we have exactly %d bytes to read.",n);
-	// }
-
-
-
-
-
-
-
-
-//	n	n	n	n	n	n	n	n	n	n	n	n	n	n	n	n	n	n		
-//ntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnntntntntntnttntnegegett	
-
-
-
-
-
-
-
-
-/*
-
-
-
-
-			//todo: simplify this?...
-
-
-			compute_vcc();
-			nat old_vcc = vcc;
-			for (nat c = lcc; c < save_lcc; c++) {
-				char k = lines[lcl].data[c];
-				if (old_vcc >= wrap_width) goto visual_just_line_up;
-				if (k == '\t') {
-					do {
-						if (old_vcc >= wrap_width) goto visual_just_line_up; 
-						old_vcc++; 
-					} while (old_vcc % tab_width); 
-				} else if (visual(k)) old_vcc++;
-			}
-
-
-
-			nat diff = old_vcc - vcc;
-			if (vsc >= diff) vsc -= diff;
-			else if (voc >= diff - vsc) { voc -= diff - vsc; vsc = 0; }
-
-
-
-
-
-
-
-
-
-
-
-
-
-*/
-
-
-
-
-
-
-
-
-//vt100 reference material: 
-//
-//    https://www2.ccs.neu.edu/research/gpc/VonaUtils/vona/terminal/vtansi.htm
-//
-
-
-
-
-
-
-
-
-
-
-
-// nat after_vcc = compute_custom_vcc(lcc);
-			// nat before_vcc = compute_custom_vcc(save_lcc);
-			// if (after_vcc > before_vcc) after_vcc = 0;      
-			// =0, because:  to put back after to be on the same line. ie, before it wrapped back to the previous line.   
-			// if "(after > before)", then it must be that our after_vcc is on the line above, 
-			//                        and before_vcc are on the line below
-			// ashtLNNN	ashoetn
-			// compute_custom_vcc(lcc); 
-
-
-			// int n = 0;
-			// n++;
-
-
-
-/*
-
-
-	big bug with tabs and wraping:
-
-
-
-
-
-okay, so i thought i figured out the bug, with this, and got the correct solution, and when i run it in the debugger, it seems to run pretty good, and do the correct thing, when going back on a tab that is being wrapped because of the wrap width, 
-
-			but then i ran it in release mode, and it still goes into an infinite loop... 
-
-
-				so i am not sure whats happening..... i think it has to do with the other movement commands?... not sure though... 
-
-						hmmm
-
-
-		
-
-
-
-
-
-
-
-
-	editor`::__sanitizer_cov_trace_const_cmp8() at FuzzerTracePC.cpp:495:1 [opt]
-    	frame #1: 0x000000010000d298 editor`move_left(change_desired=false) at main.c:241:10
-    	frame #2: 0x0000000100008d64 editor`display at main.c:603:66
-    	frame #3: 0x0000000100001ef8 editor`editor(_input="\t\t\t\t\t\xc1", _input_count=6) at main.c:1544:3
-    	frame #4: 0x0000000100001dcc editor`LLVMFuzzerTestOneInput(input="\t\t\t\t\t\xc1", size=6) at main.c:1575:2
-
-
+	// -----------------------------------------
 	
 
 
+	// keybingings to change still:
 
+		//else if (c == 'E') show_status = not show_status;            // unbind this.  make this a written out command.
+		//else if (c == 'N') show_line_numbers = not show_line_numbers;    // unbind this.  make this a written out command.
 
-			if (vcc + 1 <= wrap_width) {
-				vcc++; 
-				if (vsc < window_columns - 1 - line_number_width) vsc++; 
-				else voc++;
-			} else {
-				vcl++; vcc = 0; voc = 0; vsc = 0;
-				if (vsl < window_rows - 1 - show_status) vsl++; 
-				else vol++;
-			}
+		//else if (c == 'F') prompt_open();      		// both bind, and  make this a written out command.
+		//else if (c == 'S') rename_file();     				// unbind this. make this a written-out command. 
 
+		//else if (c == '_') memset(message, 0, sizeof message);    	// unbind this. make this a written out command
+		//else if (c == '\\') { wrap_width = 0; recalculate_position(); }  // make this part of the set command. 
+	
+		// im not sure what to do about these....
 
+		//else if (c == '\r') menu_select();         // make this a written out command...
+		//else if (c == '\"') menu_change();         // make this a written out command...
+		//else if (c == ';')  menu_display();        // make this a written out command...
 
+		//else if (c == '\'') { menu_change(); undo_silent(); menu_display(); }      // make this a written out command...
 
-
-							if (wrap_width <= tab_width) break; 
-							
-							if (vcc >= wrap_width) {
-								vcl++; vcc = 0; voc = 0; vsc = 0;
-								if (vsl < window_rows - 1 - show_status) vsl++; 
-								else vol++;
-							}
-
+		// else if (c == '1') {insertdt();}        // make this a written out command...
+		
 
 
 
@@ -3001,42 +2327,16 @@ okay, so i thought i figured out the bug, with this, and got the correct solutio
 
 
 
-// if (vc >= wrap_width) goto next_visual_line;      // do a dictoch on "<=ww" here and in tab section too.
+			// todo:  implement a global history for the prompt textbox!!!!
+			/*
+					very important. 
 
-// delete me 
+							also, save it to the config file..? not sure... hmm.. yeah... 
 
+							we should have a directory that we save all of our config files to. 
 
-
-
-
-
-
-
-
-			if (vcc + (tab_width - vcc % tab_width) <= wrap_width) {
-				do {
-					vcc++; if (vsc < window_columns - 1 - line_number_width) vsc++; else voc++;
-				} while (vcc % tab_width); 
-			} else {
-				vcl++; vcc = 0; voc = 0; vsc = 0;
-				if (vsl < window_rows - 1 - show_status) vsl++; 
-				else vol++;
-			}
+				*/		
+		
 
 
-
-
-			if (vcc + 1 <= wrap_width) {
-				vcc++; 
-				if (vsc < window_columns - 1 - line_number_width) vsc++; 
-				else voc++;
-			} else {
-				vcl++; vcc = 0; voc = 0; vsc = 0;
-				if (vsl < window_rows - 1 - show_status) vsl++; 
-				else vol++;
-			}
-
-
-
-*/
 
