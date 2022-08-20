@@ -1660,7 +1660,24 @@ static void insert_string(const char* string, nat length) {
 	new.length = length;
 	create_action(new);
 }
+
+static void insert_printable_string(const char* string, nat length) {
+	struct action new = {0};
+	record_logical_state(&new.pre);
+
+	for (nat i = 0; i < length; i++) {
+		if (isprint((char) string[i])) insert((char) string[i], 0);
+	}
+	
+	record_logical_state(&new.post);
+	new.type = paste_text_action;
+	new.text = strndup(string, (size_t) length);
+	new.length = length;
+	create_action(new);
+}
+
 static void insert_cstring(const char* string) { insert_string(string, (nat) strlen(string)); }
+
 
 static inline void cut_text() {
 	if (lal < lcl) goto anchor_first;
@@ -1703,6 +1720,48 @@ static inline void copy() {
 	free(selection);
 	sprintf(message, "copied %ldb", length);
 }
+
+
+
+
+
+static inline void run_shell_command(const char* command) {
+	FILE* f = popen(command, "r");
+	if (not f) {
+		sprintf(message, "error: could not run command \"%s\": %s\n", command, strerror(errno));
+		return;
+	}
+
+	char line[4096] = {0};
+	nat length = 0;
+	char* output = NULL;
+
+	while (fgets(line, sizeof line, f)) {
+		const nat line_length = strlen(line);
+		output = realloc(output, (size_t) length + 1 + (size_t) line_length); 
+		sprintf(output + length, "%s", line);
+		length += line_length;
+
+		// sprintf(message, "LINE(len=%ld): ll=%ld", length, line_length);
+	}
+	pclose(f);
+	lal = lcl; lac = lcc;
+	sprintf(message, "output %ldb", length);
+	insert_string(output, length);
+}
+
+
+
+// note:  for commands that output to stderr,   append   	 2>&1 		to the end of the command.
+
+static inline void prompt_run() {
+	char command[4096] = {0};
+	prompt("run: ", 85, command, sizeof command);
+	if (not strlen(command)) { sprintf(message, "aborted run"); return; }
+	sprintf(message, "running \"%s\"", command);
+	run_shell_command(command);
+}
+
 
 static inline void replay_action(struct action a) {
 	require_logical_state(&a.pre);
@@ -1791,7 +1850,6 @@ static inline void open_directory() {
 
 	nat length = (nat)strlen(current_path) + 2;
 	char* menu = calloc((size_t) length + 1, sizeof(char));
-
 	sprintf(menu, ":%s\n", current_path);
 	
 	while ((e = readdir(directory))) {
@@ -1826,7 +1884,6 @@ static inline void change_directory() {
 		if (not equals(current_path, "/")) {
 			current_path[strlen(current_path) - 1] = 0;
 			*(1+strrchr(current_path, '/')) = 0;
-			sprintf(message, "current path: \"%s\"", current_path);
 		} else {
 			sprintf(message, "error: at root /");
 		}
@@ -1841,7 +1898,6 @@ static inline void change_directory() {
 
 		if (is_directory(path)) {
 			strlcat(current_path, selection, sizeof current_path);
-			sprintf(message, "current path: \"%s\"", current_path);
 		} else {
 			sprintf(message, "error: not a directory");
 		}
@@ -1968,14 +2024,19 @@ static inline void execute(char c, char p) {
 
 			     if (equals(command, "donothing")) {}
 			else if (equals(command, "datetime")) insertdt();
+			else if (equals(command, "run")) prompt_run();
 			else if (equals(command, "open")) prompt_open();
 			else if (equals(command, "rename")) rename_file();
 			else if (equals(command, "save")) save();
 			else if (equals(command, "autosave")) autosave();
-			else if (equals(command, "in")) { menu_change(); undo_silent(); menu_display(); }
-			else if (equals(command, "menuchange")) menu_change();     // rename this.
-			else if (equals(command, "menudisplay")) menu_display();   // rename this.
-			else if (equals(command, "select")) menu_select();      // rename this function. file_select() i think.
+			else if (equals(command, "in")) { change_directory(); undo_silent(); open_directory(); }
+			else if (equals(command, "changedirectory")) change_directory();
+			else if (equals(command, "opendirectory")) open_directory();
+			else if (equals(command, "selectfile")) file_select();
+			else if (equals(command, "openfile")) { file_select(); open_file(user_selection); }
+			else if (equals(command, "selection")) sprintf(message, "%s", user_selection);
+			else if (equals(command, "where")) sprintf(message, "@ %s", current_path);
+			else if (equals(command, "home")) getcwd(current_path, sizeof current_path);
 			else if (equals(command, "clearmessage")) memset(message, 0, sizeof message);
 			else if (equals(command, "numbers")) show_line_numbers = not show_line_numbers;
 			else if (equals(command, "status")) show_status = not show_status;
@@ -2002,21 +2063,18 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "jumpcolumn")) prompt_jump_column();
 			else if (equals(command, "new")) create_empty_buffer();
 			else if (equals(command, "nextbuffer")) move_to_next_buffer();
-			else if (equals(command, "previousbuffer")) move_to_previous_buffer();
-			else if (equals(command, "test")) {}
+			else if (equals(command, "previousbuffer")) move_to_previous_buffer();			
 			else if (equals(command, "mode0")) buffer.mode = 0;
 			else if (equals(command, "mode1")) buffer.mode = 1;
 			else if (equals(command, "mode2")) buffer.mode = 2;
 
+			else if (equals(command, "test")) {}
+			else if (equals(command, "test")) {}
+			else if (equals(command, "test")) {}
+
 			else if (equals(command, "commandcount")) sprintf(message, "command count = %d", command_count);
 
-			else if (equals(command, "currentpath")) sprintf(message, "current path = %s", current_path);
-
-			else if (equals(command, "resetpath")) 
-		strlcpy(current_path, "/Users/dwrr/Documents/projects/editor/", sizeof current_path);
-
-			else if (equals(command, "selection")) sprintf(message, "user selected = %s", user_selection);
-
+		
 			else if (equals(command, "wrapresizetemp")) { wrap_width = 0; recalculate_position(); }
 			else if (equals(command, "quit")) {
 				if (buffer.saved or confirmed("discard unsaved changes", "discard", "no")) 
@@ -2062,8 +2120,9 @@ static inline void editor(const uint8_t* _input, size_t _input_count) {
 	}
 
 	char p = 0, c = 0;
-	
-	strlcpy(current_path, "/Users/dwrr/Documents/projects/editor/", sizeof current_path);
+
+
+    	getcwd(current_path, sizeof current_path);
 loop:
 	if (buffer.needs_display_update) {
 		adjust_window_size();
