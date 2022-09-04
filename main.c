@@ -15,236 +15,17 @@
 //         debugged on 2201252.173237
 // 	   debugged on 2208022.211844
 // 	   debugged on 2208151.002947
+
+// 	     edited on 2209036.110503
 // 	   
-
-/*
-
-
-
-
-
-
-
-	things to add to make the editor useable full time:
-
-
-========================= REMAINING REQ. FEATURES ========================
-
-
-
-
-
-IMPL.
-===========
-
-	[ ] 	- make the editor use less globals.
-	[ ]	- make textbox use a buffer.
-	[ ]	- make the anchor system be stateful, and utilize "recent-cursor" behaviour.
-
-	[ ]  	- make the editor use C11 Atomics instead of mutexes!!!
-
-
-FILE VIEW:
-
-===========
-	
-	[ ]	- seperate out path and filename, when saving. 
-	[ ]	- - seperate out moving a file, and renaming a file. 
-	
-
-CONFIG FILE:
-===========
-	[ ] 	- read and write to config file to store parameters
-	[ ] 	- be able to adjust config parameters within editor using "set" command-line command.
-
-
-UI:
-===========
-	[ ] 	- be able to adjust config parameters within editor using "set" command-line command.
-	
-
-
-DOC:
-==================
-
-	[ ] 	- document the new keybinding of the editor in a manual_v2.txt file!
-
-------------------- bugs ----------------------
-
-
-[bug]			- add word wrap support. 
-
-
-[bug]			- rework the way the      wrap_width        disabling/dynamic adjusting works. 
-***
-
-
-[bug/feature]		- scrolling down is not very smooth. we should be using the terminal scrolling mode. 
-			use the escape code sequences 
-			<ESC>[r    to enable scrolling on the whole screen
-			<ESC>[{start};{end}r   to enable scrolling on a range of rows of the screen.
-			<ESC>D    to scroll down
-			<ESC>M   to scroll up
-
-
-
-
----------------- features ---------------
-
-
-
-[feature]	- implement a history for the textbox? oh! just by using multiple lines. of course. beautiful. 
-			(note: wrap width is infinity for the textbox)
-
-
-	
-
-*
-[feature]	- determine file format of config file, as a list of commands, that set the values? yes.
-		- init parameters from config file. 
-
-
-*
-[feature]	- determine language isa for my programming language. 
-		- implment my programming language in it. 
-
-
-
-[optional]	- (BIG) redesign how we are drawing the screen, to be based on drawing text that is isolated by 
-			whitespace, and jumping the (invisible) cursor around the screen, to draw those areas.  
-			and clearing the screen before each frame of course,
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-------------------- done/fixed -----------------
-
-
-[FIXED]		- tab width and wrap width major bugs.
-
-[FIXED]		- the performance of our display function is not good. we are currently making an n^2 algorithm in order to draw the screen.
-
-
-[FIXED]	 	- solve the two slow-unit-fffffff test cases that the fuzzer found. 
-
-
-[FIXED]		- test how the editor handles unicode characters with the new tab/wrap/display code. 
-
-[FIXED]		- test if the confirmed() code  (ie, overwriting, and discarding file stuff) works.
-
-
-[FIXED]		- test if the copy paste code is still working. 
-
-[FIXED]		- test if word movement is working
-
-	
-SAFETY: [x]	- make an autosave feature, that saves the file to an autosave directory every time it changes. i think. or at least, when theres downtime. yeah. dont do it while typing, obviously. dont wait until user saves to write the file to SOMEWHERE in disk. we need to not loose anything. 
-
-
-FILE VIEW:
-	[x]	- simple file viewer
-	[x]	- tab completion for file names
-
-
-
-DONE: [optional]	x- rebind the keybindings of the editor. 
-**
-
-
-DONE: [feature]		x - add tab completion for file names, and a small file veiwer, when saving/renaming. 
-***
-
-[x] 	- implement a command line, that parses arguments via whitespace..? 
-			single char commands only, for built in ones, i think? 
-
-
-
-
-
-
-
-
-
-
-
-
-
-	// todo:   make the textbox actually just a full-on buffer  in its own right
-	//         and then thus allow for  different modes,   and also undo redo,  etc. just, dont allow for upward movement, or new lines, though. simple as that.    alsooo keep the way we are rendering the textbox. that can stay. but the actual logic of the textbox should just use the already existing buffer logic. not use its own.  so yeah.   and then we only use the first line, of this "textbox buffer", of course.
-
-
-
-
-
-
-
-
-
-
-
-	// also i want to implement word wrapping!!!!
-
-
-
-
-
-
-
-
-
-	// 	TODO: 
-    	//
-	// 		redo this behaviour. make it so that you can explicitly disable wrapwidth (not just make it sudo-infinity), 
-	// 		or explicitly make it wrap to screen width, and dynamically adjust as the screen width changes!!!
-	// 
-
-
-
-
-
-
-
-
-
-	todo:   add     restrict    to all pointers that we use!
-
-	
-
-
-
-
-
-*/
-
-
 
 #include <iso646.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
-
 #include <stdatomic.h>
 #include <pthread.h>
-
 #include <string.h>
 #include <math.h>
 #include <time.h>
@@ -254,16 +35,10 @@ DONE: [feature]		x - add tab completion for file names, and a small file veiwer,
 #include <unistd.h>
 #include <dirent.h>
 #include <termios.h>
-
 #include <sys/time.h> 
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
-
-
-
-
-
 
 #define is_fuzz_testing		0
 
@@ -273,15 +48,11 @@ DONE: [feature]		x - add tab completion for file names, and a small file veiwer,
 
 typedef ssize_t nat;
 
-
 // todo: make these part of the config file / parameters.
 
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
 
 static const nat autosave_frequency = 8;     // in seconds
-
-
-
 
 enum action_type {
 	no_action,
@@ -296,8 +67,6 @@ struct line {
 	char* data; 
 	nat count, capacity; 
 };
-
-
 
 // if ww_fix,    then ww = 0,  ie, same as window width.     
 
@@ -335,14 +104,6 @@ struct logical_state {
 	;
 };
 
-struct textbox {
-	char* data;
-	nat 
-		count, capacity, prompt_length, 
-		c, vc, vs, vo
-	;
-};
-
 struct action { 
 	nat* children; 
 	char* text;
@@ -355,118 +116,29 @@ struct action {
 	struct logical_state post;
 };
 
+static size_t fuzz_input_index = 0;        //
+static size_t fuzz_input_count = 0;        //  globals
+static const uint8_t* fuzz_input = NULL;   //
+static nat  window_rows = 0, window_columns = 0;      // globals
 
-
-
-
-
-
-
-// these three will be glogals, actually.        i dont really want to thread these through the call stack lol. 
-
-static size_t fuzz_input_index = 0;
-static size_t fuzz_input_count = 0;
-static const uint8_t* fuzz_input = NULL;
-
-
-
-
-static nat 
-	window_rows = 0, 
-	window_columns = 0;     // i think these will stay as globals. they arent part of a buffer. 
-
-
-
-
-
-
-
-
-					
-//static struct textbox tb = {0};      // this should be just a particular buffer, actually. 
-				     // its just simpler that way. but it will be rendered differently.
-
-
-
-
-
-
-
-
-
-
-// these 4 will be variables in main, i think.     
-
-
+static nat buffer_count = 0, active_index = 0; 
 static struct buffer* buffers = NULL;
-
-static nat buffer_count = 0, active_index = 0; // these only need to be passed to the functions which perform a buffer switch.
-
-static struct buffer buffer = {0};   // the current buffer.    this will be named   "_"   probably. 
-
-static struct buffer textbox = {0};  // the textbox. 
+static struct buffer _ = {0}, textbox = {0}; 
 
 
 
 
-
-
-
-
-// all of these will actually be put into the current buffer variable "buffer"!    i think. and "buffer" will be named    "this"...?
-
-
-static struct line* lines = NULL;
-
-static struct action* actions = NULL;
-
-static nat 
-	count = 0, capacity = 0, 
-	line_number_width = 0, tab_width = 0, wrap_width = 0, 
-	show_status = 0, 
-	lcl = 0, lcc = 0,  lal = 0, lac = 0,
-	vcl = 0, vcc = 0,  vol = 0, voc = 0,  vsl = 0, vsc = 0, 
-	vdc = 0,
-	head, action_count;
-
-static char message[4096] = {0};
-
-static char filename[4096] = {0};
 
 static char user_selection[4096] = {0};    // rename this 	selected_file
 
 static char current_path[4096] = {0};      // rename this to     cwd
 
-
-
-
-
-
-
-
-static pthread_mutex_t mutex;		// this needs to be global..? i think. 
-
-
-
-
-
-
-
-
+// static pthread_mutex_t mutex;		// this needs to be global..? i think.	
+				     /// use atomic operations
 
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
 static inline bool file_exists(const char* f) { return access(f, F_OK) != -1; }
-
-/*
-
-static inline bool is_regular_file(const char *path) {
-	struct stat s;
-	stat(path, &s);
-	return S_ISREG(s.st_mode);
-}
-
-*/
 
 
 static inline nat unicode_strlen(const char* string) {
@@ -476,6 +148,17 @@ static inline nat unicode_strlen(const char* string) {
 		i++;
 	}
 	return length;
+}
+
+static inline char read_stdin() {
+	char c = 0;
+	if (fuzz) {
+		if (fuzz_input_index >= fuzz_input_count) return 0;
+		fuzz_input_index++;
+		return (char) fuzz_input[fuzz_input_index - 1];
+	}
+	read(0, &c, 1);
+	return c;
 }
 
 static inline bool equals(const char* s1, const char* s2) {
@@ -522,30 +205,7 @@ static inline struct termios configure_terminal() {
 	return save;
 }
 
-
-
-
-
-/*
-static inline nat compute_custom_vcc(nat given_lcc) {
-	nat v = 0;
-	for (nat c = 0; c < given_lcc; c++) {
-		char k = lines[lcl].data[c];
-		if (k == '\t') {
-			if (v + tab_width - v % tab_width <= wrap_width)
-				do v++; 
-				while (v % tab_width);
-			else v = 0;
-		} else if (visual(k)) {
-			if (v < wrap_width) v++; else v = 0;
-		}
-	}
-	return v;
-}
-/// consolidate these two functions:
-*/
-
-static inline nat compute_vcc(nat _unused__unused__unused) {
+static inline nat compute_vcc() {
 	v = 0;
 	for (nat c = 0; c < lcc; c++) {
 		char k = lines[lcl].data[c];
@@ -558,6 +218,7 @@ static inline nat compute_vcc(nat _unused__unused__unused) {
 			if (v < wrap_width) v++; else v = 0;
 		}
 	}
+	return v;
 }
 
 static inline void move_left() {
@@ -568,14 +229,14 @@ static inline void move_left() {
  line_up: 	vcl--;
 		if (vsl) vsl--;
 		else if (vol) vol--;
-		compute_vcc();
+		vcc = compute_custom_vcc();
 		if (vcc >= window_columns - 1 - line_number_width) { 
 			vsc = window_columns - 1 - line_number_width;  voc = vcc - vsc; 
 		} else { vsc = vcc; voc = 0; }
 	} else {
 		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
-		if (lines[lcl].data[lcc] == '\t') { 
-			const nat diff = tab_width - compute_custom_vcc(lcc) % tab_width;
+		if (lines[lcl].data[lcc] == '\t') {
+			const nat diff = tab_width - compute_custom_vcc() % tab_width;
 			if (vcc < diff) goto line_up;
 			vcc -= diff;
 			if (vsc >= diff) vsc -= diff;
@@ -639,11 +300,7 @@ static inline void move_down() {
 		move_right();
 	}
 	while (vcc < vdc and lcc < lines[lcl].count) {
-
-		if (lines[lcl].data[lcc] == '\t' and vcc + (tab_width - (vcc % tab_width)) > vdc) return;
-
-		// TODO: ^ WHAT IS THIS!?!?!?
-
+		if (lines[lcl].data[lcc] == '\t' and vcc + (tab_width - (vcc % tab_width)) > vdc) return; // TODO: ^ WHAT IS THIS!?!?!?
 		move_right();
 	}
 }
@@ -898,6 +555,27 @@ static inline void delete(bool should_record) {
 	create_action(new_action);
 }
 
+static void insert_string(const char* string, nat length) {
+	struct action new = {0};
+	record_logical_state(&new.pre);
+
+	for (nat i = 0; i < length; i++) 
+		insert((char) string[i], 0);
+	
+	record_logical_state(&new.post);
+	new.type = paste_text_action;
+	new.text = strndup(string, (size_t) length);
+	new.length = length;
+	create_action(new);
+}
+
+static inline void insertdt() {
+	char datetime[16] = {0};
+	get_datetime(datetime);
+	insert_string(datetime, 14);
+}
+
+
 static inline void adjust_window_size() {
 	struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
@@ -910,7 +588,6 @@ static inline void adjust_window_size() {
 		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));
 	}
 
-
 	//if (not wrap_width) wrap_width = (window_columns - 1) - (line_number_width);
 
 }
@@ -918,11 +595,9 @@ static inline void adjust_window_size() {
 
 static inline void display() {
 
-
 	static char* screen = NULL;   //
 
 	adjust_window_size(screen);
-
 
 	nat length = 9; 
 	memcpy(screen, "\033[?25l\033[H", 9);
@@ -1023,13 +698,9 @@ static inline void display() {
 			buffer.mode, 
 			active_index, buffer_count,
 			lcl, lcc, 
-
 			filename, 
-			
 			buffer.saved ? 's' : 'e', 
-
 			buffer.autosaved ? ' ' : '*',
-
 			message
 		);
 		length += status_length;
@@ -1044,56 +715,17 @@ static inline void display() {
     
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", vsl + 1, vsc + 1 + line_number_width);
 
-	if (not fuzz) 
+	if (not fuzz)  
 		write(1, screen, (size_t) length);
 }
 
-/*
-static inline void textbox_move_left() {
-	if (not tb.c) return;
-	do tb.c--; while (tb.c and zero_width(tb.data[tb.c]));
-	tb.vc--; 
-	if (tb.vs) tb.vs--; else if (tb.vo) tb.vo--;
-}
-
-static inline void textbox_move_right() {
-	if (tb.c >= tb.count) return;
-	tb.vc++; 
-	if (tb.vs < window_columns - tb.prompt_length) tb.vs++; else tb.vo++;
-	do tb.c++; while (tb.c < tb.count and zero_width(tb.data[tb.c]));
-}
-
-static inline void textbox_insert(char c) {
-
-	if (not memory_safe) {
-		if (tb.count + 1 >= tb.capacity) 
-			tb.data = realloc(tb.data, (size_t)(tb.capacity = 8 * (tb.capacity + 1)));
-	} else {
-		tb.data = realloc(tb.data, (size_t)(tb.count + 1));
-	}
-
-	memmove(tb.data + tb.c + 1, tb.data + tb.c, (size_t) (tb.count - tb.c));
-	tb.data[tb.c] = c;
-	tb.count++;
-	if (zero_width(c)) tb.c++; else textbox_move_right();
-}
-
-static inline void textbox_delete() {
-	if (not tb.c) return;
-	nat save = tb.c;
-	textbox_move_left();
-	memmove(tb.data + tb.c, tb.data + save, (size_t)(tb.count - save));
-	tb.count -= save - tb.c;
-
-	if (not memory_safe) {
-		// do nothing.
-	} else {
-		tb.data = realloc(tb.data, (size_t)(tb.count));
-	}
-}
-*/
 
 static inline void textbox_display(const char* prompt, nat prompt_color) {
+
+	static char* screen = NULL; 
+
+	adjust_width(); //
+
 	nat length = sprintf(screen, "\033[?25l\033[%ld;1H\033[38;5;%ldm%s\033[m", window_rows, prompt_color, prompt);
 	nat col = 0, vc = 0, sc = tb.prompt_length;
 	while (sc < window_columns and col < tb.count) {
@@ -1127,11 +759,6 @@ static inline void clear_above_textbox() {
 		write(1, screen, (size_t) length);
 }
 
-
-
-
-
-
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
 
 
@@ -1147,12 +774,11 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 		} else read(0, &c, 1);
 
 		if (c == '\r' or c == '\n') break;
-		else if (c == '\t') {  // tab complete :   simply paste the user selection on tab?...
+		else if (c == '\t') {  
 			
 			const nat path_length = (nat) strlen(user_selection);
 			for (nat i = 0; i < path_length; i++) 
 				textbox_insert(user_selection[i]);
-			
 		}
 		else if (c == 27 and stdin_is_empty()) { tb.count = 0; break; }
 		else if (c == 27) {
@@ -1446,10 +1072,6 @@ static inline void open_file(const char* given_filename) {
 	sprintf(message, "read %lub", length);
 }
 
-static inline void generate_hex_string(char id[32]) {
-	sprintf(id, "%08x%08x", rand(), rand());
-}
-
 static inline void emergency_save_to_file() {
 	
 	if (fuzz) return;
@@ -1458,7 +1080,7 @@ static inline void emergency_save_to_file() {
 	get_datetime(dt);
 
 	char id[32] = {0};
-	generate_hex_string(id);
+	sprintf(id, "%08x%08x", rand(), rand());
 	
 	char local_filename[4096] = {0};
 	sprintf(local_filename, "EMERGENCY_FILE_SAVE__%s__%s__.txt", dt, id);
@@ -1506,7 +1128,6 @@ static inline void emergency_save_all_buffers() {
 	active_index = saved_active_index;
 	load_buffer_data_into_registers();
 }
-
 
 static inline void autosave() {
 
@@ -1632,24 +1253,11 @@ static inline void interpret_escape_code() {
 
 	static nat scroll_counter = 0;
 
-	char c = 0;
-	
-	if (fuzz) {
-		if (fuzz_input_index >= fuzz_input_count) return;
-		c = (char) fuzz_input[fuzz_input_index++];	
-	} else {
-		read(0, &c, 1);
-	}
+	char c = read_stdin();
 	
 	if (c == '[') {
 
-
-		if (fuzz) {
-			if (fuzz_input_index >= fuzz_input_count) return;
-			c = (char) fuzz_input[fuzz_input_index++];	
-		} else {
-			read(0, &c, 1);
-		}
+		c = read_stdin();
 
 		if (c == 'A') move_up();
 		else if (c == 'B') move_down();
@@ -1660,7 +1268,7 @@ static inline void interpret_escape_code() {
 
 		else if (c == 'M') {
 
-			read(0, &c, 1);
+			read_stdin();
 
 			if (c == 97) {
 
@@ -1835,48 +1443,6 @@ static inline void paste() {
  }
 }
 
-static void insert_string(const char* string, nat length) {
-	struct action new = {0};
-	record_logical_state(&new.pre);
-
-	for (nat i = 0; i < length; i++) 
-		insert((char) string[i], 0);
-	
-	record_logical_state(&new.post);
-	new.type = paste_text_action;
-	new.text = strndup(string, (size_t) length);
-	new.length = length;
-	create_action(new);
-}
-
-static inline void insertdt() {
-	char datetime[16] = {0};
-	get_datetime(datetime);
-	insert_string(datetime, 14);
-}
-
-
-/*
-static void insert_printable_string(const char* string, nat length) {
-	struct action new = {0};
-	record_logical_state(&new.pre);
-
-	for (nat i = 0; i < length; i++) {
-		if (isprint((char) string[i])) insert((char) string[i], 0);
-	}
-	
-	record_logical_state(&new.post);
-	new.type = paste_text_action;
-	new.text = strndup(string, (size_t) length);
-	new.length = length;
-	create_action(new);
-}
-*/
-
-/*
-static void insert_cstring(const char* string) { insert_string(string, (nat) strlen(string)); }
-*/
-
 static inline void cut_selection() {
 	if (lal < lcl) goto anchor_first;
 	if (lcl < lal) goto cursor_first;
@@ -1935,8 +1501,6 @@ static inline void run_shell_command(const char* command) {
 		output = realloc(output, (size_t) length + 1 + (size_t) line_length); 
 		sprintf(output + length, "%s", line);
 		length += line_length;
-
-		// sprintf(message, "LINE(len=%ld): ll=%ld", length, line_length);
 	}
 	pclose(f);
 	lal = lcl; lac = lcc;
@@ -1945,17 +1509,13 @@ static inline void run_shell_command(const char* command) {
 }
 
 
-
-// note:  for commands that output to stderr,   append   	 2>&1 		to the end of the command.
-
 static inline void prompt_run() {
 	char command[4096] = {0};
-	prompt("run: ", 85, command, sizeof command);
+	prompt("run(2>&1): ", 85, command, sizeof command);
 	if (not strlen(command)) { sprintf(message, "aborted run"); return; }
 	sprintf(message, "running: %s", command);
 	run_shell_command(command);
 }
-
 
 static inline void replay_action(struct action a) {
 	require_logical_state(&a.pre);
@@ -1982,7 +1542,6 @@ static inline void reverse_action(struct action a) {
 
 static inline void undo() {
 	if (not head) return;
-
 	reverse_action(actions[head]);
 
 	sprintf(message, "undoing %ld ", actions[head].type);
@@ -2015,23 +1574,6 @@ static inline void alternate_incr() {
 static inline void alternate_decr() {
 	if (actions[head].choice) actions[head].choice--;
 	sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
-}
-
-static inline void anchor() {
-
-	// struct action new = {.type = anchor_action};
-
-	// record_logical_state(&new.pre);
-
-	// all this should do is just set   STATE_should_recent_anchor = false;      thats it. 
-
-	// lal = lcl; lac = lcc;    // it shouldnt do this. i think...?
-
-
-	// sprintf(message, "anchor %ld %ld", lal, lac);
-
-	// record_logical_state(&new.post);
-	// create_action(new);
 }
 
 static inline void recalculate_position() {
@@ -2155,314 +1697,11 @@ static inline void execute(char c, char p) {
 
 	} else if (buffer.mode == 1) {
 
-		
-
-
-		/*
-
-			the idea is to rebind the keys in the editor 
-
-		so that you cant accidentily delete the entire file. 
-
-					thats really not going to be allowed. yes you can undo(),   but i dont want to resort to that. ever.
-
-
-
-					so the idea is to make           cut()     which uses the anchor    
-
-									to be very hard to press!
-
-										ie, at leastttt a dual char keybind
-
-
-				anddd
-
-
-
-				i want to add a new thing
-
-
-							which will be callled        cut last
-
-
-						which uses the  "last" cursor
-
-
-						which records the lasttt position of the cursor!
-
-
-							very very very useful. 
-
-
-
-
-		if you move there in one go,   then now we can synethesize stuff 
-
-
-			super great
-
-
-
-						now movement commands are super imporatnt now lol
-
-
-
-						i think we need to figure out a way to have more of them
-
-
-
-				i want to remove the           ek     keybinding, 
-
-
-
-				and also just generally remove alot of the useless ones 
-
-
-
-						like   top and bottom, kinda
-
-
-
-							we can just use the mode2 for those?    maybe?
-
-
-
-								 but yeah, you see now
-
-
-					
-
-
-				alsoooo
-
-
-
-
-							i think i kinda want to remove the binding of 
-
-
-
-									a
-
-
-
-								i want to make that a dead stop actually, i think 
-
-
-
-												probably lol
-
-
-
-						so yeah
-
-
-						very useful 
-
-
-
-
-
-	ehh
-
-
-		idk though 
-
-
-
-						im still thinking about it 
-
-
-
-
-
-
-
-
-
-
-2208217.174341:
-
-
-		i think i just found a resolution to 
-
-			the fact that i want:
-
-				1. edits in my editor to be quick, and using the anchor isnt really quick 
-
-				2. using the anchor as i have it right now, is bad because 
-					you can accidently delete the file because anchor is zero to start with. not good. i hate that. 
-
-				3. i want to use the most recent value that the cursor has. 
-
-					
-
-
-			yeah, that will be good. 
-
-
-			i found the way i want to do it. 
-
-			basically, instead of    anchor    setting the current position to the anchor, 
-
-
-				it just toggles whether the anchor follows the cursor!
-
-					thats going to be the way i do it
-
-
-						or wait
-
-
-
-								WAIT
-
-
-
-
-
-					NO
-
-
-
-						oh my gosh!!!
-
-
-
-								we literally can just
-
-
-
-
-						we can just make              THE ANCHOR
-
-
-
-									BE 
-
-
-
-							THE RECENT
-
-
-
-
-
-					like, we we dont care about the anchors value, 
-
-
-							then we 
-
-
-
-
-						okay this is the right way to implement this
-
-
-						yayyy
-								i found it 
-
-
-
-					i love this 
-
-
-
-
-
-							so basically, we make the anchor    be used as the recent 
-
-
-				MOST OF THE TIME
-
-
-
-					but then 
-
-
-
-							when ever you press    anchor()
-
-
-								then now, we are NOT following the cursor    (or i guess, always lagging behind, because thats how recent is supposed to work)
-
-
-					(usually we lag behind! in "non anchor mode"
-
-
-
-						)        	and then when we want to drop our anchor down, 
-
-
-
-										and stop lagging behind, 
-
-
-
-									we say          anchor()'
-
-
-
-									and that changes the state of the system 
-
-										to be NOT changing lal lac   every single command
-
-								but actually just 
-
-
-			
-
 	
-						yeah i know that this is the right way to do this, now,  i think 
-
-						it is just ergonomic,  safe,  and simple.
-
-
-
-						very cool  very cool 
-
-
-
-
-					but just implementing it is rather hard... hmmm....
-
-
-					not sure how to do it 
-
-
-					
-
-	
-
-	*/
-
-
-
-
-
-
-		
-
-
-
 
 		if (true/*STATE__should_recent_anchor*/) { lal = lcl; lac = lcc; }      // where do we do this?
 	
 
-	/*
-		after every single movement command, i think. yeah. i think it needs to be done like that too.   yikes. 
-
-			i think we just want to do it inside the actual movement commands themselves, actually. yeah. i think so. 
-
-				okay, cool. 
-
-
-
-
-
-
-	
-*/
 		
 
 	
@@ -2498,8 +1737,6 @@ static inline void execute(char c, char p) {
 		else if (c == 'd' and p == 'h') {}
 		
 
-		
-		
 		else if (c == 'a') {}
 		else if (c == 'd') delete(1);
 		else if (c == 'r') cut();
@@ -2622,16 +1859,7 @@ static inline void execute(char c, char p) {
 	} else buffer.mode = 1;
 }
 
-static inline char read_stdin() {
-	char c = 0;
-	if (fuzz) {
-		if (fuzz_input_index >= fuzz_input_count) return 0;
-		fuzz_input_index++;
-		return (char) fuzz_input[fuzz_input_index - 1];
-	}
-	read(0, &c, 1);
-	return c;
-}
+
 
 static void* autosaver(void* unused) {
 
@@ -2900,6 +2128,247 @@ int array_count = 0;
 				*/	
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+static void insert_printable_string(const char* string, nat length) {
+	struct action new = {0};
+	record_logical_state(&new.pre);
+
+	for (nat i = 0; i < length; i++) {
+		if (isprint((char) string[i])) insert((char) string[i], 0);
+	}
+	
+	record_logical_state(&new.post);
+	new.type = paste_text_action;
+	new.text = strndup(string, (size_t) length);
+	new.length = length;
+	create_action(new);
+}
+*/
+
+/*
+static void insert_cstring(const char* string) { insert_string(string, (nat) strlen(string)); }
+*/
+
+
+
+
+
+
+
+
+/*
+
+static inline bool is_regular_file(const char *path) {
+	struct stat s;
+	stat(path, &s);
+	return S_ISREG(s.st_mode);
+}
+
+*/
+
+
+
+
+
+
+
+/*
+
+
+
+static inline void textbox_move_left() {
+	if (not tb.c) return;
+	do tb.c--; while (tb.c and zero_width(tb.data[tb.c]));
+	tb.vc--; 
+	if (tb.vs) tb.vs--; else if (tb.vo) tb.vo--;
+}
+
+static inline void textbox_move_right() {
+	if (tb.c >= tb.count) return;
+	tb.vc++; 
+	if (tb.vs < window_columns - tb.prompt_length) tb.vs++; else tb.vo++;
+	do tb.c++; while (tb.c < tb.count and zero_width(tb.data[tb.c]));
+}
+
+static inline void textbox_insert(char c) {
+
+	if (not memory_safe) {
+		if (tb.count + 1 >= tb.capacity) 
+			tb.data = realloc(tb.data, (size_t)(tb.capacity = 8 * (tb.capacity + 1)));
+	} else {
+		tb.data = realloc(tb.data, (size_t)(tb.count + 1));
+	}
+
+	memmove(tb.data + tb.c + 1, tb.data + tb.c, (size_t) (tb.count - tb.c));
+	tb.data[tb.c] = c;
+	tb.count++;
+	if (zero_width(c)) tb.c++; else textbox_move_right();
+}
+
+static inline void textbox_delete() {
+	if (not tb.c) return;
+	nat save = tb.c;
+	textbox_move_left();
+	memmove(tb.data + tb.c, tb.data + save, (size_t)(tb.count - save));
+	tb.count -= save - tb.c;
+
+	if (not memory_safe) {
+		// do nothing.
+	} else {
+		tb.data = realloc(tb.data, (size_t)(tb.count));
+	}
+}
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+					
+//static struct textbox tb = {0};      // this should be just a particular buffer, actually. 
+				     // its just simpler that way. but it will be rendered differently.
+
+
+
+
+
+
+
+/*
+static inline nat compute_custom_vcc(nat given_lcc) {
+	nat v = 0;
+	for (nat c = 0; c < given_lcc; c++) {
+		char k = lines[lcl].data[c];
+		if (k == '\t') {
+			if (v + tab_width - v % tab_width <= wrap_width)
+				do v++; 
+				while (v % tab_width);
+			else v = 0;
+		} else if (visual(k)) {
+			if (v < wrap_width) v++; else v = 0;
+		}
+	}
+	return v;
+}
+/// consolidate these two functions:
+
+
+static inline char read_stdin() {
+	char c = 0;
+	if (fuzz) {
+		if (fuzz_input_index >= fuzz_input_count) return;
+		c = (char) fuzz_input[fuzz_input_index++];	
+	} else {
+		read(0, &c, 1);
+	}
+	return c;
+}
+
+
+
+
+*/
+/*
+
+
+
+
+static inline void anchor() {
+
+	// struct action new = {.type = anchor_action};
+
+	// record_logical_state(&new.pre);
+
+	// all this should do is just set   STATE_should_recent_anchor = false;      thats it. 
+
+	// lal = lcl; lac = lcc;    // it shouldnt do this. i think...?
+
+
+	// sprintf(message, "anchor %ld %ld", lal, lac);
+
+	// record_logical_state(&new.post);
+	// create_action(new);
+}
+
+
+*/
+
+
+
+	/*
+		after every single movement command, i think. yeah. i think it needs to be done like that too.   yikes. 
+
+			i think we just want to do it inside the actual movement commands themselves, actually. yeah. i think so. 
+
+				okay, cool. 
+
+
+
+
+
+
+	
+*/
+
+
+
+
+
+
+/*
+struct textbox {
+	char* data;
+	nat 
+		count, capacity, prompt_length, 
+		c, vc, vs, vo
+	;
+};
+
+static struct line* lines = NULL;
+
+static struct action* actions = NULL;
+
+static nat 
+	count = 0, capacity = 0, 
+	line_number_width = 0, tab_width = 0, wrap_width = 0, 
+	show_status = 0, 
+	lcl = 0, lcc = 0,  lal = 0, lac = 0,
+	vcl = 0, vcc = 0,  vol = 0, voc = 0,  vsl = 0, vsc = 0, 
+	vdc = 0,
+	head, action_count;
+
+static char message[4096] = {0};
+
+static char filename[4096] = {0};
+
+*/
 
 
 
