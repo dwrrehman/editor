@@ -58,7 +58,7 @@ enum action_type {
 	no_action,
 	insert_action,
 	delete_action,
-	paste_action,
+	paste_text_action,
 	cut_action,
 	anchor_action,
 };
@@ -68,40 +68,34 @@ struct line {
 	nat count, capacity; 
 };
 
-// if ww_fix,    then ww = 0,  ie, same as window width.     
-
 struct buffer {
 	struct line* lines;
 	struct action* actions;
 
-	nat     saved, mode, autosaved, selecting, ww_fix,    
-		count, capacity, 
-		line_number_width, needs_display_update,
+	nat     saved, mode, autosaved, 
+		selecting, ww_fix, count, capacity, line_number_width,
 
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 
 		vsl, vsc, 	vdc,    	lal, lac,
 
 		wrap_width, tab_width, 
-		scroll_speed, show_status, show_line_numbers, 
+		show_status, show_line_numbers, 
 		use_txt_extension_when_absent,
 		line_number_color, status_bar_color, alert_prompt_color, 
 		info_prompt_color, default_prompt_color,
 		action_count, head
 	;
 
-	char message[4096];
 	char filename[4096];
+	char location[4096];
+	char message[4096];
 };
 
 struct logical_state {
-	nat     saved, autosaved, selecting, ww_fix,
-
+	nat     saved, autosaved, selecting, 
+		ww_fix, wrap_width, tab_width,
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 
-		vsl, vsc, 	vdc,    	
-		lal, lac, 	lrl, lrc,
-
-		wrap_width, tab_width
-	;
+		vsl, vsc, 	vdc,    	lal, lac;
 };
 
 struct action { 
@@ -116,30 +110,797 @@ struct action {
 	struct logical_state post;
 };
 
-static size_t fuzz_input_index = 0;        //
-static size_t fuzz_input_count = 0;        //  globals
-static const uint8_t* fuzz_input = NULL;   //
-static nat  window_rows = 0, window_columns = 0;      // globals
-
+static size_t fuzz_input_index = 0;       
+static size_t fuzz_input_count = 0;       
+static const uint8_t* fuzz_input = NULL;  
+static nat window_rows = 0, window_columns = 0;
 static nat buffer_count = 0, active_index = 0; 
 static struct buffer* buffers = NULL;
-static struct buffer _ = {0}, textbox = {0}; 
+static struct buffer this = {0}, textbox = {0}; 
+static char selected_file[4096] = {0};
+static char cwd[4096] = {0};
+static pthread_mutex_t mutex;
+static struct line* lines;
+static struct action* actions;
+static char* screen = NULL;
+static nat 
+	count, capacity, 
+	action_count, head, 
+	wrap_width, tab_width,
+	lcl, lcc, 	vcl, vcc,  	vol, voc, 
+	vsl, vsc, 	vdc,    	lal, lac
+;
+
+
+	
+1. store registers to buffer
+2. set active buffer to "after last buffer"
+3. perform a context switch   (load active buffer into registers)
+4. now the last buffer (the textbox) is in the registers! now use move left, and move right as normal, but prevent moving before, or at the end of a line! up-arrow and down-arrow change the history for the command buffer, 
+
+
+actually
+
+
+			do we just rip out the textbox system?... like literally...
+				we dont even atually need it 
+
+
+					like why exactly do we need it...!?
+
+
+	
+	
+
+			currently, we are using it for command mode, 
+
+				the ability to paste the current selection into the text buffer...
+
+					a displaying which doesnt wrap the lines... which i dont think matters too much... 
+
+						and then...
+
+										ummm
+
+
+						hmm
+
+
+							actually 
+
+	
+					i feel like the ability to have the textbox NOT take up the entire screen is actually useful..
+
+					at laest, when you want to be able to see both the textbox, and the screen at the same time. 
+
+						so yeah.... i think we HAVE to keep it,  it is useful, at least visuallyyyyy
+
+
+
+					butttt
+
+					i think that we can totallyyyyy just make it use (ALMOST) ALLLLLL the buffer machinery, and literally act like just another buffer. 
+
+
+				in fact, i actually dont see any reason why, we cant just...      wait no, we cant give control flow to the main loop, thatd be bad
+
+
+					we use this function     a textbox,      for getting a string of course, 
+
+						which.... 
+
+
+							i mean, 
+
+
+
+						.....if you think about it... 
+
+
+
+							why cant you just type in the current buffer, in order to do that?
+
+									like literally....
+
+							hmmm
+
+
+
+						okay, maybe we dont need the textbox?....  hmmmmmm
+
+
+
+								well, i mean, if we get rid of it being a seperate place,    then like, 
+
+								i just dont think its what we want, in alot of screnatious,   we also loose the whole history stufff.... so like, i would kinda prefer to not use the main loop   for printing buffers, and stuff
+							(and of course, the idea would be that we could just have an if statement, checking if we are visualizing the textbox or just a regular buffer... 
+					because the textbox would have index "buffer_count"   basically 
+
+
+							that part, i knnow for sure. i want to store the textbox stuff there. 
+
+
+						then, when we are saving, i guess i can just 
+
+
+
+									save the textbox like i would any other file?
+
+
+								or maybe it automatically saves, when you leave the textbox... actually, yeah i like that one more. 
+
+
+
+								wait, how does it get smaller?  umm... i guess it doesnt lol. 
+
+
+
+
+						hmm
+
+
+								maybe we just delete the beginning portion of it, every now and then.. lol
+
+
+					i mean, it isnt too hard to set a cap on the number of lines. lol. anyways 
 
 
 
 
 
-static char user_selection[4096] = {0};    // rename this 	selected_file
+					
 
-static char current_path[4096] = {0};      // rename this to     cwd
+	
 
-// static pthread_mutex_t mutex;		// this needs to be global..? i think.	
-				     /// use atomic operations
+			so, yeah, i am definitely using a   buffer   to store the textbox info, 
+
+
+				and i am also definitelyyyyy settling on having a seperate main loop for it, one that has the custom commands, i think.... hmm... yeah i think we needddddd to 
+
+
+							just because, with the history,  it behaves so differently from the other buffers. 
+
+								
+
+
+
+				i am technically still considering   making the current buffer itself, with all of its content, just be the textbox that we actully use to type in.... but i dont think thats a good idea.... because like, 
+
+
+						what if we dont have edit permissions for the file?   hmmm
+
+
+
+							or, i guess... what if we want to have a history?  we would totally loose our nice history stuffff    if we made the current file the textbox. even though, that would make things very easy, technically...
+
+
+							i think a textbox is actually important enough, that we need to have a seperate thing for it. i just think we do. i think we need it to be seperate from the file itself. yeah. idk why,  but i really feel like we need to. 
+
+
+	
+						the textbox is actually part of confirming some mission critical duties, and so, i feel like we shouldnt be using "the current line" for that. hmmmmmmm
+
+
+						i mean, if it was in a buffer all on its own, then itd be fine?
+
+
+						i think?
+
+
+
+							its just.. now we cant see the file lol. 
+
+
+							i guess ideally, we could display two files at once.  thatd be ideal, i guess..
+
+
+
+					although, that gets super complicated, and i dont reallyyy want to support that at all. 
+
+
+							so yeah. i just want to have the textbox i think. its alittle bit more code, but its not that bad, i think. 
+
+
+
+							
+
+
+
+			oh wait
+
+
+
+					actually 
+
+
+
+					having a horizontal split, at least, is actually really simple, i think...?
+
+				hmmmmmmmm
+
+
+						its just... a tiny bit odd... 
+
+
+						ill think about it... 
+
+
+
+
+
+
+				i mean, it would be super cool to have the textbox just be a buffer.
+
+
+	
+	
+					buttt!!!! what would be the prompt?
+
+
+
+
+						like, how would we actually do anything?... wait
+
+
+
+				this sounds like it doesnt exactly work?
+
+
+
+
+			or, wait, i guesss we would just use the status... hmmm
+
+
+
+				
+
+
+			and i mean
+
+
+
+			actually 
+
+	
+	
+					technically 
+	
+
+	
+		wait
+
+
+
+
+		lol
+
+
+			isnt the status bar, technically just a buffer, which holds that stufff lol
+
+
+
+		its literally the other buffer 
+
+
+				right there
+
+
+			its the status buffer 
+
+
+
+					hahaha
+
+
+	
+					hmm
+
+
+									okay
+
+
+
+
+
+							that could actually work
+
+
+
+
+						and i guess, the thing is, this buffer is given the values from your current buffer. 
+
+
+						and of course, 
+
+
+
+
+			or 
+
+
+
+
+		i guess 
+
+
+					its more of just like... a scratch buffer, ,...?   thats interestinggg
+
+
+
+				very very very very interestinggg
+
+
+
+		
+
+
+
+	
+
+		if you use a horizontal split,  
+
+
+			and just have it enabled alwaysss
+
+
+						(like,you know the    show_status_bar var?   that is literally the split height, of the scratch buffer!!!!)
+
+
+
+
+						so yeah,  that actually mightttt work 
+
+
+
+								ohhh and you can set the split height to zero, of course,   
+
+
+									which simply just sets the 
+
+
+
+
+ohh
+
+
+		yikes
+
+
+			nopeee
+
+
+
+							this is not good
+
+
+
+						you would have to like... errr
+
+
+
+										you literally couldnt use the split window thingy
+
+														for yourrr files
+
+
+											you couldnt 
+
+
+											you could only use it for the scratch buffer
+
+
+
+
+									which is used for... i guess textbox entry,  
+
+
+									and also the status bar
+
+
+			so yeah
+
+
+						i mean, that genuinely could work actually
+
+
+	
+	
+	
+			it is definitely a huge redesign of that system 
+
+					hmmm
+
+
+
+	
+	
+	
+		i meann, i kinda like it 
+
+	
+	
+
+				so there is one buffer which is always displayed, no matter what.
+
+
+						and thats the  scratch bufffer. 
+
+
+	
+						it issssss the status bar
+
+
+						     ANDDDDD the textbox
+
+
+
+					and all we need to make it work,   is the ability to display two files, 
+
+
+							one on the top half of the screen,   and one on the bottom halft 
+
+
+	
+								superrrr simple, we already made our code, so we can do it easily, i think.. 
+
+				hmm
+
+
+	
+							wow
+
+	
+
+				quite interesting, huh!
+
+
+	
+
+	
+			of course,   when we display the scratch, we never pring the cursor inside it,   until we actually want to use it as a textbox!!!
+
+						very very very very very cool 
+
+
+
+				i think i am going to dedfinitely take this approach. 
+	
+	
+				i think its super cool, actually 
+
+
+
+
+
+					it also allows us to copy from the status message,   its just so unifying actually 
+
+	
+	
+					
+
+
+
+		so how does the scratch buffer work...?
+
+	
+				like, what is the layout of stuff?
+
+	
+
+	
+	
+		well
+
+	
+				the status stuff is at the top of the file.   it is constantly edited, as you use the editor, and the values are updated. they are kinda like displaying the registers of the editor, actually, which is super cool. 
+
+				
+
+							oh my god this is actaully beautiful., 
+
+
+
+
+									OF COURSE,,,,    THE SCRATCH REGISTER LIVES AT BUFFER_COUNT!!!
+
+
+												so beautiful 
+
+
+
+						yessssssssssss
+
+
+									i love this so much
+
+
+											you can call it       "*n"  kinda
+
+
+									yeah
+
+
+											hahaha i love that so much
+
+
+
+									its just like the ua theory 
+
+	
+
+				ohhh and    show_status_bar    is renamed to    scratch_lines_display_count   or something 
+
+
+						and its a     nat     that you can incr, and decr.
+
+								if it goes to zero, thats literlalyy     show_status = false
+
+
+										and if you ever trigger a textbox,  
+
+
+										then active_buffer = buffer_count
+
+
+
+
+									which amazing and beautiful!!!!
+
+
+
+
+				yayyyyyyyyyy
+
+
+
+					i love this alot!!!
+
+
+					yayyyyyyyyyyy
+
+
+								so happy i found this 
+
+
+
+
+		so anyways,  
+
+
+			the textbox always appends to the end of the *n buffer. always. 
+
+			
+
+
+				it is automatically saved, upon exiting the textbox utility. i think. pretty sure. 
+
+	
+	
+					andddd
+
+								you cannnn actually move into it,   while NOT using the textbox utility. 
+
+
+										so, you can literally edit it as a simple buffer. 
+
+
+	
+									ANDDDDDD it is always at the bottom where it is. 
+
+										yeah. cool. that is literally so cool. 
+
+
+												yayyyyy
+
+
+
+										okay, so, if so, we literally can just update our display function, and then everything is simple!!!
+
+
+						wow!!!
+
+
+
+								what a simplification. 
+
+
+
+								then, the textbox utility gets the current line, as a string, of course. 
+
+
+										very simple. 
+
+
+									i love this so much!!! so beautiful. 
+
+
+									very very very very very very very cool 
+
+							oh, also, the textbox utility actually inserts a string, on the line you have to give the answer. 
+
+
+
+					ohhh, one thing
+
+
+							you cant color things
+
+
+						so like 
+
+
+					yeah
+
+
+								the status bar,   the prompt colors
+
+
+
+							those all have to go 
+
+
+
+							but thats fine haha      i didnt really need them anyways
+
+
+											yeah, i like just black and white anyways
+
+
+
+	
+				
+
+
+
+			okay, this is totally going to work, i think 
+
+
+				i love this so much 
+
+
+	
+			
+
+
+			the human is the comparator circuit, "<",    comparing   *i   (the current buffer)  and *n   the scratch buffer
+
+
+							this literally could not be more correct, and beautiful. 
+
+
+	
+				like, i am totally certain, we found the way that we are going to write this editor, 
+
+
+						and deal with split windows,   and the textbox,   and the status bar
+
+
+								all of those odd things,     have all been unified under this single idea 
+
+											of a scratch buffer 
+
+
+
+
+
+							so amazing 
+
+
+									so good 
+
+							yayyyyyy
+
+
+
+						i love it 
+
+
+
+	
+				should simply things, while allowing for more emergent features! i think 
+
+
+
+
+				
+						
+
+
+
+
+
+
+
+
+	wow this is literally amazing          i am so happy i found this
+
+			
+
+
+				so
+
+
+					note:      we are not storing the    "registers we are displaying in the status bar"
+
+
+						we are not storingggggg those valuse in the scratch buffer, (aka the *n buffer!!)
+
+
+							we are just           printtttinggggg   those values   into the first two lines of the scratch buffer,  because its useful to show them there. 
+
+
+
+							very very veryuseful. 
+
+
+
+
+		infact,    any register in the editor,  or for a buffer, 
+
+
+
+					that we want to visualize, 
+
+
+
+						we will actually   print    inside the scratch buffer!
+
+
+
+
+						oh!!!
+
+
+
+									including the meta data / registers    of   *n itself!!!
+
+
+
+											that is also found inside the scatch buffer!
+
+
+
+										i think 
+
+
+										somewheer
+
+
+
+
+
+
+						so yeah
+
+
+
+
+				this is reallyyyy       like actually 
+
+
+
+							the righe way to do things 
+
+
+
+
+	
+			
+
+
+
+
+
+
+
+
+
+
+
 
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
 static inline bool file_exists(const char* f) { return access(f, F_OK) != -1; }
-
 
 static inline nat unicode_strlen(const char* string) {
 	nat i = 0, length = 0;
@@ -206,7 +967,7 @@ static inline struct termios configure_terminal() {
 }
 
 static inline nat compute_vcc() {
-	v = 0;
+	nat v = 0;
 	for (nat c = 0; c < lcc; c++) {
 		char k = lines[lcl].data[c];
 		if (k == '\t') { 
@@ -229,14 +990,14 @@ static inline void move_left() {
  line_up: 	vcl--;
 		if (vsl) vsl--;
 		else if (vol) vol--;
-		vcc = compute_custom_vcc();
-		if (vcc >= window_columns - 1 - line_number_width) { 
-			vsc = window_columns - 1 - line_number_width;  voc = vcc - vsc; 
+		vcc = compute_vcc();
+		if (vcc >= window_columns - 1 - this.line_number_width) { 
+			vsc = window_columns - 1 - this.line_number_width;  voc = vcc - vsc; 
 		} else { vsc = vcc; voc = 0; }
 	} else {
 		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
 		if (lines[lcl].data[lcc] == '\t') {
-			const nat diff = tab_width - compute_custom_vcc() % tab_width;
+			const nat diff = tab_width - compute_vcc() % tab_width;
 			if (vcc < diff) goto line_up;
 			vcc -= diff;
 			if (vsc >= diff) vsc -= diff;
@@ -256,7 +1017,7 @@ static inline void move_right() {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0; 
 line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
-		if (vsl + 1 < window_rows - show_status) vsl++; 
+		if (vsl + 1 < window_rows - this.show_status) vsl++; 
 		else vol++;
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
@@ -264,7 +1025,7 @@ line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
 			if (vcc + tab_width - vcc % tab_width > wrap_width) goto line_down;
 			do {
 				vcc++; 
-				if (vsc + 1 < window_columns - line_number_width) vsc++;
+				if (vsc + 1 < window_columns - this.line_number_width) vsc++;
 				else voc++;
 			} while (vcc % tab_width);
 			
@@ -272,7 +1033,7 @@ line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
 			do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
 			if (vcc >= wrap_width) goto line_down;
 			vcc++; 
-			if (vsc + 1 < window_columns - line_number_width) vsc++; 
+			if (vsc + 1 < window_columns - this.line_number_width) vsc++; 
 			else voc++;
 		}
 	}
@@ -289,7 +1050,7 @@ static inline void move_up() {
 	nat line_target = vcl - 1;
 	while (vcc and vcl > line_target) move_left(); 
 	do move_left(); while (vcc > vdc and vcl == line_target);
-	if (vcc > window_columns - line_number_width) { vsc = window_columns - line_number_width; voc = vcc - vsc; } 
+	if (vcc > window_columns - this.line_number_width) { vsc = window_columns - this.line_number_width; voc = vcc - vsc; } 
 	else { vsc = vcc; voc = 0; }
 }
 
@@ -369,9 +1130,10 @@ static inline void move_word_right() {
 static inline void record_logical_state(struct logical_state* pcond_out) {
 	struct logical_state* p = pcond_out; 
 
-	p->saved = buffer.saved;
-	p->autosaved = buffer.autosaved;
-	p->line_number_width = line_number_width;
+	p->saved = this.saved;
+	p->autosaved = this.autosaved;
+	p->ww_fix = this.ww_fix;
+	p->selecting = this.selecting;
 
 	p->lcl = lcl;  p->lcc = lcc; 	
 	p->vcl = vcl;  p->vcc = vcc;
@@ -387,9 +1149,10 @@ static inline void record_logical_state(struct logical_state* pcond_out) {
 static inline void require_logical_state(struct logical_state* pcond_in) {  
 	struct logical_state* p = pcond_in;
 
-	buffer.saved = p->saved;
-	buffer.autosaved = p->autosaved;
-	line_number_width = p->line_number_width;
+	this.saved = p->saved;
+	this.autosaved = p->autosaved;
+	this.ww_fix = p->ww_fix;
+	this.selecting = p->selecting;
 
 	lcl = p->lcl;  lcc = p->lcc; 	
 	vcl = p->vcl;  vcc = p->vcc;
@@ -427,12 +1190,12 @@ static inline void insert(char c, bool should_record) {
 	struct action new_action = {0};
 	if (should_record and visual(c)) record_logical_state(&new_action.pre);
 
-	struct line* this = lines + lcl;
+	struct line* here = lines + lcl;
 	if (c == '\n') {
-		nat rest = this->count - lcc;
-		this->count = lcc;
+		nat rest = here->count - lcc;
+		here->count = lcc;
 		struct line new = {malloc((size_t) rest), rest, rest};
-		if (rest) memcpy(new.data, this->data + lcc, (size_t) rest);
+		if (rest) memcpy(new.data, here->data + lcc, (size_t) rest);
 
 		if (not memory_safe) {
 			if (count + 1 >= capacity) 
@@ -447,22 +1210,22 @@ static inline void insert(char c, bool should_record) {
 
 	} else {
 		if (not memory_safe) {
-			if (this->count + 1 >= this->capacity) 
-				this->data = realloc(this->data, (size_t)(this->capacity = 8 * (this->capacity + 1)));
+			if (here->count + 1 >= here->capacity) 
+				here->data = realloc(here->data, (size_t)(here->capacity = 8 * (here->capacity + 1)));
 		} else {
-			this->data = realloc(this->data, (size_t)(this->count + 1));
+			here->data = realloc(here->data, (size_t)(here->count + 1));
 		}
 
-		memmove(this->data + lcc + 1, this->data + lcc, (size_t) (this->count - lcc));
-		this->data[lcc] = c;
-		this->count++;
+		memmove(here->data + lcc + 1, here->data + lcc, (size_t) (here->count - lcc));
+		here->data[lcc] = c;
+		here->count++;
 	}
 
 	if (zero_width(c)) lcc++; 
 	else { move_right(); vdc = vcc; }
 
-	buffer.saved = false;
-	buffer.autosaved = false;
+	this.saved = false;
+	this.autosaved = false;
 	if (not should_record) return;
 	lac = lcc; lal = lcl;
 
@@ -488,7 +1251,7 @@ static inline void delete(bool should_record) {
 
 	char* deleted_string = NULL;
 	nat deleted_length = 0;
-	struct line* this = lines + lcl;
+	struct line* here = lines + lcl;
 
 	if (not lcc) {
 		if (not lcl) return;
@@ -496,25 +1259,21 @@ static inline void delete(bool should_record) {
 		struct line* new = lines + lcl;
 
 		if (not memory_safe) {
-			if (new->count + this->count >= new->capacity)
-				new->data = realloc(new->data, (size_t)(new->capacity = 8 * (new->capacity + this->count)));
+			if (new->count + here->count >= new->capacity)
+				new->data = realloc(new->data, (size_t)(new->capacity = 8 * (new->capacity + here->count)));
 		} else {
-			new->data = realloc(new->data, (size_t)(new->count + this->count));
+			new->data = realloc(new->data, (size_t)(new->count + here->count));
 		}
 
-		if (this->count) memcpy(new->data + new->count, this->data, (size_t) this->count);
-		free(this->data);
+		if (here->count) memcpy(new->data + new->count, here->data, (size_t) here->count);
+		free(here->data);
 
-		new->count += this->count;
+		new->count += here->count;
 		memmove(lines + lcl + 1, lines + lcl + 2, 
 			sizeof(struct line) * (size_t)(count - (lcl + 2)));
 		count--;
 
-		if (not memory_safe) {
-			// do nothing.
-		} else {
-			lines = realloc(lines, sizeof(struct line) * (size_t)count);
-		}
+		if (memory_safe) lines = realloc(lines, sizeof(struct line) * (size_t)count);
 
 		if (should_record) {
 			deleted_length = 1;
@@ -530,21 +1289,17 @@ static inline void delete(bool should_record) {
 		if (should_record) {
 			deleted_length = save - lcc;
 			deleted_string = malloc((size_t) deleted_length);
-			memcpy(deleted_string, this->data + lcc, (size_t) deleted_length);
+			memcpy(deleted_string, here->data + lcc, (size_t) deleted_length);
 		}
 
-		memmove(this->data + lcc, this->data + save, (size_t)(this->count - save));
-		this->count -= save - lcc;
+		memmove(here->data + lcc, here->data + save, (size_t)(here->count - save));
+		here->count -= save - lcc;
 
-		if (not memory_safe) {
-			// do nothing.
-		} else {
-			this->data = realloc(this->data, (size_t)(this->count));
-		}
+		if (memory_safe) here->data = realloc(here->data, (size_t)(here->count));
 	}
 
-	buffer.saved = false;
-	buffer.autosaved = false;
+	this.saved = false;
+	this.autosaved = false;
 	if (not should_record) return;
 	lac = lcc; lal = lcl;
 
@@ -575,29 +1330,20 @@ static inline void insertdt() {
 	insert_string(datetime, 14);
 }
 
+static inline void display() {
 
-static inline void adjust_window_size() {
+	static char* screen = NULL;
 	struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
-
 	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 15; window.ws_col = 50; }
-
 	if (window.ws_row != window_rows or window.ws_col != window_columns) {
 		window_rows = window.ws_row;
 		window_columns = window.ws_col - 1; 
 		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));
 	}
 
-	//if (not wrap_width) wrap_width = (window_columns - 1) - (line_number_width);
-
-}
-
-
-static inline void display() {
-
-	static char* screen = NULL;   //
-
-	adjust_window_size(screen);
+	const nat w = (window_columns - 1) - (this.line_number_width);
+	if (this.ww_fix and wrap_width != w) wrap_width = w;
 
 	nat length = 9; 
 	memcpy(screen, "\033[?25l\033[H", 9);
@@ -629,13 +1375,18 @@ static inline void display() {
 
 	double f = floor(log10((double) count)) + 1;
 	int line_number_digits = (int)f;
-	line_number_width = show_line_numbers * (line_number_digits + 2);
+	this.line_number_width = this.show_line_numbers * (line_number_digits + 2);
 
 	do {
 		if (line >= count) goto next_visual_line;
 
-		if (show_line_numbers and vl >= vol and vl < vol + window_rows - show_status) {
-			if (not col or (not sc and not sl)) length += sprintf(screen + length, "\033[38;5;%ldm%*ld\033[0m  ", buffer.line_number_color + (line == lcl ? 5 : 0), line_number_digits, line);
+		if (this.show_line_numbers and vl >= vol and vl < vol + window_rows - this.show_status) {
+			if (not col or (not sc and not sl)) 
+				length += sprintf(screen + length, 
+					"\033[38;5;%ldm%*ld\033[0m  ", 
+					this.line_number_color + (line == lcl ? 5 : 0), 
+					line_number_digits, line
+				);
 			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
 		}
 
@@ -649,8 +1400,8 @@ static inline void display() {
 				if (vc + (tab_width - vc % tab_width) > wrap_width) goto next_visual_line;
 
 				do { 
-					if (	vc >= voc and vc < voc + window_columns - line_number_width
-					and 	vl >= vol and vl < vol + window_rows - show_status
+					if (	vc >= voc and vc < voc + window_columns - this.line_number_width
+					and 	vl >= vol and vl < vol + window_rows - this.show_status
 					) {
 						screen[length++] = ' '; sc++;
 					}
@@ -658,8 +1409,8 @@ static inline void display() {
 				} while (vc % tab_width);
 
 			} else {
-				if (	vc >= voc and vc < voc + window_columns - line_number_width
-				and 	vl >= vol and vl < vol + window_rows - show_status 
+				if (	vc >= voc and vc < voc + window_columns - this.line_number_width
+				and 	vl >= vol and vl < vol + window_rows - this.show_status 
 				and 	(sc or visual(k))
 				) { 
 					screen[length++] = k;
@@ -671,13 +1422,13 @@ static inline void display() {
 				} 
 			}
 
-		} while (sc < window_columns - line_number_width or col < lines[line].count);
+		} while (sc < window_columns - this.line_number_width or col < lines[line].count);
 
 	next_logical_line:
 		line++; col = 0;
 
 	next_visual_line:
-		if (vl >= vol and vl < vol + window_rows - show_status) {
+		if (vl >= vol and vl < vol + window_rows - this.show_status) {
 			screen[length++] = '\033';
 			screen[length++] = '[';	
 			screen[length++] = 'K';
@@ -690,18 +1441,18 @@ static inline void display() {
 
 		vl++; vc = 0; 
 
-	} while (sl < window_rows - show_status);
+	} while (sl < window_rows - this.show_status);
 
-	if (show_status) {
+	if (this.show_status) {
 
 		nat status_length = sprintf(screen + length, " %ld %ld %ld %ld %ld %s %c%c %s",
-			buffer.mode, 
+			this.mode, 
 			active_index, buffer_count,
 			lcl, lcc, 
-			filename, 
-			buffer.saved ? 's' : 'e', 
-			buffer.autosaved ? ' ' : '*',
-			message
+			this.filename, 
+			this.saved ? 's' : 'e', 
+			this.autosaved ? ' ' : '*',
+			this.message
 		);
 		length += status_length;
 
@@ -713,7 +1464,7 @@ static inline void display() {
 		screen[length++] = 'm';
 	}
     
-	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", vsl + 1, vsc + 1 + line_number_width);
+	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", vsl + 1, vsc + 1 + this.line_number_width);
 
 	if (not fuzz)  
 		write(1, screen, (size_t) length);
@@ -722,15 +1473,20 @@ static inline void display() {
 
 static inline void textbox_display(const char* prompt, nat prompt_color) {
 
-	static char* screen = NULL; 
-
-	adjust_width(); //
+	struct winsize window = {0};
+	ioctl(1, TIOCGWINSZ, &window);
+	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 15; window.ws_col = 50; }
+	if (window.ws_row != window_rows or window.ws_col != window_columns) {
+		window_rows = window.ws_row;
+		window_columns = window.ws_col - 1; 
+		screen = realloc(screen, (size_t) (window_columns * 4));
+	}
 
 	nat length = sprintf(screen, "\033[?25l\033[%ld;1H\033[38;5;%ldm%s\033[m", window_rows, prompt_color, prompt);
-	nat col = 0, vc = 0, sc = tb.prompt_length;
-	while (sc < window_columns and col < tb.count) {
-		char k = tb.data[col];
-		if (vc >= tb.vo and vc < tb.vo + window_columns - tb.prompt_length and (sc or visual(k))) {
+	nat col = 0, vc = 0, sc = textbox.line_number_width;
+	while (sc < window_columns and col < textbox.lines[lcl].count) {
+		char k = textbox.lines[lcl].data[col];
+		if (vc >= textbox.voc and vc < textbox.voc + window_columns - textbox.line_number_width and (sc or visual(k))) {
 			screen[length++] = k;
 			if (visual(k)) { sc++; }
 		}
@@ -741,7 +1497,7 @@ static inline void textbox_display(const char* prompt, nat prompt_color) {
 	for (nat i = sc; i < window_columns; i++) 
 		screen[length++] = ' ';
 
-	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", window_rows, tb.vs + 1 + tb.prompt_length);
+	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", window_rows, textbox.vsc + 1 + textbox.line_number_width);
 
 	if (not fuzz) 
 		write(1, screen, (size_t) length);
@@ -761,17 +1517,12 @@ static inline void clear_above_textbox() {
 
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
 
-
 	tb.prompt_length = unicode_strlen(prompt_message);
 	do {
 		adjust_window_size();
 		textbox_display(prompt_message, color);
-		char c = 0;
-		
-		if (fuzz) {
-			if (fuzz_input_index >= fuzz_input_count) break;
-			c = (char) fuzz_input[fuzz_input_index++];	
-		} else read(0, &c, 1);
+
+		char c = read_stdin();
 
 		if (c == '\r' or c == '\n') break;
 		else if (c == '\t') {  
@@ -782,18 +1533,10 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 		}
 		else if (c == 27 and stdin_is_empty()) { tb.count = 0; break; }
 		else if (c == 27) {
-
-			if (fuzz) {
-				if (fuzz_input_index >= fuzz_input_count) break;
-				c = (char) fuzz_input[fuzz_input_index++];	
-			} else read(0, &c, 1);
+			c = read_stdin();
 
 			if (c == '[') {
-
-				if (fuzz) {
-					if (fuzz_input_index >= fuzz_input_count) break;
-					c = (char) fuzz_input[fuzz_input_index++];	
-				} else read(0, &c, 1);
+				c = read_stdin();
 
 				if (c == 'A') {}
 				else if (c == 'B') {}
@@ -840,20 +1583,15 @@ static inline void store_current_data_to_buffer() {
 	if (not buffer_count) return;
 
 	const nat b = active_index;
-	
-	buffers[b].saved = buffer.saved;
-	buffers[b].autosaved = buffer.autosaved;
-	buffers[b].mode = buffer.mode;
+	buffers[b] = this;
 
 	buffers[b].wrap_width = wrap_width;
 	buffers[b].tab_width = tab_width;
-	buffers[b].line_number_width = line_number_width;
-	buffers[b].needs_display_update = buffer.needs_display_update;
-	buffers[b].show_status = show_status;
-	buffers[b].show_line_numbers = show_line_numbers;
-
 	buffers[b].capacity = capacity;
 	buffers[b].count = count;
+	buffers[b].head = head;
+	buffers[b].action_count = action_count;
+	buffers[b].actions = actions;
 	buffers[b].lines = lines;
 
 	buffers[b].lcl = lcl;  buffers[b].lcc = lcc; 
@@ -862,135 +1600,84 @@ static inline void store_current_data_to_buffer() {
 	buffers[b].vsl = vsl;  buffers[b].vsc = vsc; 
 	buffers[b].vdc = vdc;  buffers[b].lal = lal;
 	buffers[b].lac = lac; 
-
-	buffers[b].alert_prompt_color = buffer.alert_prompt_color;
-	buffers[b].info_prompt_color = buffer.info_prompt_color;
-	buffers[b].default_prompt_color = buffer.default_prompt_color;
-	buffers[b].line_number_color = buffer.line_number_color;
-	buffers[b].status_bar_color = buffer.status_bar_color;
-
-	buffers[b].scroll_speed = buffer.scroll_speed;
-	buffers[b].use_txt_extension_when_absent = buffer.use_txt_extension_when_absent;
-
-	buffers[b].head = head;
-	buffers[b].action_count = action_count;
-	buffers[b].actions = actions;
-
-	memcpy(buffers[b].message, message, sizeof message);
-	memcpy(buffers[b].filename, filename, sizeof filename);
 }
 
 static inline void load_buffer_data_into_registers() {
 	if (not buffer_count) return;
 
-	struct buffer this = buffers[active_index];
-	
-	buffer.saved = this.saved;
-	buffer.autosaved = this.autosaved;
-	buffer.mode = this.mode;
+	struct buffer ba = buffers[active_index];
+	this = ba;
 
-	wrap_width = this.wrap_width;
-	tab_width = this.tab_width;
-	line_number_width = this.line_number_width;
-	buffer.needs_display_update = this.needs_display_update;
+	capacity = ba.capacity;
+	count = ba.count;
+	wrap_width = ba.wrap_width;
+	tab_width = ba.tab_width;
+	head = ba.head;
+	action_count = ba.action_count;
+	lines = ba.lines;
+	actions = ba.actions;
 
-	capacity = this.capacity;
-	count = this.count;
-	lines = this.lines;
-
-	lcl = this.lcl;  lcc = this.lcc;
-	vcl = this.vcl;  vcc = this.vcc;
-	vol = this.vol;  voc = this.voc; 
-	vsl = this.vsl;  vsc = this.vsc; 
-	vdc = this.vdc;  lal = this.lal;
-	lac = this.lac;  
-
-	buffer.alert_prompt_color = this.alert_prompt_color;
-	buffer.info_prompt_color = this.info_prompt_color;
-	buffer.default_prompt_color = this.default_prompt_color;
-	buffer.line_number_color = this.line_number_color;
-	buffer.status_bar_color = this.status_bar_color;
-
-	head = this.head;
-	action_count = this.action_count;
-	actions = this.actions;
-	
-	show_status = this.show_status;
-	this.scroll_speed = this.scroll_speed;
-	show_line_numbers = this.show_line_numbers;
-	buffer.use_txt_extension_when_absent = this.use_txt_extension_when_absent;
-
-	memcpy(message, this.message, sizeof message);
-	memcpy(filename, this.filename, sizeof filename);
+	lcl = ba.lcl;  lcc = ba.lcc;
+	vcl = ba.vcl;  vcc = ba.vcc;
+	vol = ba.vol;  voc = ba.voc; 
+	vsl = ba.vsl;  vsc = ba.vsc; 
+	vdc = ba.vdc;  lal = ba.lal;
+	lac = ba.lac;
 }
 
 static inline void zero_registers() {    // does this need to exist?... 
 
 	wrap_width = 0;
 	tab_width = 0;
-	line_number_width = 0;
-
-	show_status = 0;
-	show_line_numbers = 0;
 
 	capacity = 0;
 	count = 0;
+
+	head = 0;
+	action_count = 0;
+
 	lines = NULL;
+	actions = NULL;
 
 	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
 	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
 
-	head = 0;
-	action_count = 0;
-	actions = NULL;
-
-	memset(message, 0, sizeof message);
-	memset(filename, 0, sizeof filename);
-
-	buffer = (struct buffer){0};
-
+	this = (struct buffer){0};
+	textbox = (struct buffer){0};
 	buffers = NULL;
 	buffer_count = 0;
-	active_index = 0;	
+	active_index = 0;
 }
 
 static inline void initialize_registers() {
 	
-	buffer.saved = true;
-	buffer.autosaved = true;
-	buffer.mode = 0;
-
-	wrap_width = 0; // init using file 
-	tab_width = 8; // init using file
-	line_number_width = 0;
-
-	show_status = 1; // init using file
-	show_line_numbers = 0; // init using file
-	buffer.needs_display_update = 1;
-
+	wrap_width = 0;
+	tab_width = 8; 
 	capacity = 1;
 	count = 1;
+	head = 0;
+	action_count = 1;
 	lines = calloc(1, sizeof(struct line));
+	actions = calloc(1, sizeof(struct action));
 
 	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
 	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
 
-	//TODO: make these initial default_values read from a config file or something.. 
-	buffer.alert_prompt_color = 196; // init using file
-	buffer.info_prompt_color = 45; // init using file
-	buffer.default_prompt_color = 214; // init using file
-	buffer.line_number_color = 236; // init using file
-	buffer.status_bar_color = 245; // init using file
-	
-	buffer.scroll_speed = 4; // init using file
-	buffer.use_txt_extension_when_absent = 1; // init using file
+	this.show_status = 1;
+	this.show_line_numbers = 1; 
+	this.line_number_width = 0;
+	this.saved = true;
+	this.autosaved = true;
+	this.mode = 0;
+	this.alert_prompt_color = 196; 
+	this.info_prompt_color = 45; 
+	this.default_prompt_color = 214; 
+	this.line_number_color = 236; 
+	this.status_bar_color = 245; 
+	this.use_txt_extension_when_absent = 1;
 
-	head = 0;
-	action_count = 1;
-	actions = calloc(1, sizeof(struct action));
-
-	memset(message, 0, sizeof message);
-	memset(filename, 0, sizeof filename);
+	memset(this.message, 0, sizeof message);
+	memset(this.filename, 0, sizeof filename);
 }
 
 static inline void create_empty_buffer() {
@@ -2368,6 +3055,61 @@ static char message[4096] = {0};
 
 static char filename[4096] = {0};
 
+*/
+
+
+
+
+
+
+
+/*
+	this.saved = ba.saved;
+	this.autosaved = ba.autosaved;
+	this.mode = ba.mode;
+
+	this.line_number_width = ba.line_number_width;
+	this.needs_display_update = ba.needs_display_update;
+	this.alert_prompt_color = ba.alert_prompt_color;
+	this.info_prompt_color = ba.info_prompt_color;
+	this.default_prompt_color = ba.default_prompt_color;
+	this.line_number_color = ba.line_number_color;
+	this.status_bar_color = ba.status_bar_color;
+
+	this.show_status = ba.show_status;
+	this.show_line_numbers = ba.show_line_numbers;
+	this.use_txt_extension_when_absent = ba.use_txt_extension_when_absent;
+
+	memcpy(this.message, ba.message, sizeof this.message);
+	memcpy(this.filename, ba.filename, sizeof this.filename);
+*/
+
+
+
+
+
+
+/*	
+	buffers[b].saved = buffer.saved;
+	buffers[b].autosaved = buffer.autosaved;
+	buffers[b].mode = buffer.mode;
+
+	buffers[b].line_number_width = line_number_width;
+	buffers[b].needs_display_update = buffer.needs_display_update;
+	buffers[b].show_status = show_status;
+	buffers[b].show_line_numbers = show_line_numbers;
+
+	buffers[b].alert_prompt_color = buffer.alert_prompt_color;
+	buffers[b].info_prompt_color = buffer.info_prompt_color;
+	buffers[b].default_prompt_color = buffer.default_prompt_color;
+	buffers[b].line_number_color = buffer.line_number_color;
+	buffers[b].status_bar_color = buffer.status_bar_color;
+
+
+	buffers[b].use_txt_extension_when_absent = buffer.use_txt_extension_when_absent;
+
+	memcpy(buffers[b].message, this.message, sizeof message);
+	memcpy(buffers[b].filename, this.filename, sizeof filename);
 */
 
 

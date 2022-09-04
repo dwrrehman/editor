@@ -14,6 +14,23 @@
 
 
 
+// todo:   we should add a    non-full-screen mode,     where we  
+					dont use the alternate screen, but instead,
+
+				we actually only print serveral lines, and never clear the screen,
+
+				used for when you dont want a full screen editor. i think... not sure about this... hm...
+
+					yeah, ill have to think about it 
+
+
+	
+			
+
+
+
+
+
 
 IMPL.
 ===========
