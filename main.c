@@ -19,6 +19,23 @@
 // 	     edited on 2209036.110503
 // 	   
 
+
+/*
+	------------- todo list ----------------
+
+		- display the *n buffer.
+
+		- add selecting/anchor/recent logic. (only using "lal/lac").
+
+		- get the textbox working using *n.
+
+		- get the status bar working, using *n.
+
+		- add the ww=0 ww_disable code everywhere.
+
+
+*/
+
 #include <iso646.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -58,7 +75,7 @@ enum action_type {
 	no_action,
 	insert_action,
 	delete_action,
-	paste_text_action,
+	paste_action,
 	cut_action,
 	anchor_action,
 };
@@ -72,28 +89,23 @@ struct buffer {
 	struct line* lines;
 	struct action* actions;
 
-	nat     saved, mode, autosaved, 
-		selecting, ww_fix, count, capacity, line_number_width,
-
+	nat     saved, mode, autosaved, action_count, head, count, capacity, 
+		selecting, wrap_width, tab_width, window_rows, window_columns,
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 
 		vsl, vsc, 	vdc,    	lal, lac,
-
-		wrap_width, tab_width, 
-		show_status, show_line_numbers, 
-		use_txt_extension_when_absent,
-		line_number_color, status_bar_color, alert_prompt_color, 
-		info_prompt_color, default_prompt_color,
-		action_count, head
+		sn_rows, show_line_numbers, ww_fix, 
+		line_number_width, use_txt_extension_when_absent
 	;
 
 	char filename[4096];
 	char location[4096];
 	char message[4096];
+	char selected_file[4096] = {0};
+	char cwd[4096] = {0};
 };
 
 struct logical_state {
-	nat     saved, autosaved, selecting, 
-		ww_fix, wrap_width, tab_width,
+	nat     saved, autosaved, selecting, wrap_width, tab_width,
 		lcl, lcc, 	vcl, vcc,  	vol, voc, 
 		vsl, vsc, 	vdc,    	lal, lac;
 };
@@ -110,19 +122,17 @@ struct action {
 	struct logical_state post;
 };
 
+static pthread_mutex_t mutex;
 static size_t fuzz_input_index = 0;       
 static size_t fuzz_input_count = 0;       
 static const uint8_t* fuzz_input = NULL;  
-static nat window_rows = 0, window_columns = 0;
+static char* screen = NULL;
+
 static nat buffer_count = 0, active_index = 0; 
-static struct buffer* buffers = NULL;
-static struct buffer this = {0}, textbox = {0}; 
-static char selected_file[4096] = {0};
-static char cwd[4096] = {0};
-static pthread_mutex_t mutex;
+static struct buffer* buffers = NULL, this = {0};
+
 static struct line* lines;
 static struct action* actions;
-static char* screen = NULL;
 static nat 
 	count, capacity, 
 	action_count, head, 
@@ -131,785 +141,18 @@ static nat
 	vsl, vsc, 	vdc,    	lal, lac
 ;
 
-
-	
-1. store registers to buffer
-2. set active buffer to "after last buffer"
-3. perform a context switch   (load active buffer into registers)
-4. now the last buffer (the textbox) is in the registers! now use move left, and move right as normal, but prevent moving before, or at the end of a line! up-arrow and down-arrow change the history for the command buffer, 
-
-
-actually
-
-
-			do we just rip out the textbox system?... like literally...
-				we dont even atually need it 
-
-
-					like why exactly do we need it...!?
-
-
-	
-	
-
-			currently, we are using it for command mode, 
-
-				the ability to paste the current selection into the text buffer...
-
-					a displaying which doesnt wrap the lines... which i dont think matters too much... 
-
-						and then...
-
-										ummm
-
-
-						hmm
-
-
-							actually 
-
-	
-					i feel like the ability to have the textbox NOT take up the entire screen is actually useful..
-
-					at laest, when you want to be able to see both the textbox, and the screen at the same time. 
-
-						so yeah.... i think we HAVE to keep it,  it is useful, at least visuallyyyyy
-
-
-
-					butttt
-
-					i think that we can totallyyyyy just make it use (ALMOST) ALLLLLL the buffer machinery, and literally act like just another buffer. 
-
-
-				in fact, i actually dont see any reason why, we cant just...      wait no, we cant give control flow to the main loop, thatd be bad
-
-
-					we use this function     a textbox,      for getting a string of course, 
-
-						which.... 
-
-
-							i mean, 
-
-
-
-						.....if you think about it... 
-
-
-
-							why cant you just type in the current buffer, in order to do that?
-
-									like literally....
-
-							hmmm
-
-
-
-						okay, maybe we dont need the textbox?....  hmmmmmm
-
-
-
-								well, i mean, if we get rid of it being a seperate place,    then like, 
-
-								i just dont think its what we want, in alot of screnatious,   we also loose the whole history stufff.... so like, i would kinda prefer to not use the main loop   for printing buffers, and stuff
-							(and of course, the idea would be that we could just have an if statement, checking if we are visualizing the textbox or just a regular buffer... 
-					because the textbox would have index "buffer_count"   basically 
-
-
-							that part, i knnow for sure. i want to store the textbox stuff there. 
-
-
-						then, when we are saving, i guess i can just 
-
-
-
-									save the textbox like i would any other file?
-
-
-								or maybe it automatically saves, when you leave the textbox... actually, yeah i like that one more. 
-
-
-
-								wait, how does it get smaller?  umm... i guess it doesnt lol. 
-
-
-
-
-						hmm
-
-
-								maybe we just delete the beginning portion of it, every now and then.. lol
-
-
-					i mean, it isnt too hard to set a cap on the number of lines. lol. anyways 
-
-
-
-
-
-					
-
-	
-
-			so, yeah, i am definitely using a   buffer   to store the textbox info, 
-
-
-				and i am also definitelyyyyy settling on having a seperate main loop for it, one that has the custom commands, i think.... hmm... yeah i think we needddddd to 
-
-
-							just because, with the history,  it behaves so differently from the other buffers. 
-
-								
-
-
-
-				i am technically still considering   making the current buffer itself, with all of its content, just be the textbox that we actully use to type in.... but i dont think thats a good idea.... because like, 
-
-
-						what if we dont have edit permissions for the file?   hmmm
-
-
-
-							or, i guess... what if we want to have a history?  we would totally loose our nice history stuffff    if we made the current file the textbox. even though, that would make things very easy, technically...
-
-
-							i think a textbox is actually important enough, that we need to have a seperate thing for it. i just think we do. i think we need it to be seperate from the file itself. yeah. idk why,  but i really feel like we need to. 
-
-
-	
-						the textbox is actually part of confirming some mission critical duties, and so, i feel like we shouldnt be using "the current line" for that. hmmmmmmm
-
-
-						i mean, if it was in a buffer all on its own, then itd be fine?
-
-
-						i think?
-
-
-
-							its just.. now we cant see the file lol. 
-
-
-							i guess ideally, we could display two files at once.  thatd be ideal, i guess..
-
-
-
-					although, that gets super complicated, and i dont reallyyy want to support that at all. 
-
-
-							so yeah. i just want to have the textbox i think. its alittle bit more code, but its not that bad, i think. 
-
-
-
-							
-
-
-
-			oh wait
-
-
-
-					actually 
-
-
-
-					having a horizontal split, at least, is actually really simple, i think...?
-
-				hmmmmmmmm
-
-
-						its just... a tiny bit odd... 
-
-
-						ill think about it... 
-
-
-
-
-
-
-				i mean, it would be super cool to have the textbox just be a buffer.
-
-
-	
-	
-					buttt!!!! what would be the prompt?
-
-
-
-
-						like, how would we actually do anything?... wait
-
-
-
-				this sounds like it doesnt exactly work?
-
-
-
-
-			or, wait, i guesss we would just use the status... hmmm
-
-
-
-				
-
-
-			and i mean
-
-
-
-			actually 
-
-	
-	
-					technically 
-	
-
-	
-		wait
-
-
-
-
-		lol
-
-
-			isnt the status bar, technically just a buffer, which holds that stufff lol
-
-
-
-		its literally the other buffer 
-
-
-				right there
-
-
-			its the status buffer 
-
-
-
-					hahaha
-
-
-	
-					hmm
-
-
-									okay
-
-
-
-
-
-							that could actually work
-
-
-
-
-						and i guess, the thing is, this buffer is given the values from your current buffer. 
-
-
-						and of course, 
-
-
-
-
-			or 
-
-
-
-
-		i guess 
-
-
-					its more of just like... a scratch buffer, ,...?   thats interestinggg
-
-
-
-				very very very very interestinggg
-
-
-
-		
-
-
-
-	
-
-		if you use a horizontal split,  
-
-
-			and just have it enabled alwaysss
-
-
-						(like,you know the    show_status_bar var?   that is literally the split height, of the scratch buffer!!!!)
-
-
-
-
-						so yeah,  that actually mightttt work 
-
-
-
-								ohhh and you can set the split height to zero, of course,   
-
-
-									which simply just sets the 
-
-
-
-
-ohh
-
-
-		yikes
-
-
-			nopeee
-
-
-
-							this is not good
-
-
-
-						you would have to like... errr
-
-
-
-										you literally couldnt use the split window thingy
-
-														for yourrr files
-
-
-											you couldnt 
-
-
-											you could only use it for the scratch buffer
-
-
-
-
-									which is used for... i guess textbox entry,  
-
-
-									and also the status bar
-
-
-			so yeah
-
-
-						i mean, that genuinely could work actually
-
-
-	
-	
-	
-			it is definitely a huge redesign of that system 
-
-					hmmm
-
-
-
-	
-	
-	
-		i meann, i kinda like it 
-
-	
-	
-
-				so there is one buffer which is always displayed, no matter what.
-
-
-						and thats the  scratch bufffer. 
-
-
-	
-						it issssss the status bar
-
-
-						     ANDDDDD the textbox
-
-
-
-					and all we need to make it work,   is the ability to display two files, 
-
-
-							one on the top half of the screen,   and one on the bottom halft 
-
-
-	
-								superrrr simple, we already made our code, so we can do it easily, i think.. 
-
-				hmm
-
-
-	
-							wow
-
-	
-
-				quite interesting, huh!
-
-
-	
-
-	
-			of course,   when we display the scratch, we never pring the cursor inside it,   until we actually want to use it as a textbox!!!
-
-						very very very very very cool 
-
-
-
-				i think i am going to dedfinitely take this approach. 
-	
-	
-				i think its super cool, actually 
-
-
-
-
-
-					it also allows us to copy from the status message,   its just so unifying actually 
-
-	
-	
-					
-
-
-
-		so how does the scratch buffer work...?
-
-	
-				like, what is the layout of stuff?
-
-	
-
-	
-	
-		well
-
-	
-				the status stuff is at the top of the file.   it is constantly edited, as you use the editor, and the values are updated. they are kinda like displaying the registers of the editor, actually, which is super cool. 
-
-				
-
-							oh my god this is actaully beautiful., 
-
-
-
-
-									OF COURSE,,,,    THE SCRATCH REGISTER LIVES AT BUFFER_COUNT!!!
-
-
-												so beautiful 
-
-
-
-						yessssssssssss
-
-
-									i love this so much
-
-
-											you can call it       "*n"  kinda
-
-
-									yeah
-
-
-											hahaha i love that so much
-
-
-
-									its just like the ua theory 
-
-	
-
-				ohhh and    show_status_bar    is renamed to    scratch_lines_display_count   or something 
-
-
-						and its a     nat     that you can incr, and decr.
-
-								if it goes to zero, thats literlalyy     show_status = false
-
-
-										and if you ever trigger a textbox,  
-
-
-										then active_buffer = buffer_count
-
-
-
-
-									which amazing and beautiful!!!!
-
-
-
-
-				yayyyyyyyyyy
-
-
-
-					i love this alot!!!
-
-
-					yayyyyyyyyyyy
-
-
-								so happy i found this 
-
-
-
-
-		so anyways,  
-
-
-			the textbox always appends to the end of the *n buffer. always. 
-
-			
-
-
-				it is automatically saved, upon exiting the textbox utility. i think. pretty sure. 
-
-	
-	
-					andddd
-
-								you cannnn actually move into it,   while NOT using the textbox utility. 
-
-
-										so, you can literally edit it as a simple buffer. 
-
-
-	
-									ANDDDDDD it is always at the bottom where it is. 
-
-										yeah. cool. that is literally so cool. 
-
-
-												yayyyyy
-
-
-
-										okay, so, if so, we literally can just update our display function, and then everything is simple!!!
-
-
-						wow!!!
-
-
-
-								what a simplification. 
-
-
-
-								then, the textbox utility gets the current line, as a string, of course. 
-
-
-										very simple. 
-
-
-									i love this so much!!! so beautiful. 
-
-
-									very very very very very very very cool 
-
-							oh, also, the textbox utility actually inserts a string, on the line you have to give the answer. 
-
-
-
-					ohhh, one thing
-
-
-							you cant color things
-
-
-						so like 
-
-
-					yeah
-
-
-								the status bar,   the prompt colors
-
-
-
-							those all have to go 
-
-
-
-							but thats fine haha      i didnt really need them anyways
-
-
-											yeah, i like just black and white anyways
-
-
-
-	
-				
-
-
-
-			okay, this is totally going to work, i think 
-
-
-				i love this so much 
-
-
-	
-			
-
-
-			the human is the comparator circuit, "<",    comparing   *i   (the current buffer)  and *n   the scratch buffer
-
-
-							this literally could not be more correct, and beautiful. 
-
-
-	
-				like, i am totally certain, we found the way that we are going to write this editor, 
-
-
-						and deal with split windows,   and the textbox,   and the status bar
-
-
-								all of those odd things,     have all been unified under this single idea 
-
-											of a scratch buffer 
-
-
-
-
-
-							so amazing 
-
-
-									so good 
-
-							yayyyyyy
-
-
-
-						i love it 
-
-
-
-	
-				should simply things, while allowing for more emergent features! i think 
-
-
-
-
-				
-						
-
-
-
-
-
-
-
-
-	wow this is literally amazing          i am so happy i found this
-
-			
-
-
-				so
-
-
-					note:      we are not storing the    "registers we are displaying in the status bar"
-
-
-						we are not storingggggg those valuse in the scratch buffer, (aka the *n buffer!!)
-
-
-							we are just           printtttinggggg   those values   into the first two lines of the scratch buffer,  because its useful to show them there. 
-
-
-
-							very very veryuseful. 
-
-
-
-
-		infact,    any register in the editor,  or for a buffer, 
-
-
-
-					that we want to visualize, 
-
-
-
-						we will actually   print    inside the scratch buffer!
-
-
-
-
-						oh!!!
-
-
-
-									including the meta data / registers    of   *n itself!!!
-
-
-
-											that is also found inside the scatch buffer!
-
-
-
-										i think 
-
-
-										somewheer
-
-
-
-
-
-
-						so yeah
-
-
-
-
-				this is reallyyyy       like actually 
-
-
-
-							the righe way to do things 
-
-
-
-
-	
-			
-
-
-
-
-
-
-
-
-
-
-
-
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
 static inline bool file_exists(const char* f) { return access(f, F_OK) != -1; }
 
-static inline nat unicode_strlen(const char* string) {
+/*static inline nat unicode_strlen(const char* string) {
 	nat i = 0, length = 0;
 	while (string[i]) {
 		if (visual(string[i])) length++;
 		i++;
 	}
 	return length;
-}
+}*/
 
 static inline char read_stdin() {
 	char c = 0;
@@ -1017,7 +260,7 @@ static inline void move_right() {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0; 
 line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
-		if (vsl + 1 < window_rows - this.show_status) vsl++; 
+		if (vsl + 1 < window_rows - this.sn_rows) vsl++; 
 		else vol++;
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
@@ -1132,7 +375,6 @@ static inline void record_logical_state(struct logical_state* pcond_out) {
 
 	p->saved = this.saved;
 	p->autosaved = this.autosaved;
-	p->ww_fix = this.ww_fix;
 	p->selecting = this.selecting;
 
 	p->lcl = lcl;  p->lcc = lcc; 	
@@ -1151,7 +393,6 @@ static inline void require_logical_state(struct logical_state* pcond_in) {
 
 	this.saved = p->saved;
 	this.autosaved = p->autosaved;
-	this.ww_fix = p->ww_fix;
 	this.selecting = p->selecting;
 
 	lcl = p->lcl;  lcc = p->lcc; 	
@@ -1318,7 +559,7 @@ static void insert_string(const char* string, nat length) {
 		insert((char) string[i], 0);
 	
 	record_logical_state(&new.post);
-	new.type = paste_text_action;
+	new.type = paste_action;
 	new.text = strndup(string, (size_t) length);
 	new.length = length;
 	create_action(new);
@@ -1330,7 +571,7 @@ static inline void insertdt() {
 	insert_string(datetime, 14);
 }
 
-static inline void display() {
+static inline void display(nat begin_row) {
 
 	static char* screen = NULL;
 	struct winsize window = {0};
@@ -1345,10 +586,11 @@ static inline void display() {
 	const nat w = (window_columns - 1) - (this.line_number_width);
 	if (this.ww_fix and wrap_width != w) wrap_width = w;
 
-	nat length = 9; 
-	memcpy(screen, "\033[?25l\033[H", 9);
+	nat length = 6; 
+	memcpy(screen, "\033[?25l", 6);
+	length += sprintf(screen + length, "\033[%ld;%ldH", begin_row + 1, 1L);
 	
-	nat sl = 0, sc = 0; 
+	nat sl = begin_row, sc = 0; 
 	nat vl = vol, vc = voc; 
 
 	if (fuzz) {
@@ -1360,7 +602,7 @@ static inline void display() {
 		if (vcc < 0) abort();
 		if (vsl < 0) abort();
 		if (vsc < 0) abort();
-	}
+	} // we shouldnt need this... but....
 
 	struct logical_state state = {0};
 	record_logical_state(&state);
@@ -1380,12 +622,11 @@ static inline void display() {
 	do {
 		if (line >= count) goto next_visual_line;
 
-		if (this.show_line_numbers and vl >= vol and vl < vol + window_rows - this.show_status) {
+		if (this.show_line_numbers and vl >= vol and vl < vol + window_rows - this.sn_rows) {
 			if (not col or (not sc and not sl)) 
 				length += sprintf(screen + length, 
 					"\033[38;5;%ldm%*ld\033[0m  ", 
-					this.line_number_color + (line == lcl ? 5 : 0), 
-					line_number_digits, line
+					236L + (line == lcl ? 5 : 0), line_number_digits, line
 				);
 			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
 		}
@@ -1401,7 +642,7 @@ static inline void display() {
 
 				do { 
 					if (	vc >= voc and vc < voc + window_columns - this.line_number_width
-					and 	vl >= vol and vl < vol + window_rows - this.show_status
+					and 	vl >= vol and vl < vol + window_rows - this.sn_rows
 					) {
 						screen[length++] = ' '; sc++;
 					}
@@ -1410,7 +651,7 @@ static inline void display() {
 
 			} else {
 				if (	vc >= voc and vc < voc + window_columns - this.line_number_width
-				and 	vl >= vol and vl < vol + window_rows - this.show_status 
+				and 	vl >= vol and vl < vol + window_rows - this.sn_rows
 				and 	(sc or visual(k))
 				) { 
 					screen[length++] = k;
@@ -1428,7 +669,7 @@ static inline void display() {
 		line++; col = 0;
 
 	next_visual_line:
-		if (vl >= vol and vl < vol + window_rows - this.show_status) {
+		if (vl >= vol and vl < vol + window_rows - this.sn_rows) {
 			screen[length++] = '\033';
 			screen[length++] = '[';	
 			screen[length++] = 'K';
@@ -1441,36 +682,29 @@ static inline void display() {
 
 		vl++; vc = 0; 
 
-	} while (sl < window_rows - this.show_status);
+	} while (sl < window_rows - this.sn_rows);
 
-	if (this.show_status) {
 
-		nat status_length = sprintf(screen + length, " %ld %ld %ld %ld %ld %s %c%c %s",
-			this.mode, 
-			active_index, buffer_count,
-			lcl, lcc, 
-			this.filename, 
-			this.saved ? 's' : 'e', 
-			this.autosaved ? ' ' : '*',
-			this.message
-		);
-		length += status_length;
 
-		for (nat i = status_length; i < window_columns; i++)
-			screen[length++] = ' ';
+	// display *n buffer here! using this same function!
 
-		screen[length++] = '\033';
-		screen[length++] = '[';
-		screen[length++] = 'm';
-	}
-    
-	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", vsl + 1, vsc + 1 + this.line_number_width);
+
+
+
+	// only print cursor in *i   if   i != n  !!!!
+	// print in *n if i == n   of course.
+
+	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", begin_row + vsl + 1, vsc + 1 + this.line_number_width);
+
+
+	
+
 
 	if (not fuzz)  
 		write(1, screen, (size_t) length);
 }
 
-
+/*
 static inline void textbox_display(const char* prompt, nat prompt_color) {
 
 	struct winsize window = {0};
@@ -1559,6 +793,25 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 	tb = (struct textbox){0};
 }
 
+*/
+
+
+
+
+
+
+
+static inline void print_above_textbox(char* write_message) {
+	puts(write_message);
+}
+
+static inline void prompt(const char* prompt_message, char* out, nat out_size)  {
+	printf("%s, %s, %zd", prompt_message, out, out_size);
+}
+
+
+
+
 static inline bool confirmed(const char* question, const char* yes_action, const char* no_action) {
 
 	char prompt_message[4096] = {0}, invalid_response[4096] = {0};
@@ -1567,13 +820,12 @@ static inline bool confirmed(const char* question, const char* yes_action, const
 	
 	while (1) {
 		char response[4096] = {0};
-		prompt(prompt_message, buffer.alert_prompt_color, response, sizeof response);
-		clear_above_textbox();
+		prompt(prompt_message, response, sizeof response);
 
 		if (equals(response, yes_action)) return true;
 		else if (equals(response, no_action)) return false;
 		else if (equals(response, "")) return false;
-		else print_above_textbox(invalid_response, buffer.default_prompt_color);
+		else print_above_textbox(invalid_response);
 
 		if (fuzz) return true;
 	}
@@ -1643,7 +895,6 @@ static inline void zero_registers() {    // does this need to exist?...
 	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
 
 	this = (struct buffer){0};
-	textbox = (struct buffer){0};
 	buffers = NULL;
 	buffer_count = 0;
 	active_index = 0;
@@ -1651,7 +902,9 @@ static inline void zero_registers() {    // does this need to exist?...
 
 static inline void initialize_registers() {
 	
-	wrap_width = 0;
+	this = (struct buffer) {0};
+
+	wrap_width = 100;     // todo: change all checks of    x < ww     to     x < ww or not ww
 	tab_width = 8; 
 	capacity = 1;
 	count = 1;
@@ -1663,21 +916,13 @@ static inline void initialize_registers() {
 	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
 	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
 
-	this.show_status = 1;
+	this.sn_rows = 5;
 	this.show_line_numbers = 1; 
 	this.line_number_width = 0;
 	this.saved = true;
 	this.autosaved = true;
 	this.mode = 0;
-	this.alert_prompt_color = 196; 
-	this.info_prompt_color = 45; 
-	this.default_prompt_color = 214; 
-	this.line_number_color = 236; 
-	this.status_bar_color = 245; 
 	this.use_txt_extension_when_absent = 1;
-
-	memset(this.message, 0, sizeof message);
-	memset(this.filename, 0, sizeof filename);
 }
 
 static inline void create_empty_buffer() {
@@ -1730,7 +975,7 @@ static inline void open_file(const char* given_filename) {
 	FILE* file = fopen(given_filename, "r");
 	if (not file) {
 		if (buffer_count) {
-			sprintf(message, "error: fopen: %s", strerror(errno));
+			sprintf(this.message, "error: fopen: %s", strerror(errno));
 			return;
 		}
 		perror("fopen"); exit(1);
@@ -1743,20 +988,19 @@ static inline void open_file(const char* given_filename) {
         fread(text, sizeof(char), length, file);
 
 	create_empty_buffer();
-	adjust_window_size();
-	for (size_t i = 0; i < length; i++) 
-		insert(text[i], 0);
+	for (size_t i = 0; i < length; i++) insert(text[i], 0);
 
 	free(text); 
 	fclose(file);
-	buffer.saved = true; 
-	buffer.autosaved = true; 
-	buffer.mode = 1; 
+	this.saved = true; 
+	this.autosaved = true; 
+	this.mode = 1; 
 	move_top();
-	strcpy(filename, given_filename);
+	strcpy(this.filename, given_filename);
+	strcpy(this.location, given_filename); // todo:   seperate out these two things!!!
 	store_current_data_to_buffer();
 
-	sprintf(message, "read %lub", length);
+	sprintf(this.message, "read %lub", length);
 }
 
 static inline void emergency_save_to_file() {
@@ -1850,7 +1094,7 @@ static inline void autosave() {
 
 	fclose(file);
 
-	buffer.autosaved = true;
+	this.autosaved = true;
 }
 
 static void handle_signal_interrupt(int code) {
@@ -1873,26 +1117,25 @@ static void handle_signal_interrupt(int code) {
 static inline void save() {
 	if (fuzz) return;
 
-	if (not strlen(filename)) {
+	if (not strlen(this.filename)) {
 
 	prompt_filename:
 
-		prompt("save as: ", buffer.default_prompt_color, filename, sizeof filename);
+		prompt("save as: ", this.filename, sizeof this.filename);
 
-		if (not strlen(filename)) { sprintf(message, "aborted save"); return; }
+		if (not strlen(this.filename)) { sprintf(this.message, "aborted save"); return; }
 
-		if (not strrchr(filename, '.') and buffer.use_txt_extension_when_absent) strcat(filename, ".txt");
+		if (not strrchr(this.filename, '.') and this.use_txt_extension_when_absent) strcat(this.filename, ".txt");
 
-		if (file_exists(filename) and not confirmed("file already exists, overwrite", "overwrite", "no")) {
-			strcpy(filename, ""); goto prompt_filename;
+		if (file_exists(this.filename) and not confirmed("file already exists, overwrite", "overwrite", "no")) {
+			strcpy(this.filename, ""); goto prompt_filename;
 		}
 
 	}
 
-	FILE* file = fopen(filename, "w+");
+	FILE* file = fopen(this.filename, "w+");
 	if (not file) {
-		sprintf(message, "error: %s", strerror(errno));
-		strcpy(filename, "");
+		sprintf(this.message, "error: %s", strerror(errno));
 		return;
 	}
 	
@@ -1906,15 +1149,14 @@ static inline void save() {
 	}
 
 	if (ferror(file)) {
-		sprintf(message, "error: %s", strerror(errno));
-		strcpy(filename, "");
+		sprintf(this.message, "error: %s", strerror(errno));
 		fclose(file);
 		return;
 	}
 
 	fclose(file);
-	sprintf(message, "wrote %lldb;%ldl", bytes, count);
-	buffer.saved = true;
+	sprintf(this.message, "wrote %lldb;%ldl", bytes, count);
+	this.saved = true;
 }
 
 static inline void rename_file() {
@@ -1922,17 +1164,17 @@ static inline void rename_file() {
 
 	char new[4096] = {0};
 	prompt_filename:
-	prompt("rename to: ", buffer.default_prompt_color, new, sizeof new);
-	if (not strlen(new)) { sprintf(message, "aborted rename"); return; }
+	prompt("rename to: ", new, sizeof new);
+	if (not strlen(new)) { sprintf(this.message, "aborted rename"); return; }
 
 	if (file_exists(new) and not confirmed("file already exists, overwrite", "overwrite", "no")) {
 		strcpy(new, ""); goto prompt_filename;
 	}
 
-	if (rename(filename, new)) sprintf(message, "error: %s", strerror(errno));
+	if (rename(this.filename, new)) sprintf(this.message, "error: %s", strerror(errno));
 	else {
-		strncpy(filename, new, sizeof new);
-		sprintf(message, "renamed to \"%s\"", filename);
+		strncpy(this.filename, new, sizeof new);
+		sprintf(this.message, "renamed to \"%s\"", this.filename);
 	}
 }
 
@@ -1999,27 +1241,27 @@ static inline void interpret_escape_code() {
 
 static inline void prompt_open() {
 	char new_filename[4096] = {0};
-	prompt("open: ", buffer.default_prompt_color, new_filename, sizeof new_filename);
-	if (not strlen(new_filename)) { sprintf(message, "aborted open"); return; }
+	prompt("open: ", new_filename, sizeof new_filename);
+	if (not strlen(new_filename)) { sprintf(this.message, "aborted open"); return; }
 	open_file(new_filename);
 }
 
 static inline void prompt_jump_line() {
 	char string_number[128] = {0};
-	prompt("line: ", buffer.default_prompt_color, string_number, sizeof string_number);
+	prompt("line: ", string_number, sizeof string_number);
 	nat line = atoi(string_number);
 	if (line >= count) line = count - 1;
 	jump_line(line);
-	sprintf(message, "jumped to %ld %ld", lcl, lcc);
+	sprintf(this.message, "jumped to %ld %ld", lcl, lcc);
 }
 
 static inline void prompt_jump_column() {
 	char string_number[128] = {0};
-	prompt("column: ", buffer.default_prompt_color, string_number, sizeof string_number);
+	prompt("column: ", string_number, sizeof string_number);
 	nat column = atoi(string_number);
 	if (column > lines[lcl].count) column = lines[lcl].count;
 	jump_column(column);
-	sprintf(message, "jumped to %ld %ld", lcl, lcc);
+	sprintf(this.message, "jumped to %ld %ld", lcl, lcc);
 }
 
 static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last_line, nat last_column) {
@@ -2083,7 +1325,7 @@ static inline void paste() {
  if (not fuzz) {
 
 	FILE* file = popen("pbpaste", "r");
-	if (not file) { sprintf(message, "error: paste: popen(): %s", strerror(errno)); return; }
+	if (not file) { sprintf(this.message, "error: paste: popen(): %s", strerror(errno)); return; }
 	struct action new = {0};
 	record_logical_state(&new.pre);
 	char* string = malloc(256);
@@ -2104,9 +1346,9 @@ static inline void paste() {
 		insert((char)c, 0);
 	}
 	pclose(file);
-	sprintf(message, "pasted %ldb", length);
+	sprintf(this.message, "pasted %ldb", length);
 	record_logical_state(&new.post);
-	new.type = paste_text_action;
+	new.type = paste_action;
 	new.text = string;
 	new.length = length;
 	create_action(new);
@@ -2121,9 +1363,9 @@ static inline void paste() {
  	string = realloc(string, (size_t) (length + 1));
  	string[length++] = (char) 'A';
  	insert((char)'A', 0);
- 	sprintf(message, "pasted %ldb", length);
+ 	sprintf(this.message, "pasted %ldb", length);
  	record_logical_state(&new.post);
- 	new.type = paste_text_action;
+ 	new.type = paste_action;
  	new.text = string;
  	new.length = length;
  	create_action(new);
@@ -2150,9 +1392,9 @@ static inline void cut() {
 	nat deleted_length = 0;
 	char* deleted_string = get_selection(&deleted_length);
 	cut_selection();
-	sprintf(message, "deleted %ldb", deleted_length);
+	sprintf(this.message, "deleted %ldb", deleted_length);
 	record_logical_state(&new.post);
-	new.type = cut_text_action;
+	new.type = cut_action;
 	new.text = deleted_string;
 	new.length = deleted_length;
 	create_action(new);
@@ -2162,20 +1404,20 @@ static inline void copy() {
 	if (fuzz) return;
 
 	FILE* file = popen("pbcopy", "w");
-	if (not file) { sprintf(message, "error: copy: popen(): %s", strerror(errno)); return; }
+	if (not file) { sprintf(this.message, "error: copy: popen(): %s", strerror(errno)); return; }
 
 	nat length = 0;
 	char* selection = get_selection(&length);
 	fwrite(selection, 1, (size_t)length, file);
 	pclose(file);
 	free(selection);
-	sprintf(message, "copied %ldb", length);
+	sprintf(this.message, "copied %ldb", length);
 }
 
 static inline void run_shell_command(const char* command) {
 	FILE* f = popen(command, "r");
 	if (not f) {
-		sprintf(message, "error: could not run command \"%s\": %s\n", command, strerror(errno));
+		sprintf(this.message, "error: could not run command \"%s\": %s\n", command, strerror(errno));
 		return;
 	}
 
@@ -2191,27 +1433,27 @@ static inline void run_shell_command(const char* command) {
 	}
 	pclose(f);
 	lal = lcl; lac = lcc;
-	sprintf(message, "output %ldb", length);
+	sprintf(this.message, "output %ldb", length);
 	insert_string(output, length);
 }
 
 
 static inline void prompt_run() {
 	char command[4096] = {0};
-	prompt("run(2>&1): ", 85, command, sizeof command);
-	if (not strlen(command)) { sprintf(message, "aborted run"); return; }
-	sprintf(message, "running: %s", command);
+	prompt("run(2>&1): ", command, sizeof command);
+	if (not strlen(command)) { sprintf(this.message, "aborted run"); return; }
+	sprintf(this.message, "running: %s", command);
 	run_shell_command(command);
 }
 
 static inline void replay_action(struct action a) {
 	require_logical_state(&a.pre);
 	if (a.type == no_action or a.type == anchor_action) {}
-	else if (a.type == insert_action or a.type == paste_text_action) {
+	else if (a.type == insert_action or a.type == paste_action) {
 		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
 	} else if (a.type == delete_action) delete(0); 
-	else if (a.type == cut_text_action) cut_selection();
-	else sprintf(message, "error: unknown action");
+	else if (a.type == cut_action) cut_selection();
+	else sprintf(this.message, "error: unknown action");
 	require_logical_state(&a.post); 
 }
 
@@ -2219,11 +1461,11 @@ static inline void reverse_action(struct action a) {
 	require_logical_state(&a.post);
 	if (a.type == no_action or a.type == anchor_action) {}
 	else if (a.type == insert_action) delete(0);
-	else if (a.type == paste_text_action) {
+	else if (a.type == paste_action) {
 		while (lcc > a.pre.lcc or lcl > a.pre.lcl) delete(0);
-	} else if (a.type == delete_action or a.type == cut_text_action) {
+	} else if (a.type == delete_action or a.type == cut_action) {
 		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
-	} else sprintf(message, "error: unknown action");
+	} else sprintf(this.message, "error: unknown action");
 	require_logical_state(&a.pre);
 }
 
@@ -2231,9 +1473,9 @@ static inline void undo() {
 	if (not head) return;
 	reverse_action(actions[head]);
 
-	sprintf(message, "undoing %ld ", actions[head].type);
+	sprintf(this.message, "undoing %ld ", actions[head].type);
 	if (actions[head].count != 1) 
-		sprintf(message + strlen(message), "%ld %ld", actions[head].choice, actions[head].count);
+		sprintf(this.message + strlen(this.message), "%ld %ld", actions[head].choice, actions[head].count);
 
 	head = actions[head].parent;
 }
@@ -2247,47 +1489,46 @@ static inline void undo_silent() {
 static inline void redo() {
 	if (not actions[head].count) return;
 	head = actions[head].children[actions[head].choice];
-	sprintf(message, "redoing %ld ", actions[head].type);
+	sprintf(this.message, "redoing %ld ", actions[head].type);
 	if (actions[head].count != 1) 
-		sprintf(message + strlen(message), "%ld %ld", actions[head].choice, actions[head].count);
+		sprintf(this.message + strlen(this.message), "%ld %ld", actions[head].choice, actions[head].count);
 	replay_action(actions[head]);
 }
 
 static inline void alternate_incr() {
 	if (actions[head].choice + 1 < actions[head].count) actions[head].choice++;
-	sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
+	sprintf(this.message, "switched %ld %ld", actions[head].choice, actions[head].count);
 }
 
 static inline void alternate_decr() {
 	if (actions[head].choice) actions[head].choice--;
-	sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
+	sprintf(this.message, "switched %ld %ld", actions[head].choice, actions[head].count);
 }
 
 static inline void recalculate_position() {
 	nat save_lcl = lcl, save_lcc = lcc;
 	move_top();
-	adjust_window_size();
 	jump_to(save_lcl, save_lcc);
 }
 
 static inline void open_directory() {
 	
-	DIR* directory = opendir(current_path);
+	DIR* directory = opendir(cwd);
 	if (not directory) { 
-		sprintf(message, "couldnt open path=%s, reason=%s", current_path, strerror(errno));	
+		sprintf(this.message, "couldnt open cwd=%s, reason=%s", cwd, strerror(errno));	
 		return;
 	}
 
 	struct dirent *e = NULL;
 
-	nat length = (nat)strlen(current_path) + 2;
+	nat length = (nat)strlen(cwd) + 2;
 	char* menu = calloc((size_t) length + 1, sizeof(char));
-	sprintf(menu, ":%s\n", current_path);
+	sprintf(menu, ":%s\n", cwd);
 	
 	while ((e = readdir(directory))) {
 
 		char path[4096] = {0};
-		strlcpy(path, current_path, sizeof path);
+		strlcpy(path, cwd, sizeof path);
 		strlcat(path, e->d_name, sizeof path);
 
 		if (is_directory(path)) {
@@ -2313,11 +1554,11 @@ static inline void change_directory() {
 	char* selection = strndup(lines[lcl].data, (size_t) lines[lcl].count);
 
 	if (equals(selection, "../") ) {
-		if (not equals(current_path, "/")) {
-			current_path[strlen(current_path) - 1] = 0;
-			*(1+strrchr(current_path, '/')) = 0;
+		if (not equals(cwd, "/")) {
+			cwd[strlen(cwd) - 1] = 0;
+			*(1+strrchr(cwd, '/')) = 0;
 		} else {
-			sprintf(message, "error: at root /");
+			sprintf(this.message, "error: at root /");
 		}
 		
 	} else if (equals(selection, "./") ) {
@@ -2325,23 +1566,23 @@ static inline void change_directory() {
 
 	} else {
 		char path[4096] = {0};
-		strlcpy(path, current_path, sizeof path);
+		strlcpy(path, cwd, sizeof path);
 		strlcat(path, selection, sizeof path);
 
 		if (is_directory(path)) {
-			strlcat(current_path, selection, sizeof current_path);
+			strlcat(cwd, selection, sizeof cwd);
 		} else {
-			sprintf(message, "error: not a directory");
+			sprintf(this.message, "error: not a directory");
 		}
 	}
 }
 
 static inline void file_select() {
 	char* line = strndup(lines[lcl].data, (size_t) lines[lcl].count);
-	strlcpy(user_selection, current_path, sizeof user_selection);
-	strlcat(user_selection, line, sizeof user_selection);
+	strlcpy(selected_file, cwd, sizeof selected_file);
+	strlcat(selected_file, line, sizeof selected_file);
 	free(line);
-	sprintf(message, "selected: %s", user_selection);
+	sprintf(this.message, "selected: %s", selected_file);
 }
 
 static inline char** split(char* string, char delim, int* array_count) {
@@ -2373,16 +1614,16 @@ static inline char** split(char* string, char delim, int* array_count) {
 
 static inline void execute(char c, char p) {
 
-	if (buffer.mode == 0) {
+	if (this.mode == 0) {
 
-		if (c == 'c' and p == 'h') { undo(); buffer.mode = 1; }
-		else if (c == 27 and stdin_is_empty()) buffer.mode = 1;
+		if (c == 'c' and p == 'h') { undo(); this.mode = 1; }
+		else if (c == 27 and stdin_is_empty()) this.mode = 1;
 		else if (c == 27) interpret_escape_code();
 		else if (c == 127) delete(1);
 		else if (c == '\r') insert('\n', 1);
 		else insert(c, 1);
 
-	} else if (buffer.mode == 1) {
+	} else if (this.mode == 1) {
 
 	
 
@@ -2420,7 +1661,11 @@ static inline void execute(char c, char p) {
 		else if (c == 'm' and p == 'h') copy();
 		else if (c == 'c' and p == 'h') paste(); 
 		
-		else if (c == 't' and p == 'h') anchor();
+
+		// else if (c == 't' and p == 'h') anchor();    // we need to be using the "selecting" bool, 
+								// to know if we should update lal/lac per move. 
+								// thats the right way to do things. 
+
 		else if (c == 'd' and p == 'h') {}
 		
 
@@ -2428,8 +1673,8 @@ static inline void execute(char c, char p) {
 		else if (c == 'd') delete(1);
 		else if (c == 'r') cut();
 
-		else if (c == 't') buffer.mode = 0;
-		else if (c == 'm') { buffer.mode = 2; goto command_mode; }
+		else if (c == 't') this.mode = 0;
+		else if (c == 'm') { this.mode = 2; goto command_mode; }
 
 		else if (c == 'c') undo();
 		else if (c == 'k') redo();
@@ -2445,19 +1690,20 @@ static inline void execute(char c, char p) {
 		else if (c == 's') save();
 
 		else if (c == 'q') {
-			if (buffer.saved or confirmed("discard unsaved changes", "discard", "no")) 
-				close_active_buffer(); 
+			if (this.saved or confirmed("discard unsaved changes", "discard", "no")) close_active_buffer(); 
 		}
+
+		else if (c == 'Q') close_active_buffer();      // TEMP
 
 		else if (c == 27 and stdin_is_empty()) {}
 		else if (c == 27) interpret_escape_code();
 
-	} else if (buffer.mode == 2) {
+	} else if (this.mode == 2) {
 
-		command_mode: buffer.mode = 1;
+		command_mode: this.mode = 1;
 
 		char string[4096] = {0};
-		prompt(" •• ", 82, string, sizeof string);
+		prompt(" •• ", string, sizeof string);
 		
 		nat length = (nat) strlen(string);
 		char* d = calloc((size_t) length + 1, sizeof(char));
@@ -2488,17 +1734,17 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "changedirectory")) change_directory();
 			else if (equals(command, "opendirectory")) open_directory();
 			else if (equals(command, "selectfile")) file_select();
-			else if (equals(command, "openfile")) { file_select(); open_file(user_selection); }
-			else if (equals(command, "selection")) sprintf(message, "%s", user_selection);
-			else if (equals(command, "where")) sprintf(message, "@ %s", current_path);
-			else if (equals(command, "home")) { getcwd(current_path, sizeof current_path); 
-								strlcat(current_path, "/", sizeof current_path); }
-			else if (equals(command, "clearmessage")) memset(message, 0, sizeof message);
-			else if (equals(command, "numbers")) show_line_numbers = not show_line_numbers;
-			else if (equals(command, "status")) show_status = not show_status;
+			else if (equals(command, "openfile")) { file_select(); open_file(selected_file); }
+			else if (equals(command, "selection")) sprintf(this.message, "%s", selected_file);
+			else if (equals(command, "where")) sprintf(this.message, "@ %s", cwd);
+			else if (equals(command, "home")) { getcwd(cwd, sizeof cwd); strlcat(cwd, "/", sizeof cwd); }
+			else if (equals(command, "clearmessage")) memset(this.message, 0, sizeof this.message);
+			else if (equals(command, "numbers")) this.show_line_numbers = not this.show_line_numbers;
+			else if (equals(command, "sn_incr")) { if (this.sn_rows < window_rows) this.sn_rows++; }
+			else if (equals(command, "sn_decr")) { if (this.sn_rows) this.sn_rows--; }
 			else if (equals(command, "cut")) cut();
 			else if (equals(command, "delete")) delete(1);
-			else if (equals(command, "anchor")) anchor();
+			// else if (equals(command, "anchor")) anchor();
 			else if (equals(command, "paste")) paste();
 			else if (equals(command, "copy")) copy();
 			else if (equals(command, "undo")) undo();
@@ -2520,30 +1766,30 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "new")) create_empty_buffer();
 			else if (equals(command, "nextbuffer")) move_to_next_buffer();
 			else if (equals(command, "previousbuffer")) move_to_previous_buffer();			
-			else if (equals(command, "mode0")) buffer.mode = 0;
-			else if (equals(command, "mode1")) buffer.mode = 1;
-			else if (equals(command, "mode2")) buffer.mode = 2;
+			else if (equals(command, "mode0")) this.mode = 0;
+			else if (equals(command, "mode1")) this.mode = 1;
+			else if (equals(command, "mode2")) this.mode = 2;
 
 			else if (equals(command, "goto")) {}
 			else if (equals(command, "branch")) {}
 			else if (equals(command, "incr")) {}
 			else if (equals(command, "setzero")) {}
 
-			else if (equals(command, "commandcount")) sprintf(message, "command count = %d", command_count);
+			// else if (equals(command, "commandcount")) sprintf(this.message, "command count = %d", command_count);
 
 		
 			else if (equals(command, "wrapresizetemp")) { wrap_width = 0; recalculate_position(); }
 			else if (equals(command, "quit")) {
-				if (buffer.saved or confirmed("discard unsaved changes", "discard", "no")) 
+				if (this.saved or confirmed("discard unsaved changes", "discard", "no")) 
 					close_active_buffer(); 
 
 			} else {
-				sprintf(message, "command not recognized: %s", command);
+				sprintf(this.message, "command not recognized: %s", command);
 				break;
 			}
 		}
 
-	} else buffer.mode = 1;
+	} else this.mode = 1;
 }
 
 
@@ -2554,11 +1800,11 @@ static void* autosaver(void* unused) {
 		sleep(autosave_frequency);
 		pthread_mutex_lock(&mutex);
 		if (not buffer_count) break;
-		if (not buffer.autosaved) autosave();
+		if (not this.autosaved) autosave();
 		pthread_mutex_unlock(&mutex);
 	}
 
-	return NULL;
+	return unused;
 }
 
 static inline void editor() {
@@ -2569,7 +1815,6 @@ static inline void editor() {
 	if (not fuzz) {
 		terminal = configure_terminal();
 		write(1, "\033[?1049h\033[?1000h\033[7l", 20);
-		buffer.needs_display_update = 1;
 		pthread_mutex_init(&mutex, NULL);
 		pthread_mutex_lock(&mutex);
 		pthread_create(&autosave_thread, NULL, &autosaver, NULL);
@@ -2578,26 +1823,19 @@ static inline void editor() {
 
 	char p = 0, c = 0;
 
-    	getcwd(current_path, sizeof current_path);
-	strlcat(current_path, "/", sizeof current_path);
-loop:
-	// if (buffer.needs_display_update) 
-	display();
+    	getcwd(cwd, sizeof cwd);
+	strlcat(cwd, "/", sizeof cwd);
 
+loop:	display(5);
 	pthread_mutex_unlock(&mutex);
 	c = read_stdin(); 
 	pthread_mutex_lock(&mutex);
 	if (fuzz and not c) goto done;
-
-	//buffer.needs_display_update = 1;
 	execute(c, p);
 	p = c;
 	if (buffer_count) goto loop;
 
-
-
-done:
-	while (buffer_count) close_active_buffer();
+done:	while (buffer_count) close_active_buffer();
 	zero_registers();
 	free(screen);
 	screen = NULL;
@@ -2613,19 +1851,15 @@ done:
 	}
 }
 
-
 #if fuzz && !use_main
 
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 	create_empty_buffer();
-
 	fuzz_input_index = 0; 
 	fuzz_input = _input;
 	fuzz_input_count = _input_count;
-
 	editor();
-
 	return 0;
 }
 
@@ -2635,7 +1869,7 @@ int main(const int argc, const char** argv) {
 	if (argc <= 1) create_empty_buffer();
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
 	signal(SIGINT, handle_signal_interrupt);
-	editor(NULL, 0);
+	editor();
 }
 
 #endif
