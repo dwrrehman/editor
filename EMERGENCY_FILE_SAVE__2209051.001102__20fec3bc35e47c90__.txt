@@ -1,0 +1,4 @@
+ [1 1] [0 0 1] [2 0] test.txt s  read 94b
+my name is daniel rehman!
+i love this text editor :D yay
+anyways... 

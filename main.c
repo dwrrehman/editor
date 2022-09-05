@@ -23,7 +23,7 @@
 /*
 	------------- todo list ----------------
 
-		- display the *n buffer.
+	x	- display the *n buffer.
 
 		- add selecting/anchor/recent logic. (only using "lal/lac").
 
@@ -143,15 +143,11 @@ static struct winsize window = {0};
 static char* screen = NULL;
 
 
-static nat split_point = 15; 
-		//   not associated with a buffer.  
-		/// saveable to the .editor_rc file (the *n buffer savefile)
-		// tweakable from any buffer, and is held constant when moving between buffers. yes.
 
-
-
-
+static nat sn_rows = 0;
+static nat split_point = 0; 
 static nat last_active_index = 0;
+static bool in_scratch_buffer = false;
 
 
 
@@ -604,8 +600,6 @@ static inline void insertdt() {
 }
 
 
-
-
 static inline void store_current_data_to_buffer() {
 
 	const nat b = active_index;
@@ -658,14 +652,12 @@ static inline void load_buffer_data_into_registers() {
 	swl = ba.swl; swc = ba.swc;
 }
 
-static inline void zero_registers() {    // does this need to exist?... 
+static inline void zero_registers() {
 
 	wrap_width = 0;
 	tab_width = 0;
-
 	capacity = 0;
 	count = 0;
-
 	head = 0;
 	action_count = 0;
 
@@ -708,96 +700,15 @@ static inline void initialize_registers() {
 	this.mode = 0;
 	this.use_txt_extension_when_absent = 1;
 
-
-
-	/*
-	if (active_index != buffer_count) {
-		sbl = 0;
-		sel = split_point;
-
-	} else {
-		sbl = split_point;
-		sel = window_rows;
-	}
-	*/
-
-
 	sbl = 0;
 	sbc = 0;
-
-	sel = window_rows;
+	sel = split_point;
 	sec = window_columns;
-	
 	swl = sel - sbl;
 	swc = sec - sbc;
 }
 
-
-static inline void display() {
-
-
-nat p = split_point;
-			// a count  of the number of rows  you want the *i to take up.
-
-
-
-	nat total = 0;
-	nat cursor_line = 0, cursor_col = 0;
-
-
-	ioctl(1, TIOCGWINSZ, &window);
-	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 27; window.ws_col = 70; }
-	if (window.ws_row != window_rows or window.ws_col != window_columns) {
-
-		window_rows = window.ws_row;
-		window_columns = window.ws_col - 1; 
-
-		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));	
-	}
-
-
-	double f = floor(log10((double) count)) + 1;
-	int line_number_digits = (int)f;
-
-	nat line_number_width = this.show_line_numbers * (line_number_digits + 2);
-
-	
-
-	
-
-	
-
-
-	sbl = 0;
-	sbc = line_number_width;
-	
-	sel = p;
-	sec = window_columns;
-
-	swl = sel - sbl;
-	swc = sec - sbc;
-
-
-
-	store_current_data_to_buffer();
-
-
-	// use          swl swc     sel  sec        sbl  sbc
-
-
-	// const nat w = (window_columns - 1) - (this.line_number_width);
-
-	// if (this.ww_fix and wrap_width != w) wrap_width = w;
-
-
-
-	nat length = 6; 
-	memcpy(screen, "\033[?25l", 6);
-
-	length += sprintf(screen + length, "\033[%ld;%ldH", 1L, 1L); // for *i, only.       for *n, we would put it at [p+1, 1]
-	
-	nat sl = 0, sc = 0; 
-	nat vl = vol, vc = voc;
+static inline void sanity_check() {
 
 	if (fuzz) {
 		if (lcl < 0) abort();
@@ -808,7 +719,37 @@ nat p = split_point;
 		if (vcc < 0) abort();
 		if (vsl < 0) abort();
 		if (vsc < 0) abort();
-	} // we shouldnt need this... but....
+	} 
+}
+
+static inline void adjust_window_size() {
+	ioctl(1, TIOCGWINSZ, &window);
+
+	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 27; window.ws_col = 70; }
+
+	if (window.ws_row != window_rows or window.ws_col != window_columns) {
+		window_rows = window.ws_row;
+		window_columns = window.ws_col - 1; 
+		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));	
+	}
+
+	//		 todo:
+
+	// const nat w = (window_columns - 1) - (this.line_number_width);
+	// if (this.ww_fix and wrap_width != w) wrap_width = w;
+
+
+	wrap_width = 150;   // temp;
+
+	split_point = window_rows - sn_rows; 
+}
+
+
+static inline nat display_proper(nat length, nat* total, int line_number_digits) {
+	
+	nat sl = 0, sc = 0, vl = vol, vc = voc;
+
+	sanity_check();
 
 	struct logical_state state = {0};
 	record_logical_state(&state);
@@ -818,14 +759,14 @@ nat p = split_point;
 		move_left();
 	}
 
- 	nat line = lcl, col = lcc;
+ 	nat line = lcl, col = lcc; 
 	require_logical_state(&state); 
 
 
 	do {
 		if (line >= count) goto next_visual_line;
 
-		if (this.show_line_numbers and vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/) {
+		if (this.show_line_numbers and vl >= vol and vl < vol + swl) {
 			if (not col or (not sc and not sl)) 
 				length += sprintf(screen + length, 
 					"\033[38;5;%ldm%*ld\033[0m  ", 
@@ -844,8 +785,8 @@ nat p = split_point;
 				if (vc + (tab_width - vc % tab_width) > wrap_width) goto next_visual_line;
 
 				do { 
-					if (	vc >= voc and vc < voc + swc/*window_columns - this.line_number_width*/
-					and 	vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/
+					if (	vc >= voc and vc < voc + swc
+					and 	vl >= vol and vl < vol + swl
 					) {
 						screen[length++] = ' '; sc++;
 					}
@@ -853,8 +794,8 @@ nat p = split_point;
 				} while (vc % tab_width);
 
 			} else {
-				if (	vc >= voc and vc < voc + swc/*window_columns - this.line_number_width*/
-				and 	vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/
+				if (	vc >= voc and vc < voc + swc
+				and 	vl >= vol and vl < vol + swl
 				and 	(sc or visual(k))
 				) { 
 					screen[length++] = k;
@@ -866,238 +807,148 @@ nat p = split_point;
 				} 
 			}
 
-		} while (sc < swc/*window_columns - this.line_number_width*/ or col < lines[line].count);
+		} while (sc < swc or col < lines[line].count);
 
 	next_logical_line:
 		line++; col = 0;
 
 	next_visual_line:
-		if (vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/) {
+		if (vl >= vol and vl < vol + swl) {
 			screen[length++] = '\033';
 			screen[length++] = '[';	
 			screen[length++] = 'K';
-			if (total < window_rows - 1) {
+			if (*total < window_rows - 1) {
 				screen[length++] = '\r';
 				screen[length++] = '\n';
 			}
-			sl++; sc = 0; total++;
+			sl++; sc = 0; (*total)++;
 		}
-
 		vl++; vc = 0; 
+	} while (sl < swl);
 
-	} while (sl < swl/*window_rows - this.sn_rows*/);
+	return length;
+}
 
 
 
+
+static inline void display() {
+
+	adjust_window_size();
+
+	nat total = 0, cursor_line = 0, cursor_col = 0;
+	nat length = 6; 
+	memcpy(screen, "\033[?25l", 6);
+	
+
+
+
+	nat save1 = active_index;
+
+
+
+
+
+	store_current_data_to_buffer();
+	active_index = last_active_index;
+	load_buffer_data_into_registers();
+
+
+	double f = floor(log10((double) count)) + 1;
+	int line_number_digits = (int)f;
+	nat line_number_width = this.show_line_numbers * (line_number_digits + 2);
+	
 
 	
 
-	if (active_index != buffer_count or buffer_count == 0) {
+	sbl = 0;
+	sbc = line_number_width;
+	sel = split_point;
+	sec = window_columns;
+	swl = sel - sbl;
+	swc = sec - sbc;
+
+
+
+
+	length += sprintf(screen + length, "\033[%ld;%ldH", 1L, 1L); 
+	length = display_proper(length, &total, line_number_digits);
+
+	if (not in_scratch_buffer) {
 		cursor_line = sbl + vsl + 1;
 		cursor_col = sbc + vsc + 1;
 	}
 
 
-
-
-	
-	
-
-
-
-
-
-
-
-			//todo: just copy what we need  (for displaying) in order to perform the context switch.
-
-
-			
-
-
-
-
-
-	
-	nat save = active_index;
-
+	const nat save = last_active_index;  
 
 	store_current_data_to_buffer();
+
 	active_index = buffer_count;
+
+	// if (not buffer_count) abort();      // debug 
+
 	load_buffer_data_into_registers();
 
 
+	
 
+		char status[8448] = {0};
+
+		nat status_length = sprintf(status, " [%ld %ld] [%ld %ld %ld] [%ld %ld] %s %c%c %s",
+			in_scratch_buffer, buffers[save].mode, 
+			last_active_index, save, buffer_count, 
+			buffers[save].lcl, buffers[save].lcc, 
+			buffers[save].filename,
+			buffers[save].saved ? 's' : 'e', 
+			buffers[save].autosaved ? ' ' : '*',
+			buffers[save].message
+		);
+
+		move_top();
+		lines[0].count = 0;
+		for (nat i = 0; i < status_length; i++) {
+			insert(status[i], 0);
+		}
+	
+	
+
+	// nat save_ln = this.show_line_numbers;
+	// this.show_line_numbers = false;
+
+	
 	f = floor(log10((double) count)) + 1;
 	line_number_digits = (int)f;
-
 	line_number_width = this.show_line_numbers * (line_number_digits + 2);
 	
-	nat sbl = p;
-	nat sbc = line_number_width;
+	sbl = split_point;
+	sbc = line_number_width;
+	sel = window_rows;
+	sec = window_columns;
+	swl = sel - sbl;
+	swc = sec - sbc;
 
-	nat sel = window_rows;
-	nat sec = window_columns;
+	length += sprintf(screen + length, "\033[%ld;%ldH",  split_point + 1L,  1L ); 
+	length = display_proper(length, &total, line_number_digits);
 
-	nat swl = sel - sbl;
-	nat swc = sec - sbc;
-
-	length += sprintf(screen + length, "\033[%ld;%ldH",  p + 1L,  1L  ); 
-
-	
-	sl = 0; sc = 0; 
-	vl = vol; vc = voc; 
-
-	if (fuzz) {
-		if (lcl < 0) abort();
-		if (lcc < 0) abort();
-		if (vol < 0) abort();
-		if (voc < 0) abort();
-		if (vcl < 0) abort();
-		if (vcc < 0) abort();
-		if (vsl < 0) abort();
-		if (vsc < 0) abort();
-	} // we shouldnt need this... but....
-
-	state = (struct logical_state){0};
-	record_logical_state(&state);
-	while (1) { 
-		if (vcl <= 0 and vcc <= 0) break;
-		if (vcl <= state.vol and vcc <= state.voc) break;
-		move_left();
-	}
-
- 	line = lcl; col = lcc; 
-	require_logical_state(&state); 
-
-	do {
-		if (line >= count) goto n_next_visual_line;
-
-		if (this.show_line_numbers and vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/) {
-			if (not col or (not sc and not sl)) 
-				length += sprintf(screen + length, 
-					"\033[38;5;%ldm%*ld\033[0m  ", 
-					236L + (line == lcl ? 5 : 0), line_number_digits, line
-				);
-			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
-		}
-
-		do {
-			if (col >= lines[line].count) goto n_next_logical_line;  
-			
-			char k = lines[line].data[col++];
-
-			if (k == '\t') {
-
-				if (vc + (tab_width - vc % tab_width) > wrap_width) goto n_next_visual_line;
-
-				do { 
-					if (	vc >= voc and vc < voc + swc/*window_columns - this.line_number_width*/
-					and 	vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/
-					) {
-						screen[length++] = ' '; sc++;
-					}
-					vc++;
-				} while (vc % tab_width);
-
-			} else {
-				if (	vc >= voc and vc < voc + swc/*window_columns - this.line_number_width*/
-				and 	vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/
-				and 	(sc or visual(k))
-				) { 
-					screen[length++] = k;
-					if (visual(k)) sc++;	
-				}
-				if (visual(k)) {
-					if (vc >= wrap_width) goto n_next_visual_line; 
-					vc++; 
-				} 
-			}
-
-		} while (sc < swc/*window_columns - this.line_number_width*/ or col < lines[line].count);
-
-	n_next_logical_line:
-		line++; col = 0;
-
-	n_next_visual_line:
-		if (vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/) {
-			screen[length++] = '\033';
-			screen[length++] = '[';	
-			screen[length++] = 'K';
-			if (total < window_rows - 1) {
-				screen[length++] = '\r';
-				screen[length++] = '\n';
-			}
-			sl++; sc = 0; total++;
-		}
-
-		vl++; vc = 0; 
-
-	} while (sl < swl/*window_rows - this.sn_rows*/);
-
-	if (save == buffer_count and buffer_count) {
+	if (in_scratch_buffer) {
 		cursor_line = sbl + vsl + 1;
 		cursor_col = sbc + vsc + 1;
 	}
 
+	// this.show_line_numbers = save_ln;
+
 	store_current_data_to_buffer();
-	active_index = save;
+	active_index = save1;
 	load_buffer_data_into_registers();
 	
 
-
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", cursor_line, cursor_col);
-	if (not fuzz)  
-		write(1, screen, (size_t) length);
+	if (not fuzz)   write(1, screen, (size_t) length);
 }
 
-//   note: figure out a way to NOT do a context switch everytime we want to display *i and *n.
-// length += sprintf(screen + length, "\033[%ld;%ldH", 1L, 1L); // for *i, only.       for *n, we would put it at [p+1, 1]
 
 /*
-static inline void textbox_display(const char* prompt, nat prompt_color) {
-
-	struct winsize window = {0};
-	ioctl(1, TIOCGWINSZ, &window);
-	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 15; window.ws_col = 50; }
-	if (window.ws_row != window_rows or window.ws_col != window_columns) {
-		window_rows = window.ws_row;
-		window_columns = window.ws_col - 1; 
-		screen = realloc(screen, (size_t) (window_columns * 4));
-	}
-
-	nat length = sprintf(screen, "\033[?25l\033[%ld;1H\033[38;5;%ldm%s\033[m", window_rows, prompt_color, prompt);
-	nat col = 0, vc = 0, sc = textbox.line_number_width;
-	while (sc < window_columns and col < textbox.lines[lcl].count) {
-		char k = textbox.lines[lcl].data[col];
-		if (vc >= textbox.voc and vc < textbox.voc + window_columns - textbox.line_number_width and (sc or visual(k))) {
-			screen[length++] = k;
-			if (visual(k)) { sc++; }
-		}
-		if (visual(k)) vc++; 
-		col++;
-	} 
-
-	for (nat i = sc; i < window_columns; i++) 
-		screen[length++] = ' ';
-
-	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", window_rows, textbox.vsc + 1 + textbox.line_number_width);
-
-	if (not fuzz) 
-		write(1, screen, (size_t) length);
-}
-
-static inline void print_above_textbox(char* write_message, nat color) {
-	nat length = sprintf(screen, "\033[%ld;1H\033[K\033[38;5;%ldm%s\033[m", window_rows - 1, color, write_message);
-	if (not fuzz) 
-		write(1, screen, (size_t) length);
-}
-
-static inline void clear_above_textbox() {
-	nat length = sprintf(screen, "\033[%ld;1H\033[K", window_rows - 1);
-	if (not fuzz) 
-		write(1, screen, (size_t) length);
-}
 
 static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
 
@@ -1142,6 +993,24 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 	free(tb.data);
 	tb = (struct textbox){0};
 }
+
+
+
+
+	
+
+	// sprintf(buffer, "%ld", this.mode);
+
+
+
+	// push_char(c, &string, &length);
+
+	// if (lines->capacity <=
+	// lines->data = realloc(lines->data, buffer_length
+
+
+
+
 
 */
 
@@ -1202,7 +1071,7 @@ static inline void create_empty_buffer() {
 }
 
 static inline void close_active_buffer() {
-	if (active_index == buffer_count)  {
+	if (not buffer_count)  {
 		
 		store_current_data_to_buffer();
 
@@ -1221,7 +1090,9 @@ static inline void close_active_buffer() {
 
 		running = false;
 		return;
-	}
+
+	} else if (active_index == buffer_count) return;
+
 
 	store_current_data_to_buffer();
 
@@ -1244,7 +1115,8 @@ static inline void close_active_buffer() {
 
 	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 1));
 
-	load_buffer_data_into_registers();
+	if (buffer_count) 
+		load_buffer_data_into_registers();
 }
 
 static inline void move_to_next_buffer() {
@@ -1957,7 +1829,6 @@ static inline void execute(char c, char p) {
 		// else if (c == 't' and p == 'h') anchor();    // we need to be using the "selecting" bool, 
 								// to know if we should update lal/lac per move. 
 								// thats the right way to do things. 
-
 		else if (c == 'd' and p == 'h') {}
 		
 
@@ -1979,13 +1850,20 @@ static inline void execute(char c, char p) {
 		else if (c == 'i') { move_right(); vdc = vcc; }
 		else if (c == 'n') { move_left(); vdc = vcc; }
 
+		else if (c == '-') { if (sn_rows < window_rows) sn_rows++; }
+		else if (c == '=') { if (sn_rows) sn_rows--; }
+		else if (c == '0') {}
 
-		else if (c == '-') { if (split_point < window_rows) split_point++; }
-		else if (c == '=') { if (split_point) split_point--; }
-
-		else if (c == ',') { last_active_index = active_index; }
-		else if (c == '.') { active_index = last_active_index in_n_buffer = false; }
-
+		else if (c == '1') {
+			in_scratch_buffer = true; 
+			last_active_index = active_index; 
+			active_index = buffer_count; 
+		}
+		else if (c == '0')  {
+			in_scratch_buffer = false; 
+			active_index = last_active_index; 
+			last_active_index = buffer_count; 
+		}
 
 		else if (c == 's') save();
 
@@ -2008,7 +1886,7 @@ static inline void execute(char c, char p) {
 		nat length = (nat) strlen(string);
 		char* d = calloc((size_t) length + 1, sizeof(char));
 		nat d_length = 0;
-
+		
 		for (nat i = 0; i < length; i++) {
 			if ((unsigned char) string[i] < 33) continue;
 			d[d_length++] = string[i];
@@ -2120,20 +1998,6 @@ static inline void editor() {
 		pthread_create(&autosave_thread, NULL, &autosaver, NULL);
 	} 
 
-
-
-	ioctl(1, TIOCGWINSZ, &window);
-	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 27; window.ws_col = 70; }
-	if (window.ws_row != window_rows or window.ws_col != window_columns) {
-
-		window_rows = window.ws_row - 1;
-		window_columns = window.ws_col - 1; 
-
-		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));	
-	}
-
-	// make this a function!    ^
-
 	char p = 0, c = 0;
 
     	getcwd(this.cwd, sizeof this.cwd);
@@ -2182,36 +2046,15 @@ int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 int main(const int argc, const char** argv) {
 
 	create_sn_buffer();
+	sn_rows = 5;
 
-	char buffer[4096] = {0};
-
-	nat buffer_length = sprintf(buffer, " [%ld %ld] [%ld %ld] [%ld %s] [%c%c %s]\n%s",
-		0L, // this.mode, 
-		0L,1L, // active_index, buffer_count,
-		5L,5L,// lcl, lcc, 
-		"this.filename",
-		true ? 's' : 'e', 
-		true ? ' ' : '*',
-		"this.message",
-		"/this.location/stuff"
-	);
-
-	for (nat i = 0; i < buffer_length; i++) {
-		insert(buffer[i], 0);
-	}
-	move_top();
-
-
+	adjust_window_size();
 	
 
-	if (argc <= 1) create_empty_buffer();                     // debating on having this line... 
-
+	if (argc <= 1) create_empty_buffer();
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
 	
-
-
 	signal(SIGINT, handle_signal_interrupt);
-
 	editor();
 }
 
@@ -2690,4 +2533,69 @@ static char filename[4096] = {0};
 */
 
 
+
+
+
+
+//   note: figure out a way to NOT do a context switch everytime we want to display *i and *n.
+// length += sprintf(screen + length, "\033[%ld;%ldH", 1L, 1L); // for *i, only.       for *n, we would put it at [p+1, 1]
+
+/*
+static inline void textbox_display(const char* prompt, nat prompt_color) {
+
+	struct winsize window = {0};
+	ioctl(1, TIOCGWINSZ, &window);
+	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 15; window.ws_col = 50; }
+	if (window.ws_row != window_rows or window.ws_col != window_columns) {
+		window_rows = window.ws_row;
+		window_columns = window.ws_col - 1; 
+		screen = realloc(screen, (size_t) (window_columns * 4));
+	}
+
+	nat length = sprintf(screen, "\033[?25l\033[%ld;1H\033[38;5;%ldm%s\033[m", window_rows, prompt_color, prompt);
+	nat col = 0, vc = 0, sc = textbox.line_number_width;
+	while (sc < window_columns and col < textbox.lines[lcl].count) {
+		char k = textbox.lines[lcl].data[col];
+		if (vc >= textbox.voc and vc < textbox.voc + window_columns - textbox.line_number_width and (sc or visual(k))) {
+			screen[length++] = k;
+			if (visual(k)) { sc++; }
+		}
+		if (visual(k)) vc++; 
+		col++;
+	} 
+
+	for (nat i = sc; i < window_columns; i++) 
+		screen[length++] = ' ';
+
+	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", window_rows, textbox.vsc + 1 + textbox.line_number_width);
+
+	if (not fuzz) 
+		write(1, screen, (size_t) length);
+}
+
+
+static inline void print_above_textbox(char* write_message, nat color) {
+	nat length = sprintf(screen, "\033[%ld;1H\033[K\033[38;5;%ldm%s\033[m", window_rows - 1, color, write_message);
+	if (not fuzz) 
+		write(1, screen, (size_t) length);
+}
+
+static inline void clear_above_textbox() {
+	nat length = sprintf(screen, "\033[%ld;1H\033[K", window_rows - 1);
+	if (not fuzz) 
+		write(1, screen, (size_t) length);
+}
+
+
+
+
+
+*/
+
+
+
+
+//   not associated with a buffer.  
+		/// saveable to the .editor_rc file (the *n buffer savefile)
+		// tweakable from any buffer, and is held constant when moving between buffers. yes.
 
