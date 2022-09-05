@@ -90,24 +90,26 @@ struct buffer {
 	struct action* actions;
 
 	nat     saved, mode, autosaved, action_count, head, count, capacity, 
-		selecting, wrap_width, tab_width, window_rows, window_columns,
-		lcl, lcc, 	vcl, vcc,  	vol, voc, 
-		vsl, vsc, 	vdc,    	lal, lac,
-		sn_rows, show_line_numbers, ww_fix, 
-		line_number_width, use_txt_extension_when_absent
+		selecting,  wrap_width, tab_width, 
+
+		lcl, lcc, 	vcl, vcc,  	vol, voc,    sbl, sbc,    sel, sec,
+		vsl, vsc, 	vdc,    	lal, lac,    swl, swc,
+
+		show_line_numbers, ww_fix, use_txt_extension_when_absent
 	;
 
 	char filename[4096];
 	char location[4096];
 	char message[4096];
-	char selected_file[4096] = {0};
-	char cwd[4096] = {0};
+	char cwd[4096];
+	char selected_file[4096];
 };
 
 struct logical_state {
 	nat     saved, autosaved, selecting, wrap_width, tab_width,
-		lcl, lcc, 	vcl, vcc,  	vol, voc, 
-		vsl, vsc, 	vdc,    	lal, lac;
+		lcl, lcc, 	vcl, vcc,    vol, voc,    sbl, sbc, sel, sec,
+		vsl, vsc, 	vdc,         lal, lac,    swl, swc
+	;
 };
 
 struct action { 
@@ -125,8 +127,34 @@ struct action {
 static pthread_mutex_t mutex;
 static size_t fuzz_input_index = 0;       
 static size_t fuzz_input_count = 0;       
-static const uint8_t* fuzz_input = NULL;  
+static const uint8_t* fuzz_input = NULL; 
+
+
+
+
+
+
+static nat running = 0;
+
+static nat 
+	window_rows = 0, 
+	window_columns = 0;
+static struct winsize window = {0}; 
 static char* screen = NULL;
+
+
+static nat split_point = 15; 
+		//   not associated with a buffer.  
+		/// saveable to the .editor_rc file (the *n buffer savefile)
+		// tweakable from any buffer, and is held constant when moving between buffers. yes.
+
+
+
+
+static nat last_active_index = 0;
+
+
+
 
 static nat buffer_count = 0, active_index = 0; 
 static struct buffer* buffers = NULL, this = {0};
@@ -137,8 +165,8 @@ static nat
 	count, capacity, 
 	action_count, head, 
 	wrap_width, tab_width,
-	lcl, lcc, 	vcl, vcc,  	vol, voc, 
-	vsl, vsc, 	vdc,    	lal, lac
+	lcl, lcc, 	vcl, vcc,    vol, voc,    sbl, sbc,    sel, sec,
+	vsl, vsc, 	vdc,         lal, lac,    swl, swc
 ;
 
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
@@ -234,8 +262,8 @@ static inline void move_left() {
 		if (vsl) vsl--;
 		else if (vol) vol--;
 		vcc = compute_vcc();
-		if (vcc >= window_columns - 1 - this.line_number_width) { 
-			vsc = window_columns - 1 - this.line_number_width;  voc = vcc - vsc; 
+		if (vcc >= swc /*window_columns - 1 - origin_column*/) { 
+			vsc = swc /*window_columns - 1 - origin_column*/;  voc = vcc - vsc; 
 		} else { vsc = vcc; voc = 0; }
 	} else {
 		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
@@ -260,7 +288,7 @@ static inline void move_right() {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0; 
 line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
-		if (vsl + 1 < window_rows - this.sn_rows) vsl++; 
+		if (vsl + 1 < swl/*window_rows - this.sn_rows*/) vsl++; 
 		else vol++;
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
@@ -268,7 +296,7 @@ line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
 			if (vcc + tab_width - vcc % tab_width > wrap_width) goto line_down;
 			do {
 				vcc++; 
-				if (vsc + 1 < window_columns - this.line_number_width) vsc++;
+				if (vsc + 1 < swc/*window_columns - this.line_number_width*/) vsc++;
 				else voc++;
 			} while (vcc % tab_width);
 			
@@ -276,7 +304,7 @@ line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
 			do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
 			if (vcc >= wrap_width) goto line_down;
 			vcc++; 
-			if (vsc + 1 < window_columns - this.line_number_width) vsc++; 
+			if (vsc + 1 < swc/*window_columns - this.line_number_width*/) vsc++; 
 			else voc++;
 		}
 	}
@@ -293,7 +321,9 @@ static inline void move_up() {
 	nat line_target = vcl - 1;
 	while (vcc and vcl > line_target) move_left(); 
 	do move_left(); while (vcc > vdc and vcl == line_target);
-	if (vcc > window_columns - this.line_number_width) { vsc = window_columns - this.line_number_width; voc = vcc - vsc; } 
+	if (vcc >= swc/*window_columns - this.line_number_width*/) { 
+		vsc = swc/*window_columns - this.line_number_width*/; voc = vcc - vsc; 
+	} 
 	else { vsc = vcc; voc = 0; }
 }
 
@@ -304,7 +334,7 @@ static inline void move_down() {
 		move_right();
 	}
 	while (vcc < vdc and lcc < lines[lcl].count) {
-		if (lines[lcl].data[lcc] == '\t' and vcc + (tab_width - (vcc % tab_width)) > vdc) return; // TODO: ^ WHAT IS THIS!?!?!?
+		if (lines[lcl].data[lcc] == '\t' and vcc + (tab_width - (vcc % tab_width)) > vdc) return; // TODO:  WHAT IS THIS!?!?!?
 		move_right();
 	}
 }
@@ -383,6 +413,8 @@ static inline void record_logical_state(struct logical_state* pcond_out) {
 	p->vsl = vsl;  p->vsc = vsc; 
 	p->vdc = vdc;  p->lal = lal;
 	p->lac = lac; 
+
+	//todo: add sbl, etc..
 
 	p->wrap_width = wrap_width;
 	p->tab_width = tab_width;
@@ -571,27 +603,201 @@ static inline void insertdt() {
 	insert_string(datetime, 14);
 }
 
-static inline void display(nat begin_row) {
 
-	static char* screen = NULL;
-	struct winsize window = {0};
+
+
+static inline void store_current_data_to_buffer() {
+
+	const nat b = active_index;
+	buffers[b] = this;
+
+	buffers[b].wrap_width = wrap_width;
+	buffers[b].tab_width = tab_width;
+	buffers[b].capacity = capacity;
+	buffers[b].count = count;
+	buffers[b].head = head;
+	buffers[b].action_count = action_count;
+	buffers[b].actions = actions;
+	buffers[b].lines = lines;
+
+	buffers[b].lcl = lcl;  buffers[b].lcc = lcc; 
+	buffers[b].vcl = vcl;  buffers[b].vcc = vcc; 
+	buffers[b].vol = vol;  buffers[b].voc = voc; 
+	buffers[b].vsl = vsl;  buffers[b].vsc = vsc; 
+	buffers[b].vdc = vdc;  buffers[b].lal = lal;
+	buffers[b].lac = lac; 
+
+	buffers[b].sbl = sbl; buffers[b].sbc = sbc; 
+	buffers[b].sel = sel; buffers[b].sec = sec; 
+	buffers[b].swl = swl; buffers[b].swc = swc; 
+}
+
+static inline void load_buffer_data_into_registers() {
+
+	struct buffer ba = buffers[active_index];
+	this = ba;
+
+	capacity = ba.capacity;
+	count = ba.count;
+	wrap_width = ba.wrap_width;
+	tab_width = ba.tab_width;
+	head = ba.head;
+	action_count = ba.action_count;
+	lines = ba.lines;
+	actions = ba.actions;
+
+	lcl = ba.lcl;  lcc = ba.lcc;
+	vcl = ba.vcl;  vcc = ba.vcc;
+	vol = ba.vol;  voc = ba.voc; 
+	vsl = ba.vsl;  vsc = ba.vsc; 
+	vdc = ba.vdc;  lal = ba.lal;
+	lac = ba.lac;
+
+	sbl = ba.sbl; sbc = ba.sbc;
+	sel = ba.sel; sec = ba.sec;
+	swl = ba.swl; swc = ba.swc;
+}
+
+static inline void zero_registers() {    // does this need to exist?... 
+
+	wrap_width = 0;
+	tab_width = 0;
+
+	capacity = 0;
+	count = 0;
+
+	head = 0;
+	action_count = 0;
+
+	lines = NULL;
+	actions = NULL;
+
+	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
+	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
+
+	sbl = 0; sbc = 0;
+	sel = 0; sec = 0;
+	swl = 0; swc = 0;
+
+	this = (struct buffer){0};
+	buffers = NULL;
+	buffer_count = 0;
+	active_index = 0;
+}
+
+static inline void initialize_registers() {
+	
+	this = (struct buffer) {0};
+
+	wrap_width = 100;     // todo: change all checks of    x < ww     to     x < ww or not ww
+	tab_width = 8; 
+	capacity = 1;
+	count = 1;
+	head = 0;
+	action_count = 1;
+	lines = calloc(1, sizeof(struct line));
+	actions = calloc(1, sizeof(struct action));
+
+	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
+	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
+
+
+	this.show_line_numbers = 1; 
+	this.saved = true;
+	this.autosaved = true;
+	this.mode = 0;
+	this.use_txt_extension_when_absent = 1;
+
+
+
+	/*
+	if (active_index != buffer_count) {
+		sbl = 0;
+		sel = split_point;
+
+	} else {
+		sbl = split_point;
+		sel = window_rows;
+	}
+	*/
+
+
+	sbl = 0;
+	sbc = 0;
+
+	sel = window_rows;
+	sec = window_columns;
+	
+	swl = sel - sbl;
+	swc = sec - sbc;
+}
+
+
+static inline void display() {
+
+
+nat p = split_point;
+			// a count  of the number of rows  you want the *i to take up.
+
+
+
+	nat total = 0;
+	nat cursor_line = 0, cursor_col = 0;
+
+
 	ioctl(1, TIOCGWINSZ, &window);
-	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 15; window.ws_col = 50; }
+	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 27; window.ws_col = 70; }
 	if (window.ws_row != window_rows or window.ws_col != window_columns) {
+
 		window_rows = window.ws_row;
 		window_columns = window.ws_col - 1; 
-		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));
+
+		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));	
 	}
 
-	const nat w = (window_columns - 1) - (this.line_number_width);
-	if (this.ww_fix and wrap_width != w) wrap_width = w;
+
+	double f = floor(log10((double) count)) + 1;
+	int line_number_digits = (int)f;
+
+	nat line_number_width = this.show_line_numbers * (line_number_digits + 2);
+
+	
+
+	
+
+	
+
+
+	sbl = 0;
+	sbc = line_number_width;
+	
+	sel = p;
+	sec = window_columns;
+
+	swl = sel - sbl;
+	swc = sec - sbc;
+
+
+
+	store_current_data_to_buffer();
+
+
+	// use          swl swc     sel  sec        sbl  sbc
+
+
+	// const nat w = (window_columns - 1) - (this.line_number_width);
+
+	// if (this.ww_fix and wrap_width != w) wrap_width = w;
+
+
 
 	nat length = 6; 
 	memcpy(screen, "\033[?25l", 6);
-	length += sprintf(screen + length, "\033[%ld;%ldH", begin_row + 1, 1L);
+
+	length += sprintf(screen + length, "\033[%ld;%ldH", 1L, 1L); // for *i, only.       for *n, we would put it at [p+1, 1]
 	
-	nat sl = begin_row, sc = 0; 
-	nat vl = vol, vc = voc; 
+	nat sl = 0, sc = 0; 
+	nat vl = vol, vc = voc;
 
 	if (fuzz) {
 		if (lcl < 0) abort();
@@ -612,17 +818,14 @@ static inline void display(nat begin_row) {
 		move_left();
 	}
 
- 	nat line = lcl, col = lcc; 
+ 	nat line = lcl, col = lcc;
 	require_logical_state(&state); 
 
-	double f = floor(log10((double) count)) + 1;
-	int line_number_digits = (int)f;
-	this.line_number_width = this.show_line_numbers * (line_number_digits + 2);
 
 	do {
 		if (line >= count) goto next_visual_line;
 
-		if (this.show_line_numbers and vl >= vol and vl < vol + window_rows - this.sn_rows) {
+		if (this.show_line_numbers and vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/) {
 			if (not col or (not sc and not sl)) 
 				length += sprintf(screen + length, 
 					"\033[38;5;%ldm%*ld\033[0m  ", 
@@ -641,8 +844,8 @@ static inline void display(nat begin_row) {
 				if (vc + (tab_width - vc % tab_width) > wrap_width) goto next_visual_line;
 
 				do { 
-					if (	vc >= voc and vc < voc + window_columns - this.line_number_width
-					and 	vl >= vol and vl < vol + window_rows - this.sn_rows
+					if (	vc >= voc and vc < voc + swc/*window_columns - this.line_number_width*/
+					and 	vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/
 					) {
 						screen[length++] = ' '; sc++;
 					}
@@ -650,8 +853,8 @@ static inline void display(nat begin_row) {
 				} while (vc % tab_width);
 
 			} else {
-				if (	vc >= voc and vc < voc + window_columns - this.line_number_width
-				and 	vl >= vol and vl < vol + window_rows - this.sn_rows
+				if (	vc >= voc and vc < voc + swc/*window_columns - this.line_number_width*/
+				and 	vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/
 				and 	(sc or visual(k))
 				) { 
 					screen[length++] = k;
@@ -663,46 +866,193 @@ static inline void display(nat begin_row) {
 				} 
 			}
 
-		} while (sc < window_columns - this.line_number_width or col < lines[line].count);
+		} while (sc < swc/*window_columns - this.line_number_width*/ or col < lines[line].count);
 
 	next_logical_line:
 		line++; col = 0;
 
 	next_visual_line:
-		if (vl >= vol and vl < vol + window_rows - this.sn_rows) {
+		if (vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/) {
 			screen[length++] = '\033';
 			screen[length++] = '[';	
 			screen[length++] = 'K';
-			if (sl < window_rows - 1) {
+			if (total < window_rows - 1) {
 				screen[length++] = '\r';
 				screen[length++] = '\n';
 			}
-			sl++; sc = 0;
+			sl++; sc = 0; total++;
 		}
 
 		vl++; vc = 0; 
 
-	} while (sl < window_rows - this.sn_rows);
+	} while (sl < swl/*window_rows - this.sn_rows*/);
 
 
-
-	// display *n buffer here! using this same function!
-
-
-
-
-	// only print cursor in *i   if   i != n  !!!!
-	// print in *n if i == n   of course.
-
-	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", begin_row + vsl + 1, vsc + 1 + this.line_number_width);
 
 
 	
 
+	if (active_index != buffer_count or buffer_count == 0) {
+		cursor_line = sbl + vsl + 1;
+		cursor_col = sbc + vsc + 1;
+	}
 
+
+
+
+	
+	
+
+
+
+
+
+
+
+			//todo: just copy what we need  (for displaying) in order to perform the context switch.
+
+
+			
+
+
+
+
+
+	
+	nat save = active_index;
+
+
+	store_current_data_to_buffer();
+	active_index = buffer_count;
+	load_buffer_data_into_registers();
+
+
+
+	f = floor(log10((double) count)) + 1;
+	line_number_digits = (int)f;
+
+	line_number_width = this.show_line_numbers * (line_number_digits + 2);
+	
+	nat sbl = p;
+	nat sbc = line_number_width;
+
+	nat sel = window_rows;
+	nat sec = window_columns;
+
+	nat swl = sel - sbl;
+	nat swc = sec - sbc;
+
+	length += sprintf(screen + length, "\033[%ld;%ldH",  p + 1L,  1L  ); 
+
+	
+	sl = 0; sc = 0; 
+	vl = vol; vc = voc; 
+
+	if (fuzz) {
+		if (lcl < 0) abort();
+		if (lcc < 0) abort();
+		if (vol < 0) abort();
+		if (voc < 0) abort();
+		if (vcl < 0) abort();
+		if (vcc < 0) abort();
+		if (vsl < 0) abort();
+		if (vsc < 0) abort();
+	} // we shouldnt need this... but....
+
+	state = (struct logical_state){0};
+	record_logical_state(&state);
+	while (1) { 
+		if (vcl <= 0 and vcc <= 0) break;
+		if (vcl <= state.vol and vcc <= state.voc) break;
+		move_left();
+	}
+
+ 	line = lcl; col = lcc; 
+	require_logical_state(&state); 
+
+	do {
+		if (line >= count) goto n_next_visual_line;
+
+		if (this.show_line_numbers and vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/) {
+			if (not col or (not sc and not sl)) 
+				length += sprintf(screen + length, 
+					"\033[38;5;%ldm%*ld\033[0m  ", 
+					236L + (line == lcl ? 5 : 0), line_number_digits, line
+				);
+			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
+		}
+
+		do {
+			if (col >= lines[line].count) goto n_next_logical_line;  
+			
+			char k = lines[line].data[col++];
+
+			if (k == '\t') {
+
+				if (vc + (tab_width - vc % tab_width) > wrap_width) goto n_next_visual_line;
+
+				do { 
+					if (	vc >= voc and vc < voc + swc/*window_columns - this.line_number_width*/
+					and 	vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/
+					) {
+						screen[length++] = ' '; sc++;
+					}
+					vc++;
+				} while (vc % tab_width);
+
+			} else {
+				if (	vc >= voc and vc < voc + swc/*window_columns - this.line_number_width*/
+				and 	vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/
+				and 	(sc or visual(k))
+				) { 
+					screen[length++] = k;
+					if (visual(k)) sc++;	
+				}
+				if (visual(k)) {
+					if (vc >= wrap_width) goto n_next_visual_line; 
+					vc++; 
+				} 
+			}
+
+		} while (sc < swc/*window_columns - this.line_number_width*/ or col < lines[line].count);
+
+	n_next_logical_line:
+		line++; col = 0;
+
+	n_next_visual_line:
+		if (vl >= vol and vl < vol + swl/*window_rows - this.sn_rows*/) {
+			screen[length++] = '\033';
+			screen[length++] = '[';	
+			screen[length++] = 'K';
+			if (total < window_rows - 1) {
+				screen[length++] = '\r';
+				screen[length++] = '\n';
+			}
+			sl++; sc = 0; total++;
+		}
+
+		vl++; vc = 0; 
+
+	} while (sl < swl/*window_rows - this.sn_rows*/);
+
+	if (save == buffer_count and buffer_count) {
+		cursor_line = sbl + vsl + 1;
+		cursor_col = sbc + vsc + 1;
+	}
+
+	store_current_data_to_buffer();
+	active_index = save;
+	load_buffer_data_into_registers();
+	
+
+
+	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", cursor_line, cursor_col);
 	if (not fuzz)  
 		write(1, screen, (size_t) length);
 }
+
+//   note: figure out a way to NOT do a context switch everytime we want to display *i and *n.
+// length += sprintf(screen + length, "\033[%ld;%ldH", 1L, 1L); // for *i, only.       for *n, we would put it at [p+1, 1]
 
 /*
 static inline void textbox_display(const char* prompt, nat prompt_color) {
@@ -831,103 +1181,19 @@ static inline bool confirmed(const char* question, const char* yes_action, const
 	}
 }
 
-static inline void store_current_data_to_buffer() {
-	if (not buffer_count) return;
+static inline void create_sn_buffer() {
+	buffer_count = 0;  active_index = 0;
+	buffers = calloc(1, sizeof(struct buffer));
+	initialize_registers();
+	store_current_data_to_buffer();
 
-	const nat b = active_index;
-	buffers[b] = this;
-
-	buffers[b].wrap_width = wrap_width;
-	buffers[b].tab_width = tab_width;
-	buffers[b].capacity = capacity;
-	buffers[b].count = count;
-	buffers[b].head = head;
-	buffers[b].action_count = action_count;
-	buffers[b].actions = actions;
-	buffers[b].lines = lines;
-
-	buffers[b].lcl = lcl;  buffers[b].lcc = lcc; 
-	buffers[b].vcl = vcl;  buffers[b].vcc = vcc; 
-	buffers[b].vol = vol;  buffers[b].voc = voc; 
-	buffers[b].vsl = vsl;  buffers[b].vsc = vsc; 
-	buffers[b].vdc = vdc;  buffers[b].lal = lal;
-	buffers[b].lac = lac; 
-}
-
-static inline void load_buffer_data_into_registers() {
-	if (not buffer_count) return;
-
-	struct buffer ba = buffers[active_index];
-	this = ba;
-
-	capacity = ba.capacity;
-	count = ba.count;
-	wrap_width = ba.wrap_width;
-	tab_width = ba.tab_width;
-	head = ba.head;
-	action_count = ba.action_count;
-	lines = ba.lines;
-	actions = ba.actions;
-
-	lcl = ba.lcl;  lcc = ba.lcc;
-	vcl = ba.vcl;  vcc = ba.vcc;
-	vol = ba.vol;  voc = ba.voc; 
-	vsl = ba.vsl;  vsc = ba.vsc; 
-	vdc = ba.vdc;  lal = ba.lal;
-	lac = ba.lac;
-}
-
-static inline void zero_registers() {    // does this need to exist?... 
-
-	wrap_width = 0;
-	tab_width = 0;
-
-	capacity = 0;
-	count = 0;
-
-	head = 0;
-	action_count = 0;
-
-	lines = NULL;
-	actions = NULL;
-
-	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
-	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
-
-	this = (struct buffer){0};
-	buffers = NULL;
-	buffer_count = 0;
-	active_index = 0;
-}
-
-static inline void initialize_registers() {
-	
-	this = (struct buffer) {0};
-
-	wrap_width = 100;     // todo: change all checks of    x < ww     to     x < ww or not ww
-	tab_width = 8; 
-	capacity = 1;
-	count = 1;
-	head = 0;
-	action_count = 1;
-	lines = calloc(1, sizeof(struct line));
-	actions = calloc(1, sizeof(struct action));
-
-	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
-	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
-
-	this.sn_rows = 5;
-	this.show_line_numbers = 1; 
-	this.line_number_width = 0;
-	this.saved = true;
-	this.autosaved = true;
-	this.mode = 0;
-	this.use_txt_extension_when_absent = 1;
+	running = true;
 }
 
 static inline void create_empty_buffer() {
 	store_current_data_to_buffer();
-	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 1));
+	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 2));
+	buffers[buffer_count + 1] = buffers[buffer_count];
 	buffers[buffer_count] = (struct buffer) {0};
 	initialize_registers();
 	active_index = buffer_count;
@@ -936,7 +1202,29 @@ static inline void create_empty_buffer() {
 }
 
 static inline void close_active_buffer() {
+	if (active_index == buffer_count)  {
+		
+		store_current_data_to_buffer();
+
+
+		for (nat line = 0; line < buffers[active_index].count; line++) 
+			free(buffers[active_index].lines[line].data);
+		free(buffers[active_index].lines);
+
+		for (nat a = 0; a < buffers[active_index].action_count; a++) {
+			free(buffers[active_index].actions[a].text);
+			free(buffers[active_index].actions[a].children);
+		}
+		free(buffers[active_index].actions);
+		
+		free(buffers);
+
+		running = false;
+		return;
+	}
+
 	store_current_data_to_buffer();
+
 	for (nat line = 0; line < buffers[active_index].count; line++) 
 		free(buffers[active_index].lines[line].data);
 	free(buffers[active_index].lines);
@@ -947,23 +1235,27 @@ static inline void close_active_buffer() {
 	}
 	free(buffers[active_index].actions);
 
-	buffer_count--;
 	memmove(buffers + active_index, buffers + active_index + 1, 
 		sizeof(struct buffer) * (size_t)(buffer_count - active_index));
-	if (active_index >= buffer_count) active_index = buffer_count - 1;
-	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count));
+
+	buffer_count--;
+
+	if (active_index >= buffer_count) active_index = buffer_count - 1;  //!?!?!?!?!?  WHAT!?!?!?
+
+	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 1));
+
 	load_buffer_data_into_registers();
 }
 
 static inline void move_to_next_buffer() {
 	store_current_data_to_buffer(); 
-	if (active_index) active_index--; 
+	if (active_index) active_index--; else active_index = buffer_count;
 	load_buffer_data_into_registers();
 }
 
 static inline void move_to_previous_buffer() {
 	store_current_data_to_buffer(); 
-	if (active_index < buffer_count - 1) active_index++; 
+	if (active_index < buffer_count) active_index++; else active_index = 0;
 	load_buffer_data_into_registers();
 }
 
@@ -1069,7 +1361,6 @@ static inline void autosave() {
 
 	char local_filename[4096] = {0};
 	sprintf(local_filename, "%sautosave_%s_.txt", autosave_directory, dt);
-
 
 	FILE* file = fopen(local_filename, "w+");
 	if (not file) {
@@ -1320,6 +1611,7 @@ static inline char* get_selection(nat* out) {
 	return NULL;
 }
 
+
 static inline void paste() {
 
  if (not fuzz) {
@@ -1513,22 +1805,22 @@ static inline void recalculate_position() {
 
 static inline void open_directory() {
 	
-	DIR* directory = opendir(cwd);
+	DIR* directory = opendir(this.cwd);
 	if (not directory) { 
-		sprintf(this.message, "couldnt open cwd=%s, reason=%s", cwd, strerror(errno));	
+		sprintf(this.message, "couldnt open cwd=%s, reason=%s", this.cwd, strerror(errno));	
 		return;
 	}
 
 	struct dirent *e = NULL;
 
-	nat length = (nat)strlen(cwd) + 2;
+	nat length = (nat)strlen(this.cwd) + 2;
 	char* menu = calloc((size_t) length + 1, sizeof(char));
-	sprintf(menu, ":%s\n", cwd);
+	sprintf(menu, ":%s\n", this.cwd);
 	
 	while ((e = readdir(directory))) {
 
 		char path[4096] = {0};
-		strlcpy(path, cwd, sizeof path);
+		strlcpy(path, this.cwd, sizeof path);
 		strlcat(path, e->d_name, sizeof path);
 
 		if (is_directory(path)) {
@@ -1554,9 +1846,9 @@ static inline void change_directory() {
 	char* selection = strndup(lines[lcl].data, (size_t) lines[lcl].count);
 
 	if (equals(selection, "../") ) {
-		if (not equals(cwd, "/")) {
-			cwd[strlen(cwd) - 1] = 0;
-			*(1+strrchr(cwd, '/')) = 0;
+		if (not equals(this.cwd, "/")) {
+			this.cwd[strlen(this.cwd) - 1] = 0;
+			*(1+strrchr(this.cwd, '/')) = 0;
 		} else {
 			sprintf(this.message, "error: at root /");
 		}
@@ -1566,11 +1858,11 @@ static inline void change_directory() {
 
 	} else {
 		char path[4096] = {0};
-		strlcpy(path, cwd, sizeof path);
+		strlcpy(path, this.cwd, sizeof path);
 		strlcat(path, selection, sizeof path);
 
 		if (is_directory(path)) {
-			strlcat(cwd, selection, sizeof cwd);
+			strlcat(this.cwd, selection, sizeof this.cwd);
 		} else {
 			sprintf(this.message, "error: not a directory");
 		}
@@ -1579,10 +1871,10 @@ static inline void change_directory() {
 
 static inline void file_select() {
 	char* line = strndup(lines[lcl].data, (size_t) lines[lcl].count);
-	strlcpy(selected_file, cwd, sizeof selected_file);
-	strlcat(selected_file, line, sizeof selected_file);
+	strlcpy(this.selected_file, this.cwd, sizeof this.selected_file);
+	strlcat(this.selected_file, line, sizeof this.selected_file);
 	free(line);
-	sprintf(this.message, "selected: %s", selected_file);
+	sprintf(this.message, "selected: %s", this.selected_file);
 }
 
 static inline char** split(char* string, char delim, int* array_count) {
@@ -1687,6 +1979,14 @@ static inline void execute(char c, char p) {
 		else if (c == 'i') { move_right(); vdc = vcc; }
 		else if (c == 'n') { move_left(); vdc = vcc; }
 
+
+		else if (c == '-') { if (split_point < window_rows) split_point++; }
+		else if (c == '=') { if (split_point) split_point--; }
+
+		else if (c == ',') { last_active_index = active_index; }
+		else if (c == '.') { active_index = last_active_index in_n_buffer = false; }
+
+
 		else if (c == 's') save();
 
 		else if (c == 'q') {
@@ -1734,14 +2034,14 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "changedirectory")) change_directory();
 			else if (equals(command, "opendirectory")) open_directory();
 			else if (equals(command, "selectfile")) file_select();
-			else if (equals(command, "openfile")) { file_select(); open_file(selected_file); }
-			else if (equals(command, "selection")) sprintf(this.message, "%s", selected_file);
-			else if (equals(command, "where")) sprintf(this.message, "@ %s", cwd);
-			else if (equals(command, "home")) { getcwd(cwd, sizeof cwd); strlcat(cwd, "/", sizeof cwd); }
+			else if (equals(command, "openfile")) { file_select(); open_file(this.selected_file); }
+			else if (equals(command, "selection")) sprintf(this.message, "%s", this.selected_file);
+			else if (equals(command, "where")) sprintf(this.message, "@ %s", this.cwd);
+			else if (equals(command, "home")) { getcwd(this.cwd, sizeof this.cwd); strlcat(this.cwd, "/", sizeof this.cwd); }
 			else if (equals(command, "clearmessage")) memset(this.message, 0, sizeof this.message);
 			else if (equals(command, "numbers")) this.show_line_numbers = not this.show_line_numbers;
-			else if (equals(command, "sn_incr")) { if (this.sn_rows < window_rows) this.sn_rows++; }
-			else if (equals(command, "sn_decr")) { if (this.sn_rows) this.sn_rows--; }
+			else if (equals(command, "sn_incr")) { if (split_point < window_rows) split_point++; }
+			else if (equals(command, "sn_decr")) { if (split_point) split_point--; }
 			else if (equals(command, "cut")) cut();
 			else if (equals(command, "delete")) delete(1);
 			// else if (equals(command, "anchor")) anchor();
@@ -1799,7 +2099,7 @@ static void* autosaver(void* unused) {
 	while (1) {
 		sleep(autosave_frequency);
 		pthread_mutex_lock(&mutex);
-		if (not buffer_count) break;
+		if (not buffer_count and not running) break;
 		if (not this.autosaved) autosave();
 		pthread_mutex_unlock(&mutex);
 	}
@@ -1818,15 +2118,28 @@ static inline void editor() {
 		pthread_mutex_init(&mutex, NULL);
 		pthread_mutex_lock(&mutex);
 		pthread_create(&autosave_thread, NULL, &autosaver, NULL);
-
 	} 
+
+
+
+	ioctl(1, TIOCGWINSZ, &window);
+	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 27; window.ws_col = 70; }
+	if (window.ws_row != window_rows or window.ws_col != window_columns) {
+
+		window_rows = window.ws_row - 1;
+		window_columns = window.ws_col - 1; 
+
+		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));	
+	}
+
+	// make this a function!    ^
 
 	char p = 0, c = 0;
 
-    	getcwd(cwd, sizeof cwd);
-	strlcat(cwd, "/", sizeof cwd);
+    	getcwd(this.cwd, sizeof this.cwd);
+	strlcat(this.cwd, "/", sizeof this.cwd);
 
-loop:	display(5);
+loop:	display();
 	pthread_mutex_unlock(&mutex);
 	c = read_stdin(); 
 	pthread_mutex_lock(&mutex);
@@ -1855,6 +2168,7 @@ done:	while (buffer_count) close_active_buffer();
 
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
+	create_sn_buffer();
 	create_empty_buffer();
 	fuzz_input_index = 0; 
 	fuzz_input = _input;
@@ -1866,9 +2180,38 @@ int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 #else
 
 int main(const int argc, const char** argv) {
-	if (argc <= 1) create_empty_buffer();
+
+	create_sn_buffer();
+
+	char buffer[4096] = {0};
+
+	nat buffer_length = sprintf(buffer, " [%ld %ld] [%ld %ld] [%ld %s] [%c%c %s]\n%s",
+		0L, // this.mode, 
+		0L,1L, // active_index, buffer_count,
+		5L,5L,// lcl, lcc, 
+		"this.filename",
+		true ? 's' : 'e', 
+		true ? ' ' : '*',
+		"this.message",
+		"/this.location/stuff"
+	);
+
+	for (nat i = 0; i < buffer_length; i++) {
+		insert(buffer[i], 0);
+	}
+	move_top();
+
+
+	
+
+	if (argc <= 1) create_empty_buffer();                     // debating on having this line... 
+
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
+	
+
+
 	signal(SIGINT, handle_signal_interrupt);
+
 	editor();
 }
 
@@ -1919,7 +2262,7 @@ int main(const int argc, const char** argv) {
 	buffer[strlen(buffer) - 1] = 0;
 
 
-int array_count = 0;
+	int array_count = 0;
 	char* string = buffer;
 
 	nat length = (nat) strlen(string);
