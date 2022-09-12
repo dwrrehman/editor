@@ -15,7 +15,6 @@
 //         debugged on 2201252.173237
 // 	   debugged on 2208022.211844
 // 	   debugged on 2208151.002947
-
 // 	     edited on 2209036.110503
 // 	   
 
@@ -131,9 +130,6 @@ static const uint8_t* fuzz_input = NULL;
 
 
 
-
-
-
 static nat running = 0;
 
 static nat 
@@ -142,18 +138,19 @@ static nat
 static struct winsize window = {0}; 
 static char* screen = NULL;
 
-
-
 static nat sn_rows = 0;
 static nat split_point = 0; 
-static nat last_active_index = 0;
 static bool in_scratch_buffer = false;
-
-
-
 
 static nat buffer_count = 0, active_index = 0; 
 static struct buffer* buffers = NULL, this = {0};
+
+
+
+
+
+
+
 
 static struct line* lines;
 static struct action* actions;
@@ -164,6 +161,10 @@ static nat
 	lcl, lcc, 	vcl, vcc,    vol, voc,    sbl, sbc,    sel, sec,
 	vsl, vsc, 	vdc,         lal, lac,    swl, swc
 ;
+
+
+
+
 
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
@@ -410,8 +411,6 @@ static inline void record_logical_state(struct logical_state* pcond_out) {
 	p->vdc = vdc;  p->lal = lal;
 	p->lac = lac; 
 
-	//todo: add sbl, etc..
-
 	p->wrap_width = wrap_width;
 	p->tab_width = tab_width;
 }
@@ -600,9 +599,9 @@ static inline void insertdt() {
 }
 
 
-static inline void store_current_data_to_buffer() {
+static inline void store(nat BUFFER) {
 
-	const nat b = active_index;
+	const nat b = BUFFER;
 	buffers[b] = this;
 
 	buffers[b].wrap_width = wrap_width;
@@ -626,9 +625,9 @@ static inline void store_current_data_to_buffer() {
 	buffers[b].swl = swl; buffers[b].swc = swc; 
 }
 
-static inline void load_buffer_data_into_registers() {
+static inline void load(nat BUFFER) {
 
-	struct buffer ba = buffers[active_index];
+	struct buffer ba = buffers[BUFFER];
 	this = ba;
 
 	capacity = ba.capacity;
@@ -745,8 +744,14 @@ static inline void adjust_window_size() {
 }
 
 
-static inline nat display_proper(nat length, nat* total, int line_number_digits) {
+static inline nat display_proper(
+		nat length, nat* total, 
+	int line_number_digits) {
 	
+
+
+
+
 	nat sl = 0, sc = 0, vl = vol, vc = voc;
 
 	sanity_check();
@@ -829,12 +834,46 @@ static inline nat display_proper(nat length, nat* total, int line_number_digits)
 	return length;
 }
 
+static inline void add_status() {
 
+	const nat b = in_scratch_buffer ? buffer_count : active_index;
+
+	char status[8448] = {0};
+	nat status_length = sprintf(status, " [n=%ld m=%ld] [b=%ld ai=%ld bc=%ld] [%ld %ld] %s %c%c %s",
+		(nat) in_scratch_buffer, buffers[b].mode, 
+		b, active_index, buffer_count, 
+		buffers[b].lcl, buffers[b].lcc,
+		buffers[b].filename,
+		buffers[b].saved ? 's' : 'e', 
+		buffers[b].autosaved ? ' ' : '*',
+		buffers[b].message
+	);
+
+	lines->capacity = status_length;
+	lines->count = status_length;
+
+	free(lines->data);
+	lines->data = malloc((size_t) status_length);
+	memcpy(lines->data, status, (size_t) status_length);
+}
 
 
 static inline void display() {
 
+	/////////////////////////////////////////////////////
+
+	if (in_scratch_buffer) {
+		store(buffer_count);
+	} else {
+		store(active_index);
+	}
+
+	/////////////////////////////////////////////////////
+
+
 	adjust_window_size();
+
+
 
 	nat total = 0, cursor_line = 0, cursor_col = 0;
 	nat length = 6; 
@@ -843,30 +882,22 @@ static inline void display() {
 
 
 
-	nat save1 = active_index;
 
+	load(active_index);
 
+		double f = floor(log10((double) count)) + 1;
+		int line_number_digits = (int)f;
+		nat line_number_width = this.show_line_numbers * (line_number_digits + 2);
 
+		sbl = 0;
+		sbc = line_number_width;
+		sel = split_point;
+		sec = window_columns;
+		swl = sel - sbl;
+		swc = sec - sbc;
 
+	store(active_index);
 
-	store_current_data_to_buffer();
-	active_index = last_active_index;
-	load_buffer_data_into_registers();
-
-
-	double f = floor(log10((double) count)) + 1;
-	int line_number_digits = (int)f;
-	nat line_number_width = this.show_line_numbers * (line_number_digits + 2);
-	
-
-	
-
-	sbl = 0;
-	sbc = line_number_width;
-	sel = split_point;
-	sec = window_columns;
-	swl = sel - sbl;
-	swc = sec - sbc;
 
 
 
@@ -880,53 +911,30 @@ static inline void display() {
 	}
 
 
-	const nat save = last_active_index;  
-
-	store_current_data_to_buffer();
-
-	active_index = buffer_count;
-
-	// if (not buffer_count) abort();      // debug 
-
-	load_buffer_data_into_registers();
 
 
-	
 
-		char status[8448] = {0};
 
-		nat status_length = sprintf(status, " [%ld %ld] [%ld %ld %ld] [%ld %ld] %s %c%c %s",
-			in_scratch_buffer, buffers[save].mode, 
-			last_active_index, save, buffer_count, 
-			buffers[save].lcl, buffers[save].lcc, 
-			buffers[save].filename,
-			buffers[save].saved ? 's' : 'e', 
-			buffers[save].autosaved ? ' ' : '*',
-			buffers[save].message
-		);
+	load(buffer_count);
 
-		move_top();
-		lines[0].count = 0;
-		for (nat i = 0; i < status_length; i++) {
-			insert(status[i], 0);
-		}
-	
-	
+		f = floor(log10((double) count)) + 1;
+		line_number_digits = (int)f;
+		line_number_width = this.show_line_numbers * (line_number_digits + 2);
+		
+		sbl = split_point;
+		sbc = line_number_width;
+		sel = window_rows;
+		sec = window_columns;
+		swl = sel - sbl;
+		swc = sec - sbc;
 
-	// nat save_ln = this.show_line_numbers;
-	// this.show_line_numbers = false;
+		add_status();
 
-	
-	f = floor(log10((double) count)) + 1;
-	line_number_digits = (int)f;
-	line_number_width = this.show_line_numbers * (line_number_digits + 2);
-	
-	sbl = split_point;
-	sbc = line_number_width;
-	sel = window_rows;
-	sec = window_columns;
-	swl = sel - sbl;
-	swc = sec - sbc;
+	store(buffer_count);
+
+
+
+
 
 	length += sprintf(screen + length, "\033[%ld;%ldH",  split_point + 1L,  1L ); 
 	length = display_proper(length, &total, line_number_digits);
@@ -936,16 +944,157 @@ static inline void display() {
 		cursor_col = sbc + vsc + 1;
 	}
 
-	// this.show_line_numbers = save_ln;
+
+
+
+
+
+	
+	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", cursor_line, cursor_col);
+	if (not fuzz)   write(1, screen, (size_t) length);
+
+
+
+
+
+	/////////////////////////////////////////////
+
+	if (in_scratch_buffer) {
+		load(buffer_count);
+	} else {
+		load(active_index);
+	}
+
+	/////////////////////////////////////////////
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+static inline void displttttttttay_DEBUG() {
+
+
+	nat save1 = active_index;
+	store_current_data_to_buffer();
+	active_index = last_active_index;
+	load_buffer_data_into_registers();
+
+	double f = floor(log10((double) count)) + 1;
+	int line_number_digits = (int)f;
+	nat line_number_width = this.show_line_numbers * (line_number_digits + 2);
+	
+	const nat save = last_active_index;  
+	store_current_data_to_buffer();
+	active_index = buffer_count;
+	load_buffer_data_into_registers();
+	
+	f = floor(log10((double) count)) + 1;
+	line_number_digits = (int)f;
+	line_number_width = this.show_line_numbers * (line_number_digits + 2);
+
+	sbl = split_point;
+	sbc = line_number_width;
+	sel = window_rows;
+	sec = window_columns;
+	swl = sel - sbl;
+	swc = sec - sbc;
 
 	store_current_data_to_buffer();
 	active_index = save1;
 	load_buffer_data_into_registers();
-	
-
-	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", cursor_line, cursor_col);
-	if (not fuzz)   write(1, screen, (size_t) length);
 }
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 /*
@@ -997,19 +1146,6 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 
 
 
-	
-
-	// sprintf(buffer, "%ld", this.mode);
-
-
-
-	// push_char(c, &string, &length);
-
-	// if (lines->capacity <=
-	// lines->data = realloc(lines->data, buffer_length
-
-
-
 
 
 */
@@ -1054,26 +1190,26 @@ static inline void create_sn_buffer() {
 	buffer_count = 0;  active_index = 0;
 	buffers = calloc(1, sizeof(struct buffer));
 	initialize_registers();
-	store_current_data_to_buffer();
+	store(active_index);
 
 	running = true;
 }
 
 static inline void create_empty_buffer() {
-	store_current_data_to_buffer();
+	store(active_index);
 	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 2));
 	buffers[buffer_count + 1] = buffers[buffer_count];
 	buffers[buffer_count] = (struct buffer) {0};
 	initialize_registers();
 	active_index = buffer_count;
 	buffer_count++;
-	store_current_data_to_buffer();
+	store(active_index);
 }
 
 static inline void close_active_buffer() {
 	if (not buffer_count)  {
 		
-		store_current_data_to_buffer();
+		store(active_index);
 
 
 		for (nat line = 0; line < buffers[active_index].count; line++) 
@@ -1094,7 +1230,7 @@ static inline void close_active_buffer() {
 	} else if (active_index == buffer_count) return;
 
 
-	store_current_data_to_buffer();
+	store(active_index);
 
 	for (nat line = 0; line < buffers[active_index].count; line++) 
 		free(buffers[active_index].lines[line].data);
@@ -1116,19 +1252,19 @@ static inline void close_active_buffer() {
 	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 1));
 
 	if (buffer_count) 
-		load_buffer_data_into_registers();
+		load(active_index);
 }
 
 static inline void move_to_next_buffer() {
-	store_current_data_to_buffer(); 
+	store(active_index); 
 	if (active_index) active_index--; else active_index = buffer_count;
-	load_buffer_data_into_registers();
+	load(active_index);
 }
 
 static inline void move_to_previous_buffer() {
-	store_current_data_to_buffer(); 
+	store(active_index); 
 	if (active_index < buffer_count) active_index++; else active_index = 0;
-	load_buffer_data_into_registers();
+	load(active_index);
 }
 
 static inline void open_file(const char* given_filename) {
@@ -1162,7 +1298,7 @@ static inline void open_file(const char* given_filename) {
 	move_top();
 	strcpy(this.filename, given_filename);
 	strcpy(this.location, given_filename); // todo:   seperate out these two things!!!
-	store_current_data_to_buffer();
+	store(active_index);
 
 	sprintf(this.message, "read %lub", length);
 }
@@ -1208,20 +1344,20 @@ static inline void emergency_save_to_file() {
 
 static inline void emergency_save_all_buffers() {
 
-	store_current_data_to_buffer();
+	store(active_index);
 
 	nat saved_active_index = active_index;
 	for (int i = 0; i < buffer_count; i++) {
 		
 		active_index = i;
-		load_buffer_data_into_registers();
+		load(active_index);
 		emergency_save_to_file(); 
 
 		sleep(1);
 	}
 	
 	active_index = saved_active_index;
-	load_buffer_data_into_registers();
+	load(active_index);
 }
 
 static inline void autosave() {
@@ -1852,17 +1988,42 @@ static inline void execute(char c, char p) {
 
 		else if (c == '-') { if (sn_rows < window_rows) sn_rows++; }
 		else if (c == '=') { if (sn_rows) sn_rows--; }
-		else if (c == '0') {}
 
-		else if (c == '1') {
-			in_scratch_buffer = true; 
-			last_active_index = active_index; 
-			active_index = buffer_count; 
+
+		else if (c == '.') sprintf(this.message, "this is a very long status message. i really like pasta, and beans, and pasta too. it is very delicious, and tasty, i have to have dinner now lol. yay. this is a very long status message. i am testing something cool. yay. this is working well i think.");
+		
+
+		else if (c == '1') {                         // YES, be in *n.             // (get out of *i!)
+
+
+
+			if (not in_scratch_buffer) {          // if we are currently in star i,
+				
+				// then try to get out of *i, and go to *n!
+
+				store(active_index);
+				load(buffer_count);
+				in_scratch_buffer = true; 
+			}
 		}
-		else if (c == '0')  {
-			in_scratch_buffer = false; 
-			active_index = last_active_index; 
-			last_active_index = buffer_count; 
+
+
+
+		else if (c == '0')  {                     // NO, dont be in *n.           go back to *i    !!!!!!!!
+
+
+			if (in_scratch_buffer) {          // if we are currently in star n,
+				
+				// then try to get out of it, and go back to active_index.         (*i)
+
+				store(buffer_count);
+				load(active_index);
+				in_scratch_buffer = false; 
+
+			}
+
+
+
 		}
 
 		else if (c == 's') save();
@@ -2003,6 +2164,9 @@ static inline void editor() {
     	getcwd(this.cwd, sizeof this.cwd);
 	strlcat(this.cwd, "/", sizeof this.cwd);
 
+
+
+
 loop:	display();
 	pthread_mutex_unlock(&mutex);
 	c = read_stdin(); 
@@ -2062,6 +2226,96 @@ int main(const int argc, const char** argv) {
 
 
 // ---------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2598,4 +2852,26 @@ static inline void clear_above_textbox() {
 //   not associated with a buffer.  
 		/// saveable to the .editor_rc file (the *n buffer savefile)
 		// tweakable from any buffer, and is held constant when moving between buffers. yes.
+
+
+
+
+
+
+	
+
+	// sprintf(buffer, "%ld", this.mode);
+
+
+
+	// push_char(c, &string, &length);
+
+	// if (lines->capacity <=
+	// lines->data = realloc(lines->data, buffer_length
+
+
+
+
+
+
 
