@@ -141,6 +141,7 @@ static char* screen = NULL;
 static nat sn_rows = 0;
 static nat split_point = 0; 
 static bool in_scratch_buffer = false;
+static bool in_prompt = false;
 
 static nat buffer_count = 0, active_index = 0; 
 static struct buffer* buffers = NULL, this = {0};
@@ -834,14 +835,17 @@ static inline nat display_proper(
 	return length;
 }
 
-static inline void add_status() {
+static inline void add_status() {        // (assumes *n is in the registers.)
 
-	const nat b = in_scratch_buffer ? buffer_count : active_index;
+
+
+	const nat b = not in_scratch_buffer ? active_index : buffer_count;
 
 	char status[8448] = {0};
 	nat status_length = sprintf(status, " [n=%ld m=%ld] [b=%ld ai=%ld bc=%ld] [%ld %ld] %s %c%c %s",
-		(nat) in_scratch_buffer, buffers[b].mode, 
-		b, active_index, buffer_count, 
+		(nat) in_scratch_buffer, 
+		buffers[b].mode, 
+		0L, active_index, buffer_count, 
 		buffers[b].lcl, buffers[b].lcc,
 		buffers[b].filename,
 		buffers[b].saved ? 's' : 'e', 
@@ -849,12 +853,17 @@ static inline void add_status() {
 		buffers[b].message
 	);
 
-	lines->capacity = status_length;
-	lines->count = status_length;
+	if (not in_scratch_buffer) {
 
-	free(lines->data);
-	lines->data = malloc((size_t) status_length);
-	memcpy(lines->data, status, (size_t) status_length);
+		lines->capacity = status_length;
+		lines->count = status_length;
+
+		free(lines->data);
+		lines->data = malloc((size_t) status_length);
+		memcpy(lines->data, status, (size_t) status_length);
+		move_top(); 
+
+	} else insert_string(status, status_length);
 }
 
 
@@ -928,7 +937,7 @@ static inline void display() {
 		swl = sel - sbl;
 		swc = sec - sbc;
 
-		add_status();
+		if (not in_scratch_buffer) add_status();
 
 	store(buffer_count);
 
@@ -1156,18 +1165,74 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 
 
 
-static inline void print_above_textbox(char* write_message) {
-	puts(write_message);
+
+static inline void print_above_textbox(char* message) {
+
+	if (not in_scratch_buffer) { 
+		store(active_index);
+		load(buffer_count);
+		in_scratch_buffer = true; 
+	}
+	insert('\n', 1);
+	insert_string(message, (nat) strlen(message));
+
+	store(buffer_count);
+	load(active_index);
+	in_scratch_buffer = false; 
 }
+
+
+
+
+static inline void execute(char c, char p);
+
+
+
+
+
+
+
 
 static inline void prompt(const char* prompt_message, char* out, nat out_size)  {
-	printf("%s, %s, %zd", prompt_message, out, out_size);
+
+	if (not in_scratch_buffer) { 
+		store(active_index);
+		load(buffer_count);
+		in_scratch_buffer = true; 
+	}
+
+	move_bottom(); this.mode = 0;
+	insert('\n', 1);
+	insert_string(prompt_message, (nat) strlen(prompt_message));
+	insert('\n', 1);
+	in_prompt = true;
+	char c = 0, p = 0;
+
+loop:	display();                                           // make this all a function.
+	pthread_mutex_unlock(&mutex);
+	c = read_stdin(); 
+	pthread_mutex_lock(&mutex);
+	if (fuzz and not c) goto done;
+	execute(c, p);
+	p = c;
+	if (in_prompt) goto loop;
+done:;
+	const char* string = lines[lcl].data;
+	nat string_length = lines[lcl].count;
+
+	if (string_length > out_size) string_length = out_size;
+	memcpy(out, string, (size_t) string_length);
+	memset(out + string_length, 0, (size_t) out_size - (size_t) string_length);
+	out[out_size - 1] = 0;
+
+	store(buffer_count);
+	load(active_index);
+	in_scratch_buffer = false; 
 }
-
-
 
 
 static inline bool confirmed(const char* question, const char* yes_action, const char* no_action) {
+	if (in_prompt) return false;
 
 	char prompt_message[4096] = {0}, invalid_response[4096] = {0};
 	sprintf(prompt_message, "%s? (%s/%s): ", question, yes_action, no_action);
@@ -1227,7 +1292,7 @@ static inline void close_active_buffer() {
 		running = false;
 		return;
 
-	} else if (active_index == buffer_count) return;
+	} else if (in_scratch_buffer) return;
 
 
 	store(active_index);
@@ -1916,6 +1981,7 @@ static inline void execute(char c, char p) {
 
 	if (this.mode == 0) {
 
+		if (in_prompt and c == '\r') { in_prompt = false; return; }
 		if (c == 'c' and p == 'h') { undo(); this.mode = 1; }
 		else if (c == 27 and stdin_is_empty()) this.mode = 1;
 		else if (c == 27) interpret_escape_code();
@@ -1939,10 +2005,21 @@ static inline void execute(char c, char p) {
 	
 		if (c == ' ');
 
-		// else if (c == 'l' and p == 'e') prompt_jump_line();         // unbind this?... yeah...
-		// else if (c == 'k' and p == 'e') prompt_jump_column();       // unbind this?... hmm...
-		// else if (c == 'd' and p == 'h') prompt_open();
-		// else if (c == 'f' and p == 'h') create_empty_buffer();
+
+	// temp:
+
+		else if (c == 'l' and p == 'e') prompt_jump_line();         // unbind this?... yeah...
+		else if (c == 'k' and p == 'e') prompt_jump_column();       // unbind this?... hmm...
+
+
+	// temp:
+
+		else if (c == 'd' and p == 'h') prompt_open();
+		else if (c == 'f' and p == 'h') create_empty_buffer();
+
+
+
+
 
 
 		else if (c == 'l' and p == 'e') {}
@@ -2022,17 +2099,16 @@ static inline void execute(char c, char p) {
 
 			}
 
-
-
 		}
+
+
+		else if (c == '/') { if (in_scratch_buffer) add_status(); }   // make this a command. not a keybinding.
 
 		else if (c == 's') save();
 
 		else if (c == 'q') {
 			if (this.saved or confirmed("discard unsaved changes", "discard", "no")) close_active_buffer(); 
 		}
-
-		else if (c == 'Q') close_active_buffer();      // TEMP
 
 		else if (c == 27 and stdin_is_empty()) {}
 		else if (c == 27) interpret_escape_code();
