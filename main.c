@@ -16,22 +16,48 @@
 // 	   debugged on 2208022.211844
 // 	   debugged on 2208151.002947
 // 	     edited on 2209036.110503
+//	   debugged on 2209121.211839
 // 	   
-
 
 /*
 	------------- todo list ----------------
 
-	x	- display the *n buffer.
 
-		- add selecting/anchor/recent logic. (only using "lal/lac").
+***		- fix the huge performance bug in the editor..
+			...performance is actually terrible right now. 
 
-	x	- get the textbox working using *n.
+		- - decrease the numberof context switches. they are very expensive.
+		- - make the status bar implemented more efficiently. 
 
-	x	- get the status bar working, using *n.
+		- - make the scratch buffer implemented more efficiently. 
+
+
+		
+	
+
+
 
 		- add the ww=0 ww_disable code everywhere.
 
+		- implment word wrapping. 
+
+		- add CORRECT scrolling code. 
+
+		- add mouse support!
+
+		- split out location and filename when saving. 
+
+	 	- implement programming lang interpter
+
+		
+
+	--------------- done --------------------------
+
+	x	- display the *n buffer.
+	x	- get the textbox working using *n.
+	x	- get the status bar working, using *n.
+
+		- add selecting/anchor/recent logic. (only using "lal/lac").
 
 */
 
@@ -56,20 +82,16 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 
-#define is_fuzz_testing		1
 #define reading_crash  		0
 #define running_crash  		0
-#define fuzz 			1
-#define use_main    		0
+#define fuzz 			0
+#define use_main    		1
 #define memory_safe 		1
-
 
 typedef ssize_t nat;
 
 // todo: make these part of the config file / parameters.
-
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
-
 static const nat autosave_frequency = 8;     // in seconds
 
 enum action_type {
@@ -130,32 +152,20 @@ static size_t fuzz_input_index = 0;
 static size_t fuzz_input_count = 0;       
 static const uint8_t* fuzz_input = NULL; 
 
-
-
-
-
 static nat 
 	window_rows = 0, 
 	window_columns = 0;
 static struct winsize window = {0}; 
 static char* screen = NULL;
 
-static nat sn_rows = 0;
-static nat split_point = 0; 
-static bool sn = false;
-static bool in_prompt = false;
+static nat sn_rows = 0;        //    we dont need both of these.    consolidate them. 
+static nat split_point = 0;    //
 
-static nat running = 0;
-
+static bool sn = false;        // this is fine.
+static bool in_prompt = false;      // rework this...
+ 
 static nat buffer_count = 0, active_index = 0; 
 static struct buffer* buffers = NULL, this = {0};
-
-
-
-
-
-
-
 
 static struct line* lines;
 static struct action* actions;
@@ -168,21 +178,9 @@ static nat
 ;
 
 
-
-
-
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
 static inline bool file_exists(const char* f) { return access(f, F_OK) != -1; }
-
-/*static inline nat unicode_strlen(const char* string) {
-	nat i = 0, length = 0;
-	while (string[i]) {
-		if (visual(string[i])) length++;
-		i++;
-	}
-	return length;
-}*/
 
 static inline char read_stdin() {
 	char c = 0;
@@ -839,58 +837,25 @@ static inline void add_status() {        // (assumes *n is in the registers.)
 }
 
 static inline void display() {
-/*
-		lines->capacity = status_length;
-		lines->count = status_length;
-
-		free(lines->data);
-		lines->data = malloc((size_t) status_length);
-		memcpy(lines->data, status, (size_t) status_length);
-		*/
-
-
-
-	/////////////////////////////////////////////////////
-
-	if (sn) {
-		store(buffer_count);
-	} else {
-		store(active_index);
-	}
-
-	/////////////////////////////////////////////////////
-
-
+	store(sn ? buffer_count : active_index);
 	adjust_window_size();
 
-
-
 	nat total = 0, cursor_line = 0, cursor_col = 0;
-	nat length = 6; 
+	nat length = 6;
 	memcpy(screen, "\033[?25l", 6);
 	
-
-
-
-
 	load(active_index);
+	double f = floor(log10((double) count)) + 1;
+	int line_number_digits = (int)f;
+	nat line_number_width = this.show_line_numbers * (line_number_digits + 2);
 
-		double f = floor(log10((double) count)) + 1;
-		int line_number_digits = (int)f;
-		nat line_number_width = this.show_line_numbers * (line_number_digits + 2);
-
-		sbl = 0;
-		sbc = line_number_width;
-		sel = split_point;
-		sec = window_columns;
-		swl = sel - sbl;
-		swc = sec - sbc;
-
+	sbl = 0;
+	sbc = line_number_width;
+	sel = split_point;
+	sec = window_columns;
+	swl = sel - sbl;
+	swc = sec - sbc;
 	store(active_index);
-
-
-
-
 
 	length += sprintf(screen + length, "\033[%ld;%ldH", 1L, 1L); 
 	length = display_proper(length, &total, line_number_digits);
@@ -900,31 +865,20 @@ static inline void display() {
 		cursor_col = sbc + vsc + 1;
 	}
 
-
-
-
-
-
 	load(buffer_count);
+	f = floor(log10((double) count)) + 1;
+	line_number_digits = (int)f;
+	line_number_width = this.show_line_numbers * (line_number_digits + 2);
+	
+	sbl = split_point;
+	sbc = line_number_width;
+	sel = window_rows;
+	sec = window_columns;
+	swl = sel - sbl;
+	swc = sec - sbc;
 
-		f = floor(log10((double) count)) + 1;
-		line_number_digits = (int)f;
-		line_number_width = this.show_line_numbers * (line_number_digits + 2);
-		
-		sbl = split_point;
-		sbc = line_number_width;
-		sel = window_rows;
-		sec = window_columns;
-		swl = sel - sbl;
-		swc = sec - sbc;
-
-		if (not sn) add_status();
-
+	add_status();
 	store(buffer_count);
-
-
-
-
 
 	length += sprintf(screen + length, "\033[%ld;%ldH",  split_point + 1L,  1L ); 
 	length = display_proper(length, &total, line_number_digits);
@@ -934,87 +888,11 @@ static inline void display() {
 		cursor_col = sbc + vsc + 1;
 	}
 
-
-
-
-
-
-	
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", cursor_line, cursor_col);
 	if (not fuzz)   write(1, screen, (size_t) length);
 
-
-
-
-
-	/////////////////////////////////////////////
-
-	if (sn) {
-		load(buffer_count);
-	} else {
-		load(active_index);
-	}
-
-	/////////////////////////////////////////////
+	load(sn ? buffer_count : active_index);
 }
-
-
-
-
-
-
-
-/*
-
-static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
-
-	tb.prompt_length = unicode_strlen(prompt_message);
-	do {
-		adjust_window_size();
-		textbox_display(prompt_message, color);
-
-		char c = read_stdin();
-
-		if (c == '\r' or c == '\n') break;
-		else if (c == '\t') {  
-			
-			const nat path_length = (nat) strlen(user_selection);
-			for (nat i = 0; i < path_length; i++) 
-				textbox_insert(user_selection[i]);
-		}
-		else if (c == 27 and stdin_is_empty()) { tb.count = 0; break; }
-		else if (c == 27) {
-			c = read_stdin();
-
-			if (c == '[') {
-				c = read_stdin();
-
-				if (c == 'A') {}
-				else if (c == 'B') {}
-				else if (c == 'C') textbox_move_right();
-				else if (c == 'D') textbox_move_left();
-			}
-		} else if (c == 127) textbox_delete();
-		else textbox_insert(c);
-
-		if (fuzz) { 
-			if (fuzz_input_index >= fuzz_input_count) break;
-		}
-
-	} while (1);
-	if (tb.count > out_size) tb.count = out_size;
-	memcpy(out, tb.data, (size_t) tb.count);
-	memset(out + tb.count, 0, (size_t) out_size - (size_t) tb.count);
-	out[out_size - 1] = 0;
-	free(tb.data);
-	tb = (struct textbox){0};
-}
-
-
-*/
-
-
-
 
 static inline void print_above_textbox(char* message) {
 
@@ -1032,12 +910,7 @@ static inline void print_above_textbox(char* message) {
 }
 
 
-
-
 static inline void execute(char c, char p);
-
-
-
 
 static inline void prompt(const char* prompt_message, char* out, nat out_size)  {
 
@@ -1054,7 +927,7 @@ static inline void prompt(const char* prompt_message, char* out, nat out_size)  
 	in_prompt = true;
 	char c = 0, p = 0;
 
-loop:	display();                                           // make this all a function.
+loop:	display();                                           // todo: make this all a function.
 	pthread_mutex_unlock(&mutex);
 	c = read_stdin(); 
 	pthread_mutex_lock(&mutex);
@@ -1075,7 +948,6 @@ done:;
 	load(active_index);
 	sn = false; 
 }
-
 
 static inline bool confirmed(const char* question, const char* yes_action, const char* no_action) {
 	if (in_prompt) return false;
@@ -1102,7 +974,6 @@ static inline void create_sn_buffer() {
 	buffers = calloc(1, sizeof(struct buffer));
 	initialize_registers();
 	store(buffer_count);
-	running = true;
 }
 
 static inline void create_empty_buffer() {
@@ -1118,7 +989,6 @@ static inline void create_empty_buffer() {
 }
 
 static inline void destroy(nat i) {
-
 	for (nat line = 0; line < buffers[i].count; line++) 
 		free(buffers[i].lines[line].data);
 	free(buffers[i].lines);
@@ -1134,28 +1004,20 @@ static inline void close_sn_buffer() {
 	if (fuzz and buffer_count) abort();
 	destroy(0);
 	free(buffers);
-	running = false;
 }
 
 static inline void close_active_buffer() {
 
-	if (not buffer_count) return;
-	if (sn) return;
-
+	if (not buffer_count or sn) return;
 	store(active_index);
-
 	destroy(active_index);
 
 	memmove(buffers + active_index, buffers + active_index + 1, 
 		sizeof(struct buffer) * (size_t)(buffer_count - active_index));
-
 	buffer_count--;
-
 	if (active_index >= buffer_count and buffer_count) active_index = buffer_count - 1; 
 	else if (not buffer_count) active_index = 0;
-
 	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 1));
-
 	load(active_index);
 }
 
@@ -1210,7 +1072,6 @@ static inline void open_file(const char* given_filename) {
 }
 
 static inline void emergency_save_to_file() {
-	
 	if (fuzz) return;
 
 	char dt[16] = {0};
@@ -1244,12 +1105,10 @@ static inline void emergency_save_to_file() {
 	}
 
 	fclose(file);
-
 	printf("interrupt: emergency wrote %lldb;%ldl to %s\n\r", bytes, count, local_filename);
 }
 
 static inline void emergency_save_all_buffers() {
-
 	store(sn ? buffer_count : active_index);
 	for (int i = 0; i < buffer_count + 1; i++) {
 		load(i);
@@ -1260,7 +1119,6 @@ static inline void emergency_save_all_buffers() {
 }
 
 static inline void autosave() {
-
 	if (fuzz) return;
 
 	char dt[16] = {0};
@@ -1296,7 +1154,6 @@ static inline void autosave() {
 }
 
 static void handle_signal_interrupt(int code) {
-
 	if (fuzz) exit(1);
 
 	printf(	"interrupt: caught signal SIGINT(%d), "
@@ -1313,7 +1170,6 @@ static void handle_signal_interrupt(int code) {
 
 
 static inline void save() {
-
 	if (fuzz) return;
 
 	if (not strlen(this.filename)) {
@@ -1359,7 +1215,6 @@ static inline void save() {
 }
 
 static inline void rename_file() {
-
 	if (fuzz) return;
 
 	char new[4096] = {0};
@@ -1433,9 +1288,6 @@ static inline void interpret_escape_code() {
 				//sprintf(message, "mouse reporting: [%d:%d:%d].", c, str[0], str[1]);
 			}
 		}
-	
-	
-	
 	} 
 }
 
@@ -1468,7 +1320,6 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 	
 	char* string = malloc(256);
 	nat length = 0;
-
 	nat s_capacity = 256;
 
 	nat line = first_line, column = first_column;
@@ -1519,7 +1370,6 @@ static inline char* get_selection(nat* out) {
 	*out = 0;
 	return NULL;
 }
-
 
 static inline void paste() {
 
@@ -1618,7 +1468,6 @@ static inline void copy() {
 static inline void run_shell_command(const char* command) {
 	if (fuzz) return;
 
-
 	FILE* f = popen(command, "r");
 	if (not f) {
 		sprintf(this.message, "error: could not run command \"%s\": %s\n", command, strerror(errno));
@@ -1640,7 +1489,6 @@ static inline void run_shell_command(const char* command) {
 	sprintf(this.message, "output %ldb", length);
 	insert_string(output, length);
 }
-
 
 static inline void prompt_run() {
 	char command[4096] = {0};
@@ -1716,7 +1564,6 @@ static inline void recalculate_position() {
 }
 
 static inline void open_directory() {
-
 	if (fuzz) return;
 	
 	DIR* directory = opendir(this.cwd);
@@ -1750,9 +1597,9 @@ static inline void open_directory() {
 
 	closedir(directory);
 
-	lal = lcl; lac = lcc;
+	nat tlal = lcl; nat tlac = lcc;
 	insert_string(menu, length);
-	jump_to(lal, lac);	
+	jump_to(tlal, tlac);
 }
 
 static inline void change_directory() {
@@ -1791,12 +1638,12 @@ static inline void file_select() {
 	sprintf(this.message, "selected: %s", this.selected_file);
 }
 
-static inline char** split(char* string, char delim, int* array_count) {
+static inline char** split(char* string, char delim, nat* array_count) {
 
-	int a_count = 0;
+	nat a_count = 0;
 	char** array = NULL;
-	int start = 0, i = 0;
-	const int length = (int)strlen(string);
+	nat start = 0, i = 0;
+	const nat length = (nat)strlen(string);
 
 	for (; i < length; i++) {
 		if (string[i] == delim) {
@@ -1831,115 +1678,57 @@ static inline void execute(char c, char p) {
 		else insert(c, 1);
 
 	} else if (this.mode == 1) {
-
 	
+		const nat tlal = lcl, tlac = lcc;
 
-		// if (true/*STATE__should_recent_anchor*/) { lal = lcl; lac = lcc; }      // where do we do this?
-	
-
-		
-
-	
-	// all anchor() does now, is just sets the anchor (?... no..?),   and then    sets  STATE_should_recent_anchor to be false.  and then when you do a cut or paste, or anything that uses anchor, it sets it to be 1 again. 
-				
-
-	
 		if (c == ' ');
-
-
-	// temp:
-
 		else if (c == 'l' and p == 'e') prompt_jump_line();         // unbind this?... yeah...
 		else if (c == 'k' and p == 'e') prompt_jump_column();       // unbind this?... hmm...
-
-
-	// temp:
-
-		else if (c == 'd' and p == 'h') prompt_open();
-		else if (c == 'f' and p == 'h') create_empty_buffer();
-
-
-
-
-
-
+		else if (c == 'd' and p == 'h') prompt_open();              // unbind this.?
+		else if (c == 'f' and p == 'h') create_empty_buffer();       // unbind this.?
 		else if (c == 'l' and p == 'e') {}
 		else if (c == 'k' and p == 'e') {}
 		else if (c == 'i' and p == 'e') move_bottom();
 		else if (c == 'p' and p == 'e') move_top();
 		else if (c == 'n' and p == 'e') move_begin();
 		else if (c == 'o' and p == 'e') move_end();
-
 		else if (c == 'u' and p == 'e') alternate_decr();
 		else if (c == 'r' and p == 'h') alternate_incr();
-
 		else if (c == 'a' and p == 'h') move_to_previous_buffer();
 		else if (c == 's' and p == 'h') move_to_next_buffer();
-
 		else if (c == 'm' and p == 'h') copy();
-		else if (c == 'c' and p == 'h') paste(); 
-		
-
-		// else if (c == 't' and p == 'h') anchor();    // we need to be using the "selecting" bool, 
-								// to know if we should update lal/lac per move. 
-								// thats the right way to do things. 
+		else if (c == 'c' and p == 'h') paste(); 	
 		else if (c == 'd' and p == 'h') {}
-		
-
-		else if (c == 'a') {}
+	
+		else if (c == 'a') this.selecting = not this.selecting;
 		else if (c == 'd') delete(1);
 		else if (c == 'r') cut();
-
 		else if (c == 't') this.mode = 0;
 		else if (c == 'm') { this.mode = 2; goto command_mode; }
-
 		else if (c == 'c') undo();
 		else if (c == 'k') redo();
-
 		else if (c == 'o') move_word_right(); 
 		else if (c == 'l') move_word_left(); 
-
 		else if (c == 'p') move_up();
 		else if (c == 'u') move_down();
 		else if (c == 'i') { move_right(); vdc = vcc; }
 		else if (c == 'n') { move_left(); vdc = vcc; }
-
-		else if (c == '-') { if (sn_rows < window_rows) sn_rows++; }
-		else if (c == '=') { if (sn_rows) sn_rows--; }
-
-
-		else if (c == '.') sprintf(this.message, "this is a very long status message. i really like pasta, and beans, and pasta too. it is very delicious, and tasty, i have to have dinner now lol. yay. this is a very long status message. i am testing something cool. yay. this is working well i think.");
-		
-
-		else if (c == '1') {  
-			if (not sn) { 
-				store(active_index);
-				load(buffer_count);
-				sn = true; 
-			}
+		else if (c == '-') { if (sn_rows < window_rows) sn_rows++; } // unbind this. make it a set command.
+		else if (c == '=') { if (sn_rows) sn_rows--; }               // unbind this. make it a set command.
+		else if (c == '0') {   // change the keybinding for this please.
+			if (sn) { store(buffer_count); load(active_index); sn = false; }
+			else { store(active_index); load(buffer_count); sn = true; }
 		}
-		else if (c == '0') {
-			if (sn) {
-				store(buffer_count);
-				load(active_index);
-				sn = false; 
-			}
-
-		}
-
-		///    else if (c == '/') { if (sn) add_status(); }   // make this a command. not a keybinding.
-
 		else if (c == 's') save();
-
 		else if (c == 'q') {
 			if (this.saved or confirmed("discard unsaved changes", "discard", "no")) close_active_buffer(); 
 		}
-
 		else if (c == 27 and stdin_is_empty()) {}
 		else if (c == 27) interpret_escape_code();
 
-	} else if (this.mode == 2) {
+		if (not this.selecting) { lal = tlal; lac = tlac; }
 
+	} else if (this.mode == 2) {
 		command_mode: this.mode = 1;
 
 		char string[4096] = {0};
@@ -1955,7 +1744,7 @@ static inline void execute(char c, char p) {
 		}
 
 		d[d_length] = 0;
-		int command_count = 0;
+		nat command_count = 0;
 		char** commands = split(d, '.', &command_count);
 
 		for (int i = 0; i < command_count; i++) {
@@ -1980,11 +1769,10 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "home")) { getcwd(this.cwd, sizeof this.cwd); strlcat(this.cwd, "/", sizeof this.cwd); }
 			else if (equals(command, "clearmessage")) memset(this.message, 0, sizeof this.message);
 			else if (equals(command, "numbers")) this.show_line_numbers = not this.show_line_numbers;
-			else if (equals(command, "sn_incr")) { if (split_point < window_rows) split_point++; }
-			else if (equals(command, "sn_decr")) { if (split_point) split_point--; }
+			else if (equals(command, "snincr")) { if (sn_rows < window_rows) sn_rows++; }
+			else if (equals(command, "sndecr")) { if (sn_rows) sn_rows--; } 
 			else if (equals(command, "cut")) cut();
 			else if (equals(command, "delete")) delete(1);
-			// else if (equals(command, "anchor")) anchor();
 			else if (equals(command, "paste")) paste();
 			else if (equals(command, "copy")) copy();
 			else if (equals(command, "undo")) undo();
@@ -2015,9 +1803,6 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "incr")) {}
 			else if (equals(command, "setzero")) {}
 
-			// else if (equals(command, "commandcount")) sprintf(this.message, "command count = %d", command_count);
-
-		
 			else if (equals(command, "wrapresizetemp")) { wrap_width = 0; recalculate_position(); }
 			else if (equals(command, "quit")) {
 				if (this.saved or confirmed("discard unsaved changes", "discard", "no")) 
@@ -2028,25 +1813,23 @@ static inline void execute(char c, char p) {
 				break;
 			}
 		}
-
+	
+		for (nat i = 0; i < command_count; i++) free(commands[i]);
+		free(commands);
+		free(d);
 	} else this.mode = 1;
 }
 
-
-
 static void* autosaver(void* unused) {
-
 	while (1) {
 		sleep(autosave_frequency);
 		pthread_mutex_lock(&mutex);
-		if (not buffer_count and not running) break;
+		if (not buffer_count) break;
 		if (not this.autosaved) autosave();
 		pthread_mutex_unlock(&mutex);
 	}
-
 	return unused;
 }
-
 
 static inline void zero_registers() {
 	wrap_width = 0;
@@ -2065,31 +1848,19 @@ static inline void zero_registers() {
 	buffers = NULL;
 	buffer_count = 0;
 	active_index = 0;
-
 	free(screen);  screen = NULL;
 	window_rows = 0;
 	window_columns = 0;
-	window = (struct winsize){0}; 
-
+	window = (struct winsize){0};
 	sn_rows = 0;
 	split_point = 0; 
 	in_prompt = false;
 }
 
-
-
-
-
-
 static inline void editor() {
 
-
-
-
 if (reading_crash) {
-
 	const char* crashname = "crash-1142af7704f1b8f9fae992339c15c51ca158992b";
-
 	FILE* file = fopen(crashname, "r");
 	fseek(file, 0, SEEK_END);
 	size_t crash_length = (size_t) ftell(file);
@@ -2105,26 +1876,14 @@ if (reading_crash) {
 		if (i and not (i % 16)) puts("");
 	}
 	printf("};\n\n\n");
-
 	exit(1);
-}
-	
+}	
 	char str[] = {0};
-
-
 if (running_crash) {
-
 	fuzz_input_index = 0; 
 	fuzz_input = (const uint8_t*) str;
 	fuzz_input_count = sizeof str;
-
 }
-
-
-
-
-
-
 	struct termios terminal;
 	static pthread_t autosave_thread;
 
@@ -2137,7 +1896,6 @@ if (running_crash) {
 	} 
 
 	char p = 0, c = 0;
-
     	getcwd(this.cwd, sizeof this.cwd);
 	strlcat(this.cwd, "/", sizeof this.cwd);
 
@@ -2155,7 +1913,7 @@ done:
 		load(active_index);
 		sn = false; 
 	}
-	while (buffer_count)  close_active_buffer();
+	while (buffer_count) close_active_buffer();
 	close_sn_buffer();
 	zero_registers();
 
@@ -2184,22 +1942,16 @@ int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 #else
 
 int main(const int argc, const char** argv) {
-
 	create_sn_buffer();
 	sn_rows = 5;
-
 	adjust_window_size();
-	
-
 	if (argc <= 1) create_empty_buffer();
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
-	
 	signal(SIGINT, handle_signal_interrupt);
 	editor();
 }
 
 #endif
-
 
 // ---------------------------------------------------------------------------------------------------
 
@@ -2857,4 +2609,113 @@ static inline void clear_above_textbox() {
 
 
 */
+
+
+
+/*
+		lines->capacity = status_length;
+		lines->count = status_length;
+
+		free(lines->data);
+		lines->data = malloc((size_t) status_length);
+		memcpy(lines->data, status, (size_t) status_length);
+		*/
+
+
+
+/*
+
+static inline void prompt(const char* prompt_message, nat color, char* out, nat out_size) {
+
+	tb.prompt_length = unicode_strlen(prompt_message);
+	do {
+		adjust_window_size();
+		textbox_display(prompt_message, color);
+
+		char c = read_stdin();
+
+		if (c == '\r' or c == '\n') break;
+		else if (c == '\t') {  
+			
+			const nat path_length = (nat) strlen(user_selection);
+			for (nat i = 0; i < path_length; i++) 
+				textbox_insert(user_selection[i]);
+		}
+		else if (c == 27 and stdin_is_empty()) { tb.count = 0; break; }
+		else if (c == 27) {
+			c = read_stdin();
+
+			if (c == '[') {
+				c = read_stdin();
+
+				if (c == 'A') {}
+				else if (c == 'B') {}
+				else if (c == 'C') textbox_move_right();
+				else if (c == 'D') textbox_move_left();
+			}
+		} else if (c == 127) textbox_delete();
+		else textbox_insert(c);
+
+		if (fuzz) { 
+			if (fuzz_input_index >= fuzz_input_count) break;
+		}
+
+	} while (1);
+	if (tb.count > out_size) tb.count = out_size;
+	memcpy(out, tb.data, (size_t) tb.count);
+	memset(out + tb.count, 0, (size_t) out_size - (size_t) tb.count);
+	out[out_size - 1] = 0;
+	free(tb.data);
+	tb = (struct textbox){0};
+}
+
+
+*/
+
+
+
+
+
+
+
+
+
+		///   // if (true/*STATE__should_recent_anchor*/) { lal = lcl; lac = lcc; }      // where do we do this?
+	
+
+		
+
+	
+	// all anchor() does now, is just sets the anchor (?... no..?),   and then    sets  STATE_should_recent_anchor to be false.  and then when you do a cut or paste, or anything that uses anchor, it sets it to be 1 again. 
+				
+
+
+
+
+///    else if (c == '/') { if (sn) add_status(); }   // make this a command. not a keybinding.
+
+
+		// else if (c == '.') sprintf(this.message, "this is a very long status message. i really like pasta, and beans, and pasta too. it is very delicious, and tasty, i have to have dinner now lol. yay. this is a very long status message. i am testing something cool. yay. this is working well i think.");
+		
+
+
+// else if (c == 't' and p == 'h') anchor();    // we need to be using the "selecting" bool, 
+								// to know if we should update lal/lac per move. 
+								// thats the right way to do things. 
+
+
+
+
+
+
+/*static inline nat unicode_strlen(const char* string) {
+	nat i = 0, length = 0;
+	while (string[i]) {
+		if (visual(string[i])) length++;
+		i++;
+	}
+	return length;
+}*/
+
+
 
