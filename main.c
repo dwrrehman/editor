@@ -26,10 +26,19 @@
 ***		- fix the huge performance bug in the editor..
 			...performance is actually terrible right now. 
 
-		- - decrease the numberof context switches. they are very expensive.
-		- - make the status bar implemented more efficiently. 
 
-		- - make the scratch buffer implemented more efficiently. 
+			- - decrease the numberof context switches. they are very expensive.
+			- - make the status bar implemented more efficiently. 
+
+
+			- - make the scratch buffer implemented more efficiently. 
+
+
+
+
+
+
+
 
 
 		
@@ -38,6 +47,10 @@
 
 
 		- add the ww=0 ww_disable code everywhere.
+					x < ww     to     x < ww or not ww
+
+
+
 
 		- implment word wrapping. 
 
@@ -152,30 +165,24 @@ static size_t fuzz_input_index = 0;
 static size_t fuzz_input_count = 0;       
 static const uint8_t* fuzz_input = NULL; 
 
-static nat 
-	window_rows = 0, 
-	window_columns = 0;
-static struct winsize window = {0}; 
+static nat window_rows = 0, window_columns = 0;
 static char* screen = NULL;
+static struct winsize window = {0}; 
+static nat sn_rows = 0;        //    we dont need both of these.    consolidate them.   this should be a buffer member, i think...? yes.
+static bool in_prompt = false;      // rework this...    is should be a buffer member?.... 
+static nat buffer_count = 0, active_index = 0, working_index = 0;
+static struct buffer* buffers = NULL;
 
-static nat sn_rows = 0;        //    we dont need both of these.    consolidate them. 
-static nat split_point = 0;    //
 
-static bool sn = false;        // this is fine.
-static bool in_prompt = false;      // rework this...
- 
-static nat buffer_count = 0, active_index = 0; 
-static struct buffer* buffers = NULL, this = {0};
+#define _ buffers[working_index]
 
-static struct line* lines;
-static struct action* actions;
-static nat 
-	count, capacity, 
-	action_count, head, 
-	wrap_width, tab_width,
-	lcl, lcc, 	vcl, vcc,    vol, voc,    sbl, sbc,    sel, sec,
-	vsl, vsc, 	vdc,         lal, lac,    swl, swc
-;
+
+
+// static nat split_point = 0;    //
+
+// static bool sn = false;        // this is fine.
+
+
 
 
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
@@ -189,13 +196,14 @@ static inline char read_stdin() {
 		fuzz_input_index++;
 		return (char) fuzz_input[fuzz_input_index - 1];
 	}
+	pthread_mutex_unlock(&mutex);
 	read(0, &c, 1);
+	pthread_mutex_lock(&mutex);
 	return c;
 }
 
 static inline bool equals(const char* s1, const char* s2) {
-	if (strlen(s1) != strlen(s2)) return false;
-	else return not strcmp(s1, s2);
+	return not strcmp(s1, s2); 
 }
 
 static inline bool is_directory(const char *path) {
@@ -239,115 +247,118 @@ static inline struct termios configure_terminal() {
 
 static inline nat compute_vcc() {
 	nat v = 0;
-	for (nat c = 0; c < lcc; c++) {
-		char k = lines[lcl].data[c];
+	for (nat c = 0; c < _.lcc; c++) {
+		char k = _.lines[_.lcl].data[c];
 		if (k == '\t') { 
-			if (v + tab_width - v % tab_width <= wrap_width) 
+			if (v + _.tab_width - v % _.tab_width <= _.wrap_width) 
 				do v++;
-				while (v % tab_width);  
+				while (v % _.tab_width);  
 			else v = 0;
 		} else if (visual(k)) {
-			if (v < wrap_width) v++; else v = 0;
+			if (v < _.wrap_width) v++; else v = 0;
 		}
 	}
 	return v;
 }
 
 static inline void move_left() {
-	if (not lcc) {
-		if (not lcl) return;
-		lcl--;
-		lcc = lines[lcl].count;
- line_up: 	vcl--;
-		if (vsl) vsl--;
-		else if (vol) vol--;
-		vcc = compute_vcc();
-		if (vcc >= swc /*window_columns - 1 - origin_column*/) { 
-			vsc = swc /*window_columns - 1 - origin_column*/;  voc = vcc - vsc; 
-		} else { vsc = vcc; voc = 0; }
+	
+	if (not _.lcc) {
+		if (not _.lcl) return;
+		_.lcl--;
+		_.lcc = _.lines[_.lcl].count;
+ line_up: 	_.vcl--;
+		if (_.vsl) _.vsl--;
+		else if (_.vol) _.vol--;
+		_.vcc = compute_vcc();
+		if (_.vcc >= _.swc) { 
+			_.vsc = _.swc;  _.voc = _.vcc - _.vsc; 
+		} else { _.vsc = _.vcc; _.voc = 0; }
 	} else {
-		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
-		if (lines[lcl].data[lcc] == '\t') {
-			const nat diff = tab_width - compute_vcc() % tab_width;
-			if (vcc < diff) goto line_up;
-			vcc -= diff;
-			if (vsc >= diff) vsc -= diff;
-			else if (voc >= diff - vsc) { voc -= diff - vsc; vsc = 0; }
+		do _.lcc--; while (_.lcc and zero_width(_.lines[_.lcl].data[_.lcc]));
+		if (_.lines[_.lcl].data[_.lcc] == '\t') {
+			const nat diff = _.tab_width - compute_vcc() % _.tab_width;
+			if (_.vcc < diff) goto line_up;
+			_.vcc -= diff;
+			if (_.vsc >= diff) _.vsc -= diff;
+			else if (_.voc >= diff - _.vsc) { _.voc -= diff - _.vsc; _.vsc = 0; }
 		} else {
-			if (not vcc) goto line_up;
-			vcc--;
-			if (vsc) vsc--; else if (voc) voc--;
+			if (not _.vcc) goto line_up;
+			_.vcc--;
+			if (_.vsc) _.vsc--; else if (_.voc) _.voc--;
 		}
 	}
 }
 
 static inline void move_right() {
 
-	if (lcl >= count) return;
-	if (lcc >= lines[lcl].count) {
-		if (lcl + 1 >= count) return;
-		lcl++; lcc = 0; 
-line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
-		if (vsl + 1 < swl/*window_rows - this.sn_rows*/) vsl++; 
-		else vol++;
+	if (_.lcl >= _.count) return;
+	if (_.lcc >= _.lines[_.lcl].count) {
+		if (_.lcl + 1 >= _.count) return;
+		_.lcl++; _.lcc = 0; 
+line_down:	_.vcl++; _.vcc = 0; _.voc = 0; _.vsc = 0;
+		if (_.vsl + 1 < _.swl) _.vsl++; 
+		else _.vol++;
 	} else {
-		if (lines[lcl].data[lcc] == '\t') {
-			do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
-			if (vcc + tab_width - vcc % tab_width > wrap_width) goto line_down;
+		if (_.lines[_.lcl].data[_.lcc] == '\t') {
+			do _.lcc++; 
+			while (_.lcc < _.lines[_.lcl].count and zero_width(_.lines[_.lcl].data[_.lcc]));
+			if (_.vcc + _.tab_width - _.vcc % _.tab_width > _.wrap_width) goto line_down;
 			do {
-				vcc++; 
-				if (vsc + 1 < swc/*window_columns - this.line_number_width*/) vsc++;
-				else voc++;
-			} while (vcc % tab_width);
+				_.vcc++; 
+				if (_.vsc + 1 < _.swc) _.vsc++;
+				else _.voc++;
+			} while (_.vcc % _.tab_width);
 			
 		} else {
-			do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
-			if (vcc >= wrap_width) goto line_down;
-			vcc++; 
-			if (vsc + 1 < swc/*window_columns - this.line_number_width*/) vsc++; 
-			else voc++;
+			do _.lcc++; 
+			while (_.lcc < _.lines[_.lcl].count and zero_width(_.lines[_.lcl].data[_.lcc]));
+			if (_.vcc >= _.wrap_width) goto line_down;
+			_.vcc++; 
+			if (_.vsc + 1 < _.swc) _.vsc++; 
+			else _.voc++;
 		}
 	}
 }
 
 static inline void move_up() {
-	if (not vcl) {
-		lcl = 0; lcc = 0;
-		vcl = 0; vcc = 0;
-		vol = 0; voc = 0;
-		vsl = 0; vsc = 0;
+	if (not _.vcl) {
+		_.lcl = 0; _.lcc = 0;
+		_.vcl = 0; _.vcc = 0;
+		_.vol = 0; _.voc = 0;
+		_.vsl = 0; _.vsc = 0;
 		return;
 	}
-	nat line_target = vcl - 1;
-	while (vcc and vcl > line_target) move_left(); 
-	do move_left(); while (vcc > vdc and vcl == line_target);
-	if (vcc >= swc/*window_columns - this.line_number_width*/) { 
-		vsc = swc/*window_columns - this.line_number_width*/; voc = vcc - vsc; 
+	nat line_target = _.vcl - 1;
+	while (_.vcc and _.vcl > line_target) move_left(); 
+	do move_left(); while (_.vcc > _.vdc and _.vcl == line_target);
+	if (_.vcc >= _.swc) { 
+		_.vsc = _.swc; _.voc = _.vcc - _.vsc; 
 	} 
-	else { vsc = vcc; voc = 0; }
+	else { _.vsc = _.vcc; _.voc = 0; }
 }
 
 static inline void move_down() {
-	nat line_target = vcl + 1;
-	while (vcl < line_target) { 
-		if (lcl == count - 1 and lcc == lines[lcl].count) return;
+	nat line_target = _.vcl + 1;
+	while (_.vcl < line_target) { 
+		if (_.lcl == _.count - 1 and _.lcc == _.lines[_.lcl].count) return;
 		move_right();
 	}
-	while (vcc < vdc and lcc < lines[lcl].count) {
-		if (lines[lcl].data[lcc] == '\t' and vcc + (tab_width - (vcc % tab_width)) > vdc) return; // TODO:  WHAT IS THIS!?!?!?
+	while (_.vcc < _.vdc and _.lcc < _.lines[_.lcl].count) {
+		if (_.lines[_.lcl].data[_.lcc] == '\t' and _.vcc + (_.tab_width - (_.vcc % _.tab_width)) > _.vdc) return;
 		move_right();
 	}
 }
 
 static inline void jump_line(nat line) {
-	while (lcl < line and lcl < count) move_down();
-	while (lcl > line and lcl) move_up();
+	while (_.lcl < line and _.lcl < _.count) move_down();
+	while (_.lcl > line and _.lcl) move_up();
 }
 
 static inline void jump_column(nat column) {
-	while (lcc < column and lcc < lines[lcl].count) move_right();
-	while (lcc > column and lcc) move_left();
-	vdc = vcc;
+	while (_.lcc < column and _.lcc < _.lines[_.lcl].count) move_right();
+	while (_.lcc > column and _.lcc) move_left();
+	_.vdc = _.vcc;
 }
 
 static inline void jump_to(nat line, nat column) {
@@ -356,128 +367,124 @@ static inline void jump_to(nat line, nat column) {
 }
 
 static inline void move_begin() {
-	while (vcc) move_left();
-	vdc = vcc;
+	while (_.vcc) move_left();
+	_.vdc = _.vcc;
 }
 
 static inline void move_end() {
-	while (lcc < lines[lcl].count and vcc < wrap_width) move_right(); 
-	vdc = vcc;
+	while (_.lcc < _.lines[_.lcl].count and _.vcc < _.wrap_width) move_right(); 
+	_.vdc = _.vcc;
 }
 
 static inline void move_top() {
-	lcl = 0; lcc = 0;
-	vcl = 0; vcc = 0;
-	vol = 0; voc = 0;
-	vsl = 0; vsc = 0;
-	vdc = 0;
+	_.lcl = 0; _.lcc = 0;
+	_.vcl = 0; _.vcc = 0;
+	_.vol = 0; _.voc = 0;
+	_.vsl = 0; _.vsc = 0;
+	_.vdc = 0;
 }
 
 static inline void move_bottom() {
-	while (lcl < count - 1 or lcc < lines[lcl].count) move_down(); 
-	vdc = vcc;
+	while (_.lcl < _.count - 1 or _.lcc < _.lines[_.lcl].count) move_down(); 
+	_.vdc = _.vcc;
 }
 
 static inline void move_word_left() {
 	do move_left();
 	while (not(
-		(not lcl and not lcc) or (
-			(lcc < lines[lcl].count and isalnum(lines[lcl].data[lcc]))  and 
-			(not lcc or not isalnum(lines[lcl].data[lcc - 1]))
+		(not _.lcl and not _.lcc) or (
+			(_.lcc < _.lines[_.lcl].count and isalnum(_.lines[_.lcl].data[_.lcc]))  and 
+			(not _.lcc or not isalnum(_.lines[_.lcl].data[_.lcc - 1]))
 		)
 	));
-	vdc = vcc;
+	_.vdc = _.vcc;
 }
 
 static inline void move_word_right() {
 	do move_right();
 	while (not(
-		(lcl >= count - 1 and lcc >= lines[lcl].count) or (
-			(lcc >= lines[lcl].count or not isalnum(lines[lcl].data[lcc]))  and 
-			(lcc and isalnum(lines[lcl].data[lcc - 1]))
+		(_.lcl >= _.count - 1 and _.lcc >= _.lines[_.lcl].count) or (
+			(_.lcc >= _.lines[_.lcl].count or not isalnum(_.lines[_.lcl].data[_.lcc]))  and 
+			(_.lcc and isalnum(_.lines[_.lcl].data[_.lcc - 1]))
 		)
 	));
-	vdc = vcc;
+	_.vdc = _.vcc;
 }
 
 static inline void record_logical_state(struct logical_state* pcond_out) {
 	struct logical_state* p = pcond_out; 
 
-	p->saved = this.saved;
-	p->autosaved = this.autosaved;
-	p->selecting = this.selecting;
-
-	p->lcl = lcl;  p->lcc = lcc; 	
-	p->vcl = vcl;  p->vcc = vcc;
-  	p->vol = vol;  p->voc = voc;
-	p->vsl = vsl;  p->vsc = vsc; 
-	p->vdc = vdc;  p->lal = lal;
-	p->lac = lac; 
-
-	p->wrap_width = wrap_width;
-	p->tab_width = tab_width;
+	p->saved = _.saved;
+	p->autosaved = _.autosaved;
+	p->selecting = _.selecting;
+	p->wrap_width = _.wrap_width;
+	p->tab_width = _.tab_width;
+	p->lcl = _.lcl;  p->lcc = _.lcc; 	
+	p->vcl = _.vcl;  p->vcc = _.vcc;
+  	p->vol = _.vol;  p->voc = _.voc;
+	p->vsl = _.vsl;  p->vsc = _.vsc; 
+	p->vdc = _.vdc;  p->lal = _.lal;
+	p->lac = _.lac;
 }
 
 static inline void require_logical_state(struct logical_state* pcond_in) {  
 	struct logical_state* p = pcond_in;
 
-	this.saved = p->saved;
-	this.autosaved = p->autosaved;
-	this.selecting = p->selecting;
-
-	lcl = p->lcl;  lcc = p->lcc; 	
-	vcl = p->vcl;  vcc = p->vcc;
-  	vol = p->vol;  voc = p->voc;
-	vsl = p->vsl;  vsc = p->vsc; 
-	vdc = p->vdc;  lal = p->lal;
-	lac = p->lac;
-
-	wrap_width = p->wrap_width;
-	tab_width = p->tab_width;
+	_.saved = p->saved;
+	_.autosaved = p->autosaved;
+	_.selecting = p->selecting;
+	_.wrap_width = p->wrap_width;
+	_.tab_width = p->tab_width;
+	_.lcl = p->lcl;  _.lcc = p->lcc;
+	_.vcl = p->vcl;  _.vcc = p->vcc;
+  	_.vol = p->vol;  _.voc = p->voc;
+	_.vsl = p->vsl;  _.vsc = p->vsc; 
+	_.vdc = p->vdc;  _.lal = p->lal;
+	_.lac = p->lac;
 }
 
 static inline void create_action(struct action new) {
-	new.parent = head;
-	actions[head].children = realloc(actions[head].children, sizeof(nat) * (size_t) (actions[head].count + 1));
-	actions[head].choice = actions[head].count;
-	actions[head].children[actions[head].count++] = action_count;
+	new.parent = _.head;
+	_.actions[_.head].children = realloc(_.actions[_.head].children, sizeof(nat) * (size_t) (_.actions[_.head].count + 1));
+	_.actions[_.head].choice = _.actions[_.head].count;
+	_.actions[_.head].children[_.actions[_.head].count++] = _.action_count;
 	
-	actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
-	head = action_count;
-	actions[action_count++] = new;
+	_.actions = realloc(_.actions, sizeof(struct action) * (size_t)(_.action_count + 1));
+	_.head = _.action_count;
+	_.actions[_.action_count++] = new;
 }
 
 static inline void insert(char c, bool should_record) { 
 
 	if (should_record and zero_width(c) 
 		and not (
-			actions[head].type == insert_action and 
-			actions[head].text[0] != '\n' and
-			actions[head].post.lcl == lcl and 
-			actions[head].post.lcc == lcc and 
-			actions[head].count == 0
+			_.actions[_.head].type == insert_action and 
+			_.actions[_.head].text[0] != '\n' and
+			_.actions[_.head].post.lcl == _.lcl and 
+			_.actions[_.head].post.lcc == _.lcc and 
+			_.actions[_.head].count == 0
 		)) return; 
 
 	struct action new_action = {0};
 	if (should_record and visual(c)) record_logical_state(&new_action.pre);
 
-	struct line* here = lines + lcl;
+	struct line* here = _.lines + _.lcl;
 	if (c == '\n') {
-		nat rest = here->count - lcc;
-		here->count = lcc;
+		nat rest = here->count - _.lcc;
+		here->count = _.lcc;
 		struct line new = {malloc((size_t) rest), rest, rest};
-		if (rest) memcpy(new.data, here->data + lcc, (size_t) rest);
+		if (rest) memcpy(new.data, here->data + _.lcc, (size_t) rest);
 
 		if (not memory_safe) {
-			if (count + 1 >= capacity) 
-				lines = realloc(lines, sizeof(struct line) * (size_t)(capacity = 8 * (capacity + 1)));
+			if (_.count + 1 >= _.capacity) 
+				_.lines = realloc(_.lines, sizeof(struct line) * (size_t)(_.capacity = 8 * (_.capacity + 1)));
 		} else {
-			lines = realloc(lines, sizeof(struct line) * (size_t)(count + 1));
+			_.lines = realloc(_.lines, sizeof(struct line) * (size_t)(_.count + 1));
 		}
 
-		memmove(lines + lcl + 2, lines + lcl + 1, sizeof(struct line) * (size_t)(count - (lcl + 1)));
-		lines[lcl + 1] = new;
-		count++;
+		memmove(_.lines + _.lcl + 2, _.lines + _.lcl + 1, sizeof(struct line) * (size_t)(_.count - (_.lcl + 1)));
+		_.lines[_.lcl + 1] = new;
+		_.count++;
 
 	} else {
 		if (not memory_safe) {
@@ -487,23 +494,22 @@ static inline void insert(char c, bool should_record) {
 			here->data = realloc(here->data, (size_t)(here->count + 1));
 		}
 
-		memmove(here->data + lcc + 1, here->data + lcc, (size_t) (here->count - lcc));
-		here->data[lcc] = c;
+		memmove(here->data + _.lcc + 1, here->data + _.lcc, (size_t) (here->count - _.lcc));
+		here->data[_.lcc] = c;
 		here->count++;
 	}
 
-	if (zero_width(c)) lcc++; 
-	else { move_right(); vdc = vcc; }
+	if (zero_width(c)) _.lcc++; 
+	else { move_right(); _.vdc = _.vcc; }
 
-	this.saved = false;
-	this.autosaved = false;
+	_.saved = false;
+	_.autosaved = false;
 	if (not should_record) return;
-	lac = lcc; lal = lcl;
 
 	if (zero_width(c)) {
-		actions[head].text = realloc(actions[head].text, (size_t) actions[head].length + 1);
-		actions[head].text[actions[head].length++] = c;
-		record_logical_state(&actions[head].post);
+		_.actions[_.head].text = realloc(_.actions[_.head].text, (size_t) _.actions[_.head].length + 1);
+		_.actions[_.head].text[_.actions[_.head].length++] = c;
+		record_logical_state(&(_.actions[_.head].post));
 		return;
 	}
 
@@ -522,12 +528,12 @@ static inline void delete(bool should_record) {
 
 	char* deleted_string = NULL;
 	nat deleted_length = 0;
-	struct line* here = lines + lcl;
+	struct line* here = _.lines + _.lcl;
 
-	if (not lcc) {
-		if (not lcl) return;
-		move_left(); vdc = vcc;
-		struct line* new = lines + lcl;
+	if (not _.lcc) {
+		if (not _.lcl) return;
+		move_left(); _.vdc = _.vcc;
+		struct line* new = _.lines + _.lcl;
 
 		if (not memory_safe) {
 			if (new->count + here->count >= new->capacity)
@@ -540,11 +546,11 @@ static inline void delete(bool should_record) {
 		free(here->data);
 
 		new->count += here->count;
-		memmove(lines + lcl + 1, lines + lcl + 2, 
-			sizeof(struct line) * (size_t)(count - (lcl + 2)));
-		count--;
+		memmove(_.lines + _.lcl + 1, _.lines + _.lcl + 2, 
+			sizeof(struct line) * (size_t)(_.count - (_.lcl + 2)));
+		_.count--;
 
-		if (memory_safe) lines = realloc(lines, sizeof(struct line) * (size_t)count);
+		if (memory_safe) _.lines = realloc(_.lines, sizeof(struct line) * (size_t)_.count);
 
 		if (should_record) {
 			deleted_length = 1;
@@ -553,26 +559,24 @@ static inline void delete(bool should_record) {
 		}
 
 	} else {
-		nat save = lcc;
-		move_left();
-		vdc = vcc;
+		nat save = _.lcc;
+		move_left(); _.vdc = _.vcc;
 		
 		if (should_record) {
-			deleted_length = save - lcc;
+			deleted_length = save - _.lcc;
 			deleted_string = malloc((size_t) deleted_length);
-			memcpy(deleted_string, here->data + lcc, (size_t) deleted_length);
+			memcpy(deleted_string, here->data + _.lcc, (size_t) deleted_length);
 		}
 
-		memmove(here->data + lcc, here->data + save, (size_t)(here->count - save));
-		here->count -= save - lcc;
+		memmove(here->data + _.lcc, here->data + save, (size_t)(here->count - save));
+		here->count -= save - _.lcc;
 
 		if (memory_safe) here->data = realloc(here->data, (size_t)(here->count));
 	}
 
-	this.saved = false;
-	this.autosaved = false;
+	_.saved = false;
+	_.autosaved = false;
 	if (not should_record) return;
-	lac = lcc; lal = lcl;
 
 	record_logical_state(&new_action.post);
 	new_action.type = delete_action;
@@ -601,102 +605,26 @@ static inline void insertdt() {
 	insert_string(datetime, 14);
 }
 
+static inline void initialize_buffer() {
+	_ = (struct buffer) {0};
 
-static inline void store(nat BUFFER) {
+	_.wrap_width = 150;     
+	_.tab_width = 8; 
+	_.capacity = 1;
+	_.count = 1;
+	_.action_count = 1;
+	_.lines = calloc(1, sizeof(struct line));
+	_.actions = calloc(1, sizeof(struct action));
 
-	const nat b = BUFFER;
-	buffers[b] = this;
+	_.show_line_numbers = 1; 
+	_.saved = true;
+	_.autosaved = true;
+	_.use_txt_extension_when_absent = 1;
 
-	buffers[b].wrap_width = wrap_width;
-	buffers[b].tab_width = tab_width;
-	buffers[b].capacity = capacity;
-	buffers[b].count = count;
-	buffers[b].head = head;
-	buffers[b].action_count = action_count;
-	buffers[b].actions = actions;
-	buffers[b].lines = lines;
-
-	buffers[b].lcl = lcl;  buffers[b].lcc = lcc; 
-	buffers[b].vcl = vcl;  buffers[b].vcc = vcc; 
-	buffers[b].vol = vol;  buffers[b].voc = voc; 
-	buffers[b].vsl = vsl;  buffers[b].vsc = vsc; 
-	buffers[b].vdc = vdc;  buffers[b].lal = lal;
-	buffers[b].lac = lac; 
-
-	buffers[b].sbl = sbl; buffers[b].sbc = sbc; 
-	buffers[b].sel = sel; buffers[b].sec = sec; 
-	buffers[b].swl = swl; buffers[b].swc = swc; 
-}
-
-static inline void load(nat BUFFER) {
-
-	struct buffer ba = buffers[BUFFER];
-	this = ba;
-
-	capacity = ba.capacity;
-	count = ba.count;
-	wrap_width = ba.wrap_width;
-	tab_width = ba.tab_width;
-	head = ba.head;
-	action_count = ba.action_count;
-	lines = ba.lines;
-	actions = ba.actions;
-
-	lcl = ba.lcl;  lcc = ba.lcc;
-	vcl = ba.vcl;  vcc = ba.vcc;
-	vol = ba.vol;  voc = ba.voc; 
-	vsl = ba.vsl;  vsc = ba.vsc; 
-	vdc = ba.vdc;  lal = ba.lal;
-	lac = ba.lac;
-
-	sbl = ba.sbl; sbc = ba.sbc;
-	sel = ba.sel; sec = ba.sec;
-	swl = ba.swl; swc = ba.swc;
-}
-
-static inline void initialize_registers() {
-	
-	this = (struct buffer) {0};
-
-	wrap_width = 100;     // todo: change all checks of    x < ww     to     x < ww or not ww
-	tab_width = 8; 
-	capacity = 1;
-	count = 1;
-	head = 0;
-	action_count = 1;
-	lines = calloc(1, sizeof(struct line));
-	actions = calloc(1, sizeof(struct action));
-
-	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
-	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
-
-
-	this.show_line_numbers = 1; 
-	this.saved = true;
-	this.autosaved = true;
-	this.mode = 0;
-	this.use_txt_extension_when_absent = 1;
-
-	sbl = 0;
-	sbc = 0;
-	sel = split_point;
-	sec = window_columns;
-	swl = sel - sbl;
-	swc = sec - sbc;
-}
-
-static inline void sanity_check() {
-
-	if (fuzz) {
-		if (lcl < 0) abort();
-		if (lcc < 0) abort();
-		if (vol < 0) abort();
-		if (voc < 0) abort();
-		if (vcl < 0) abort();
-		if (vcc < 0) abort();
-		if (vsl < 0) abort();
-		if (vsc < 0) abort();
-	} 
+	_.sel = window_rows - sn_rows;
+	_.sec = window_columns;
+	_.swl = _.sel - _.sbl;
+	_.swc = _.sec - _.sbc;
 }
 
 static inline void adjust_window_size() {
@@ -715,10 +643,8 @@ static inline void adjust_window_size() {
 	// const nat w = (window_columns - 1) - (this.line_number_width);
 	// if (this.ww_fix and wrap_width != w) wrap_width = w;
 
-
-	wrap_width = 150;   // temp;
-
-	split_point = window_rows - sn_rows; 
+	_.wrap_width = 150;   // temp;
+	// split_point = ;     // temp... 
 }
 
 
@@ -726,77 +652,70 @@ static inline nat display_proper(
 		nat length, nat* total, 
 	int line_number_digits) {
 	
-
-
-
-
-	nat sl = 0, sc = 0, vl = vol, vc = voc;
-
-	sanity_check();
+	nat sl = 0, sc = 0, vl = _.vol, vc = _.voc;
 
 	struct logical_state state = {0};
 	record_logical_state(&state);
 	while (1) { 
-		if (vcl <= 0 and vcc <= 0) break;
-		if (vcl <= state.vol and vcc <= state.voc) break;
+		if (_.vcl <= 0 and _.vcc <= 0) break;
+		if (_.vcl <= state.vol and _.vcc <= state.voc) break;
 		move_left();
 	}
 
- 	nat line = lcl, col = lcc; 
+ 	nat line = _.lcl, col = _.lcc; 
 	require_logical_state(&state); 
 
-
 	do {
-		if (line >= count) goto next_visual_line;
+		if (line >= _.count) goto next_visual_line;
 
-		if (this.show_line_numbers and vl >= vol and vl < vol + swl) {
+		if (_.show_line_numbers and vl >= _.vol and vl < _.vol + _.swl) {
 			if (not col or (not sc and not sl)) 
 				length += sprintf(screen + length, 
 					"\033[38;5;%ldm%*ld\033[0m  ", 
-					236L + (line == lcl ? 5 : 0), line_number_digits, line
+					236L + (line == _.lcl ? 5 : 0), line_number_digits, line
 				);
 			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
 		}
 
 		do {
-			if (col >= lines[line].count) goto next_logical_line;  
+			if (col >= _.lines[line].count) goto next_logical_line;  
 			
-			char k = lines[line].data[col++];
+			char k = _.lines[line].data[col++];
 
 			if (k == '\t') {
 
-				if (vc + (tab_width - vc % tab_width) > wrap_width) goto next_visual_line;
+				if (vc + (_.tab_width - vc % _.tab_width) > _.wrap_width) goto next_visual_line;
 
 				do { 
-					if (	vc >= voc and vc < voc + swc
-					and 	vl >= vol and vl < vol + swl
+					if (	vc >= _.voc and vc < _.voc + _.swc
+					and 	vl >= _.vol and vl < _.vol + _.swl
 					) {
 						screen[length++] = ' '; sc++;
 					}
 					vc++;
-				} while (vc % tab_width);
+				} while (vc % _.tab_width);
 
 			} else {
-				if (	vc >= voc and vc < voc + swc
-				and 	vl >= vol and vl < vol + swl
+				if (	vc >= _.voc and vc < _.voc + _.swc
+				and 	vl >= _.vol and vl < _.vol + _.swl
 				and 	(sc or visual(k))
 				) { 
 					screen[length++] = k;
 					if (visual(k)) sc++;	
 				}
 				if (visual(k)) {
-					if (vc >= wrap_width) goto next_visual_line; 
+					if (vc >= _.wrap_width) goto next_visual_line; 
 					vc++; 
 				} 
 			}
 
-		} while (sc < swc or col < lines[line].count);
+		} while (sc < _.swc or col < _.lines[line].count);
 
 	next_logical_line:
 		line++; col = 0;
 
 	next_visual_line:
-		if (vl >= vol and vl < vol + swl) {
+		if (vl >= _.vol and vl < _.vol + _.swl) {
 			screen[length++] = '\033';
 			screen[length++] = '[';	
 			screen[length++] = 'K';
@@ -807,151 +726,131 @@ static inline nat display_proper(
 			sl++; sc = 0; (*total)++;
 		}
 		vl++; vc = 0; 
-	} while (sl < swl);
+	} while (sl < _.swl);
 
 	return length;
 }
 
-static inline void add_status() {        // (assumes *n is in the registers.)
-
-	const nat b = not sn ? active_index : buffer_count;
+static inline void add_status(nat b) {
 
 	char status[8448] = {0};
-	nat status_length = sprintf(status, " [n=%ld m=%ld] [ai=%ld bc=%ld] [%ld %ld] %s %c%c %s",
-		(nat) sn, 
-		buffers[b].mode, 
+	nat status_length = sprintf(status, " [wi=%ld m=%ld] [ai=%ld bc=%ld] [%ld %ld] %s %c%c %s",
+		(nat) working_index, buffers[b].mode, 
 		active_index, buffer_count, 
-		buffers[b].lcl, buffers[b].lcc,
-		buffers[b].filename,
-		buffers[b].saved ? 's' : 'e', 
-		buffers[b].autosaved ? ' ' : '*',
+		buffers[b].lcl, buffers[b].lcc, buffers[b].filename,
+		buffers[b].saved ? 's' : 'e', buffers[b].autosaved ? ' ' : '*',
 		buffers[b].message
 	);
 
-	nat save_col = lcc, save_line = lcl;
+	nat save_col = _.lcc, save_line = _.lcl;
 	move_top();
 	move_end();
-	while (lcc) delete(1);
+	while (_.lcc) delete(0);
 	insert_string(status, status_length);
 	jump_to(save_line, save_col);
 }
 
 static inline void display() {
-	store(sn ? buffer_count : active_index);
+
 	adjust_window_size();
 
 	nat total = 0, cursor_line = 0, cursor_col = 0;
 	nat length = 6;
 	memcpy(screen, "\033[?25l", 6);
-	
-	load(active_index);
-	double f = floor(log10((double) count)) + 1;
-	int line_number_digits = (int)f;
-	nat line_number_width = this.show_line_numbers * (line_number_digits + 2);
 
-	sbl = 0;
-	sbc = line_number_width;
-	sel = split_point;
-	sec = window_columns;
-	swl = sel - sbl;
-	swc = sec - sbc;
-	store(active_index);
+	nat save_wi = working_index;
+	working_index = active_index;
+
+	double f = floor(log10((double) _.count)) + 1;
+	int line_number_digits = (int)f;
+	nat line_number_width = _.show_line_numbers * (line_number_digits + 2);
+
+	_.sbl = 0;
+	_.sbc = line_number_width;
+	_.sel = window_rows - sn_rows;
+	_.sec = window_columns;
+	_.swl = _.sel - _.sbl;
+	_.swc = _.sec - _.sbc;
 
 	length += sprintf(screen + length, "\033[%ld;%ldH", 1L, 1L); 
 	length = display_proper(length, &total, line_number_digits);
 
-	if (not sn) {
-		cursor_line = sbl + vsl + 1;
-		cursor_col = sbc + vsc + 1;
+	if (save_wi == active_index) {
+		cursor_line = _.sbl + _.vsl + 1;
+		cursor_col = _.sbc + _.vsc + 1;
 	}
 
-	load(buffer_count);
-	f = floor(log10((double) count)) + 1;
+
+	working_index = buffer_count;
+
+
+	f = floor(log10((double) _.count)) + 1;
 	line_number_digits = (int)f;
-	line_number_width = this.show_line_numbers * (line_number_digits + 2);
+	line_number_width = _.show_line_numbers * (line_number_digits + 2);
 	
-	sbl = split_point;
-	sbc = line_number_width;
-	sel = window_rows;
-	sec = window_columns;
-	swl = sel - sbl;
-	swc = sec - sbc;
+	_.sbl = window_rows - sn_rows;
+	_.sbc = line_number_width;
+	_.sel = window_rows;
+	_.sec = window_columns;
+	_.swl = _.sel - _.sbl;
+	_.swc = _.sec - _.sbc;
 
-	add_status();
-	store(buffer_count);
+	add_status(save_wi);
 
-	length += sprintf(screen + length, "\033[%ld;%ldH",  split_point + 1L,  1L ); 
+	length += sprintf(screen + length, "\033[%ld;%ldH",  window_rows - sn_rows + 1L,  1L ); 
 	length = display_proper(length, &total, line_number_digits);
 
-	if (sn) {
-		cursor_line = sbl + vsl + 1;
-		cursor_col = sbc + vsc + 1;
+	if (save_wi == buffer_count) {
+		cursor_line = _.sbl + _.vsl + 1;
+		cursor_col = _.sbc + _.vsc + 1;
 	}
 
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", cursor_line, cursor_col);
 	if (not fuzz)   write(1, screen, (size_t) length);
 
-	load(sn ? buffer_count : active_index);
+	working_index = save_wi;
 }
 
 static inline void print_above_textbox(char* message) {
-
-	if (not sn) { 
-		store(active_index);
-		load(buffer_count);
-		sn = true; 
-	}
+	working_index = buffer_count;
 	insert('\n', 1);
 	insert_string(message, (nat) strlen(message));
-
-	store(buffer_count);
-	load(active_index);
-	sn = false; 
+	working_index = active_index;
 }
-
 
 static inline void execute(char c, char p);
 
 static inline void prompt(const char* prompt_message, char* out, nat out_size)  {
 
-	if (not sn) { 
-		store(active_index);
-		load(buffer_count);
-		sn = true; 
-	}
+	working_index = buffer_count;
 
-	move_bottom(); this.mode = 0;
-	insert('\n', 1);
+	move_bottom(); _.mode = 0;
+	insert('\n', 0);
 	insert_string(prompt_message, (nat) strlen(prompt_message));
-	insert('\n', 1);
+	insert('\n', 0);
 	in_prompt = true;
 	char c = 0, p = 0;
 
-loop:	display();                                           // todo: make this all a function.
-	pthread_mutex_unlock(&mutex);
+loop:	display(); 
 	c = read_stdin(); 
-	pthread_mutex_lock(&mutex);
 	if (fuzz and not c) goto done;
 	execute(c, p);
 	p = c;
 	if (in_prompt) goto loop;
 done:;
-	const char* string = lines[lcl].data;
-	nat string_length = lines[lcl].count;
+	const char* string = _.lines[_.lcl].data;
+	nat string_length = _.lines[_.lcl].count;
 
 	if (string_length > out_size) string_length = out_size;
 	memcpy(out, string, (size_t) string_length);
 	memset(out + string_length, 0, (size_t) out_size - (size_t) string_length);
 	out[out_size - 1] = 0;
 
-	store(sn ? buffer_count : active_index);
-	load(active_index);
-	sn = false; 
+	working_index = active_index;
 }
 
 static inline bool confirmed(const char* question, const char* yes_action, const char* no_action) {
-	if (in_prompt) return false;
-
+	
 	char prompt_message[4096] = {0}, invalid_response[4096] = {0};
 	sprintf(prompt_message, "%s? (%s/%s): ", question, yes_action, no_action);
 	sprintf(invalid_response, "please type \"%s\" or \"%s\".", yes_action, no_action);
@@ -972,67 +871,50 @@ static inline bool confirmed(const char* question, const char* yes_action, const
 static inline void create_sn_buffer() {
 	buffer_count = 0;  active_index = 0;
 	buffers = calloc(1, sizeof(struct buffer));
-	initialize_registers();
-	store(buffer_count);
+	initialize_buffer();
 }
 
 static inline void create_empty_buffer() {
-	store(sn ? buffer_count : active_index);
 	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 2));
 	buffers[buffer_count + 1] = buffers[buffer_count];
-	buffers[buffer_count] = (struct buffer) {0};
-	initialize_registers();
-	active_index = buffer_count;
+	working_index = active_index = buffer_count;
 	buffer_count++;
-	store(active_index);
-	sn = false;
+	initialize_buffer();
 }
 
-static inline void destroy(nat i) {
-	for (nat line = 0; line < buffers[i].count; line++) 
-		free(buffers[i].lines[line].data);
-	free(buffers[i].lines);
-
-	for (nat a = 0; a < buffers[i].action_count; a++) {
-		free(buffers[i].actions[a].text);
-		free(buffers[i].actions[a].children);
+static inline void destroy(nat b) {
+	for (nat line = 0; line < buffers[b].count; line++) 
+		free(buffers[b].lines[line].data);
+	free(buffers[b].lines);
+	for (nat a = 0; a < buffers[b].action_count; a++) {
+		free(buffers[b].actions[a].text);
+		free(buffers[b].actions[a].children);
 	}
-	free(buffers[i].actions);
-}
-
-static inline void close_sn_buffer() {
-	if (fuzz and buffer_count) abort();
-	destroy(0);
-	free(buffers);
+	free(buffers[b].actions);
 }
 
 static inline void close_active_buffer() {
+	if (not buffer_count) return;
 
-	if (not buffer_count or sn) return;
-	store(active_index);
 	destroy(active_index);
-
 	memmove(buffers + active_index, buffers + active_index + 1, 
 		sizeof(struct buffer) * (size_t)(buffer_count - active_index));
 	buffer_count--;
-	if (active_index >= buffer_count and buffer_count) active_index = buffer_count - 1; 
-	else if (not buffer_count) active_index = 0;
 	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 1));
-	load(active_index);
+
+	if (active_index >= buffer_count and buffer_count) active_index = buffer_count - 1; 
+	else if (not buffer_count) active_index = 0;	
+	working_index = active_index;
 }
 
 static inline void move_to_next_buffer() {
-	if (sn) return;
-	store(active_index);
 	if (active_index) active_index--; else active_index = buffer_count;
-	load(active_index);
+	working_index = active_index;
 }
 
 static inline void move_to_previous_buffer() {
-	if (sn) return;
-	store(active_index);
 	if (active_index < buffer_count) active_index++; else active_index = 0;
-	load(active_index);
+	working_index = active_index;
 }
 
 static inline void open_file(const char* given_filename) {
@@ -1043,7 +925,7 @@ static inline void open_file(const char* given_filename) {
 	FILE* file = fopen(given_filename, "r");
 	if (not file) {
 		if (buffer_count) {
-			sprintf(this.message, "error: fopen: %s", strerror(errno));
+			sprintf(_.message, "error: fopen: %s", strerror(errno));
 			return;
 		}
 		perror("fopen"); exit(1);
@@ -1054,21 +936,19 @@ static inline void open_file(const char* given_filename) {
 	char* text = malloc(sizeof(char) * length);
         fseek(file, 0, SEEK_SET);
         fread(text, sizeof(char), length, file);
+	fclose(file);
 
 	create_empty_buffer();
 	for (size_t i = 0; i < length; i++) insert(text[i], 0);
-
 	free(text); 
-	fclose(file);
-	this.saved = true; 
-	this.autosaved = true; 
-	this.mode = 1; 
+	_.saved = true; 
+	_.autosaved = true; 
+	_.mode = 1; 
 	move_top();
-	strcpy(this.filename, given_filename);
-	strcpy(this.location, given_filename); // todo:   seperate out these two things!!!
-	store(active_index);
 
-	sprintf(this.message, "read %lub", length);
+	strcpy(_.filename, given_filename);
+	strcpy(_.location, given_filename); // todo:   seperate out these two things!!!
+	sprintf(_.message, "read %lub", length);
 }
 
 static inline void emergency_save_to_file() {
@@ -1076,10 +956,8 @@ static inline void emergency_save_to_file() {
 
 	char dt[16] = {0};
 	get_datetime(dt);
-
 	char id[32] = {0};
 	sprintf(id, "%08x%08x", rand(), rand());
-	
 	char local_filename[4096] = {0};
 	sprintf(local_filename, "EMERGENCY_FILE_SAVE__%s__%s__.txt", dt, id);
 
@@ -1090,9 +968,9 @@ static inline void emergency_save_to_file() {
 	}
 	
 	unsigned long long bytes = 0;
-	for (nat i = 0; i < count; i++) {
-		bytes += fwrite(lines[i].data, sizeof(char), (size_t) lines[i].count, file);
-		if (i < count - 1) {
+	for (nat i = 0; i < _.count; i++) {
+		bytes += fwrite(_.lines[i].data, sizeof(char), (size_t) _.lines[i].count, file);
+		if (i < _.count - 1) {
 			fputc('\n', file);
 			bytes++;
 		}
@@ -1105,17 +983,17 @@ static inline void emergency_save_to_file() {
 	}
 
 	fclose(file);
-	printf("interrupt: emergency wrote %lldb;%ldl to %s\n\r", bytes, count, local_filename);
+	printf("interrupt: emergency wrote %lldb;%ldl to %s\n\r", bytes, _.count, local_filename);
 }
 
 static inline void emergency_save_all_buffers() {
-	store(sn ? buffer_count : active_index);
+	nat save_wi = working_index;
 	for (int i = 0; i < buffer_count + 1; i++) {
-		load(i);
+		working_index = i;
 		emergency_save_to_file();
 		sleep(1);
 	}
-	load(sn ? buffer_count : active_index);
+	working_index = save_wi;
 }
 
 static inline void autosave() {
@@ -1123,7 +1001,6 @@ static inline void autosave() {
 
 	char dt[16] = {0};
 	get_datetime(dt);
-
 	char local_filename[4096] = {0};
 	sprintf(local_filename, "%sautosave_%s_.txt", autosave_directory, dt);
 
@@ -1134,9 +1011,9 @@ static inline void autosave() {
 	}
 	
 	unsigned long long bytes = 0;
-	for (nat i = 0; i < count; i++) {
-		bytes += fwrite(lines[i].data, sizeof(char), (size_t) lines[i].count, file);
-		if (i < count - 1) {
+	for (nat i = 0; i < _.count; i++) {
+		bytes += fwrite(_.lines[i].data, sizeof(char), (size_t) _.lines[i].count, file);
+		if (i < _.count - 1) {
 			fputc('\n', file);
 			bytes++;
 		}
@@ -1150,7 +1027,7 @@ static inline void autosave() {
 
 	fclose(file);
 
-	this.autosaved = true;
+	_.autosaved = true;
 }
 
 static void handle_signal_interrupt(int code) {
@@ -1172,46 +1049,46 @@ static void handle_signal_interrupt(int code) {
 static inline void save() {
 	if (fuzz) return;
 
-	if (not strlen(this.filename)) {
+	if (not strlen(_.filename)) {
 
 	prompt_filename:
 
-		prompt("save as: ", this.filename, sizeof this.filename);
+		prompt("save as: ", _.filename, sizeof _.filename);
 
-		if (not strlen(this.filename)) { sprintf(this.message, "aborted save"); return; }
+		if (not strlen(_.filename)) { sprintf(_.message, "aborted save"); return; }
 
-		if (not strrchr(this.filename, '.') and this.use_txt_extension_when_absent) strcat(this.filename, ".txt");
+		if (not strrchr(_.filename, '.') and _.use_txt_extension_when_absent) strcat(_.filename, ".txt");
 
-		if (file_exists(this.filename) and not confirmed("file already exists, overwrite", "overwrite", "no")) {
-			strcpy(this.filename, ""); goto prompt_filename;
+		if (file_exists(_.filename) and not confirmed("file already exists, overwrite", "overwrite", "no")) {
+			strcpy(_.filename, ""); goto prompt_filename;
 		}
 
 	}
 
-	FILE* file = fopen(this.filename, "w+");
+	FILE* file = fopen(_.filename, "w+");
 	if (not file) {
-		sprintf(this.message, "error: %s", strerror(errno));
+		sprintf(_.message, "error: %s", strerror(errno));
 		return;
 	}
 	
 	unsigned long long bytes = 0;
-	for (nat i = 0; i < count; i++) {
-		bytes += fwrite(lines[i].data, sizeof(char), (size_t) lines[i].count, file);
-		if (i < count - 1) {
+	for (nat i = 0; i < _.count; i++) {
+		bytes += fwrite(_.lines[i].data, sizeof(char), (size_t) _.lines[i].count, file);
+		if (i < _.count - 1) {
 			fputc('\n', file);
 			bytes++;
 		}
 	}
 
 	if (ferror(file)) {
-		sprintf(this.message, "error: %s", strerror(errno));
+		sprintf(_.message, "error: %s", strerror(errno));
 		fclose(file);
 		return;
 	}
 
 	fclose(file);
-	sprintf(this.message, "wrote %lldb;%ldl", bytes, count);
-	this.saved = true;
+	sprintf(_.message, "wrote %lldb;%ldl", bytes, _.count);
+	_.saved = true;
 }
 
 static inline void rename_file() {
@@ -1220,16 +1097,16 @@ static inline void rename_file() {
 	char new[4096] = {0};
 	prompt_filename:
 	prompt("rename to: ", new, sizeof new);
-	if (not strlen(new)) { sprintf(this.message, "aborted rename"); return; }
+	if (not strlen(new)) { sprintf(_.message, "aborted rename"); return; }
 
 	if (file_exists(new) and not confirmed("file already exists, overwrite", "overwrite", "no")) {
 		strcpy(new, ""); goto prompt_filename;
 	}
 
-	if (rename(this.filename, new)) sprintf(this.message, "error: %s", strerror(errno));
+	if (rename(_.filename, new)) sprintf(_.message, "error: %s", strerror(errno));
 	else {
-		strncpy(this.filename, new, sizeof new);
-		sprintf(this.message, "renamed to \"%s\"", this.filename);
+		strncpy(_.filename, new, sizeof new);
+		sprintf(_.message, "renamed to \"%s\"", _.filename);
 	}
 }
 
@@ -1245,8 +1122,8 @@ static inline void interpret_escape_code() {
 
 		if (c == 'A') move_up();
 		else if (c == 'B') move_down();
-		else if (c == 'C') { move_right(); vdc = vcc; }
-		else if (c == 'D') { move_left(); vdc = vcc; }
+		else if (c == 'C') { move_right(); _.vdc = _.vcc; }
+		else if (c == 'D') { move_left(); _.vdc = _.vcc; }
 
 		//  TODO:   i need to completely redo the way that we scroll the screen, using mouse/trackpad scrolling. 
 
@@ -1294,7 +1171,7 @@ static inline void interpret_escape_code() {
 static inline void prompt_open() {
 	char new_filename[4096] = {0};
 	prompt("open: ", new_filename, sizeof new_filename);
-	if (not strlen(new_filename)) { sprintf(this.message, "aborted open"); return; }
+	if (not strlen(new_filename)) { sprintf(_.message, "aborted open"); return; }
 	open_file(new_filename);
 }
 
@@ -1302,18 +1179,18 @@ static inline void prompt_jump_line() {
 	char string_number[128] = {0};
 	prompt("line: ", string_number, sizeof string_number);
 	nat line = atoi(string_number);
-	if (line >= count) line = count - 1;
+	if (line >= _.count) line = _.count - 1;
 	jump_line(line);
-	sprintf(this.message, "jumped to %ld %ld", lcl, lcc);
+	sprintf(_.message, "jumped to %ld %ld", _.lcl, _.lcc);
 }
 
 static inline void prompt_jump_column() {
 	char string_number[128] = {0};
 	prompt("column: ", string_number, sizeof string_number);
 	nat column = atoi(string_number);
-	if (column > lines[lcl].count) column = lines[lcl].count;
+	if (column > _.lines[_.lcl].count) column = _.lines[_.lcl].count;
 	jump_column(column);
-	sprintf(this.message, "jumped to %ld %ld", lcl, lcc);
+	sprintf(_.message, "jumped to %ld %ld", _.lcl, _.lcc);
 }
 
 static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last_line, nat last_column) {
@@ -1327,16 +1204,16 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 	while (line < last_line) {
 		
 		if (not memory_safe) {
-			if (length + lines[line].count - column + 1 >= s_capacity) 
-				string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + lines[line].count - column + 1)));
+			if (length + _.lines[line].count - column + 1 >= s_capacity) 
+				string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + _.lines[line].count - column + 1)));
 		} else {
-			string = realloc(string, (size_t) (length + lines[line].count - column));
+			string = realloc(string, (size_t) (length + _.lines[line].count - column));
 		}
 
-		if (lines[line].count - column) 
-			memcpy(string + length, lines[line].data + column, (size_t)(lines[line].count - column));
+		if (_.lines[line].count - column) 
+			memcpy(string + length, _.lines[line].data + column, (size_t)(_.lines[line].count - column));
 
-		length += lines[line].count - column;
+		length += _.lines[line].count - column;
 
 		if (not memory_safe) {
 			// do nothing. 
@@ -1356,17 +1233,17 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 		string = realloc(string, (size_t) (length + last_column - column));	
 	}
 
-	if (last_column - column) memcpy(string + length, lines[line].data + column, (size_t)(last_column - column));
+	if (last_column - column) memcpy(string + length, _.lines[line].data + column, (size_t)(last_column - column));
 	length += last_column - column;
 	*out_length = length;
 	return string;
 }
 
 static inline char* get_selection(nat* out) {
-	if (lal < lcl) return get_sel(out, lal, lac, lcl, lcc);
-	if (lcl < lal) return get_sel(out, lcl, lcc, lal, lac);
-	if (lac < lcc) return get_sel(out, lal, lac, lcl, lcc);
-	if (lcc < lac) return get_sel(out, lcl, lcc, lal, lac);
+	if (_.lal < _.lcl) return get_sel(out, _.lal, _.lac, _.lcl, _.lcc);
+	if (_.lcl < _.lal) return get_sel(out, _.lcl, _.lcc, _.lal, _.lac);
+	if (_.lac < _.lcc) return get_sel(out, _.lal, _.lac, _.lcl, _.lcc);
+	if (_.lcc < _.lac) return get_sel(out, _.lcl, _.lcc, _.lal, _.lac);
 	*out = 0;
 	return NULL;
 }
@@ -1376,13 +1253,12 @@ static inline void paste() {
  if (not fuzz) {
 
 	FILE* file = popen("pbpaste", "r");
-	if (not file) { sprintf(this.message, "error: paste: popen(): %s", strerror(errno)); return; }
+	if (not file) { sprintf(_.message, "error: paste: popen(): %s", strerror(errno)); return; }
 	struct action new = {0};
 	record_logical_state(&new.pre);
 	char* string = malloc(256);
 	nat s_capacity = 256, length = 0, c = 0;
-
-	lac = lcc; lal = lcl; // todo: why are we doing this here!?
+	_.lac = _.lcc; _.lal = _.lcl;
 
 	while ((c = fgetc(file)) != EOF) {
 
@@ -1397,7 +1273,7 @@ static inline void paste() {
 		insert((char)c, 0);
 	}
 	pclose(file);
-	sprintf(this.message, "pasted %ldb", length);
+	sprintf(_.message, "pasted %ldb", length);
 	record_logical_state(&new.post);
 	new.type = paste_action;
 	new.text = string;
@@ -1410,11 +1286,11 @@ static inline void paste() {
  	record_logical_state(&new.pre);
  	char* string = malloc(256);
  	nat length = 0;
- 	lac = lcc; lal = lcl;
+ 	_.lac = _.lcc; _.lal = _.lcl;
  	string = realloc(string, (size_t) (length + 1));
  	string[length++] = (char) 'A';
  	insert((char)'A', 0);
- 	sprintf(this.message, "pasted %ldb", length);
+ 	sprintf(_.message, "pasted %ldb", length);
  	record_logical_state(&new.post);
  	new.type = paste_action;
  	new.text = string;
@@ -1424,17 +1300,17 @@ static inline void paste() {
 }
 
 static inline void cut_selection() {
-	if (lal < lcl) goto anchor_first;
-	if (lcl < lal) goto cursor_first;
-	if (lac < lcc) goto anchor_first;
-	if (lcc < lac) goto cursor_first;
+	if (_.lal < _.lcl) goto anchor_first;
+	if (_.lcl < _.lal) goto cursor_first;
+	if (_.lac < _.lcc) goto anchor_first;
+	if (_.lcc < _.lac) goto cursor_first;
 	return;
 cursor_first:;
-	nat line = lcl, column = lcc;
-	while (lcl < lal or lcc < lac) move_right();
-	lal = line; lac = column;
+	nat line = _.lcl, column = _.lcc;
+	while (_.lcl < _.lal or _.lcc < _.lac) move_right();
+	_.lal = line; _.lac = column;
 anchor_first:
-	while (lal < lcl or lac < lcc) delete(0);
+	while (_.lal < _.lcl or _.lac < _.lcc) delete(0);
 }
 
 static inline void cut() { 
@@ -1443,7 +1319,7 @@ static inline void cut() {
 	nat deleted_length = 0;
 	char* deleted_string = get_selection(&deleted_length);
 	cut_selection();
-	sprintf(this.message, "deleted %ldb", deleted_length);
+	sprintf(_.message, "deleted %ldb", deleted_length);
 	record_logical_state(&new.post);
 	new.type = cut_action;
 	new.text = deleted_string;
@@ -1455,14 +1331,14 @@ static inline void copy() {
 	if (fuzz) return;
 
 	FILE* file = popen("pbcopy", "w");
-	if (not file) { sprintf(this.message, "error: copy: popen(): %s", strerror(errno)); return; }
+	if (not file) { sprintf(_.message, "error: copy: popen(): %s", strerror(errno)); return; }
 
 	nat length = 0;
 	char* selection = get_selection(&length);
 	fwrite(selection, 1, (size_t)length, file);
 	pclose(file);
 	free(selection);
-	sprintf(this.message, "copied %ldb", length);
+	sprintf(_.message, "copied %ldb", length);
 }
 
 static inline void run_shell_command(const char* command) {
@@ -1470,7 +1346,7 @@ static inline void run_shell_command(const char* command) {
 
 	FILE* f = popen(command, "r");
 	if (not f) {
-		sprintf(this.message, "error: could not run command \"%s\": %s\n", command, strerror(errno));
+		sprintf(_.message, "error: could not run command \"%s\": %s\n", command, strerror(errno));
 		return;
 	}
 
@@ -1485,16 +1361,16 @@ static inline void run_shell_command(const char* command) {
 		length += line_length;
 	}
 	pclose(f);
-	lal = lcl; lac = lcc;
-	sprintf(this.message, "output %ldb", length);
+	_.lal = _.lcl; _.lac = _.lcc;
+	sprintf(_.message, "output %ldb", length);
 	insert_string(output, length);
 }
 
 static inline void prompt_run() {
 	char command[4096] = {0};
 	prompt("run(2>&1): ", command, sizeof command);
-	if (not strlen(command)) { sprintf(this.message, "aborted run"); return; }
-	sprintf(this.message, "running: %s", command);
+	if (not strlen(command)) { sprintf(_.message, "aborted run"); return; }
+	sprintf(_.message, "running: %s", command);
 	run_shell_command(command);
 }
 
@@ -1505,7 +1381,6 @@ static inline void replay_action(struct action a) {
 		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
 	} else if (a.type == delete_action) delete(0); 
 	else if (a.type == cut_action) cut_selection();
-	else sprintf(this.message, "error: unknown action");
 	require_logical_state(&a.post); 
 }
 
@@ -1514,51 +1389,50 @@ static inline void reverse_action(struct action a) {
 	if (a.type == no_action or a.type == anchor_action) {}
 	else if (a.type == insert_action) delete(0);
 	else if (a.type == paste_action) {
-		while (lcc > a.pre.lcc or lcl > a.pre.lcl) delete(0);
+		while (_.lcc > a.pre.lcc or _.lcl > a.pre.lcl) delete(0);
 	} else if (a.type == delete_action or a.type == cut_action) {
 		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
-	} else sprintf(this.message, "error: unknown action");
-	require_logical_state(&a.pre);
+	} require_logical_state(&a.pre);
 }
 
 static inline void undo() {
-	if (not head) return;
-	reverse_action(actions[head]);
+	if (not _.head) return;
+	reverse_action(_.actions[_.head]);
 
-	sprintf(this.message, "undoing %ld ", actions[head].type);
-	if (actions[head].count != 1) 
-		sprintf(this.message + strlen(this.message), "%ld %ld", actions[head].choice, actions[head].count);
+	sprintf(_.message, "undoing %ld ", _.actions[_.head].type);
+	if (_.actions[_.head].count != 1) 
+		sprintf(_.message + strlen(_.message), "%ld %ld", _.actions[_.head].choice, _.actions[_.head].count);
 
-	head = actions[head].parent;
+	_.head = _.actions[_.head].parent;
 }
 
 static inline void undo_silent() {
-	if (not head) return;
-	reverse_action(actions[head]);
-	head = actions[head].parent;
+	if (not _.head) return;
+	reverse_action(_.actions[_.head]);
+	_.head = _.actions[_.head].parent;
 }
 
 static inline void redo() {
-	if (not actions[head].count) return;
-	head = actions[head].children[actions[head].choice];
-	sprintf(this.message, "redoing %ld ", actions[head].type);
-	if (actions[head].count != 1) 
-		sprintf(this.message + strlen(this.message), "%ld %ld", actions[head].choice, actions[head].count);
-	replay_action(actions[head]);
+	if (not _.actions[_.head].count) return;
+	_.head = _.actions[_.head].children[_.actions[_.head].choice];
+	sprintf(_.message, "redoing %ld ", _.actions[_.head].type);
+	if (_.actions[_.head].count != 1) 
+		sprintf(_.message + strlen(_.message), "%ld %ld", _.actions[_.head].choice, _.actions[_.head].count);
+	replay_action(_.actions[_.head]);
 }
 
 static inline void alternate_incr() {
-	if (actions[head].choice + 1 < actions[head].count) actions[head].choice++;
-	sprintf(this.message, "switched %ld %ld", actions[head].choice, actions[head].count);
+	if (_.actions[_.head].choice + 1 < _.actions[_.head].count) _.actions[_.head].choice++;
+	sprintf(_.message, "switched %ld %ld", _.actions[_.head].choice, _.actions[_.head].count);
 }
 
 static inline void alternate_decr() {
-	if (actions[head].choice) actions[head].choice--;
-	sprintf(this.message, "switched %ld %ld", actions[head].choice, actions[head].count);
+	if (_.actions[_.head].choice) _.actions[_.head].choice--;
+	sprintf(_.message, "switched %ld %ld", _.actions[_.head].choice, _.actions[_.head].count);
 }
 
 static inline void recalculate_position() {
-	nat save_lcl = lcl, save_lcc = lcc;
+	nat save_lcl = _.lcl, save_lcc = _.lcc;
 	move_top();
 	jump_to(save_lcl, save_lcc);
 }
@@ -1566,22 +1440,22 @@ static inline void recalculate_position() {
 static inline void open_directory() {
 	if (fuzz) return;
 	
-	DIR* directory = opendir(this.cwd);
+	DIR* directory = opendir(_.cwd);
 	if (not directory) { 
-		sprintf(this.message, "couldnt open cwd=%s, reason=%s", this.cwd, strerror(errno));	
+		sprintf(_.message, "couldnt open cwd=%s, reason=%s", _.cwd, strerror(errno));	
 		return;
 	}
 
 	struct dirent *e = NULL;
 
-	nat length = (nat)strlen(this.cwd) + 2;
+	nat length = (nat)strlen(_.cwd) + 2;
 	char* menu = calloc((size_t) length + 1, sizeof(char));
-	sprintf(menu, ":%s\n", this.cwd);
+	sprintf(menu, ":%s\n", _.cwd);
 	
 	while ((e = readdir(directory))) {
 
 		char path[4096] = {0};
-		strlcpy(path, this.cwd, sizeof path);
+		strlcpy(path, _.cwd, sizeof path);
 		strlcat(path, e->d_name, sizeof path);
 
 		if (is_directory(path)) {
@@ -1597,21 +1471,21 @@ static inline void open_directory() {
 
 	closedir(directory);
 
-	nat tlal = lcl; nat tlac = lcc;
+	nat tlal = _.lcl; nat tlac = _.lcc;
 	insert_string(menu, length);
 	jump_to(tlal, tlac);
 }
 
 static inline void change_directory() {
 
-	char* selection = strndup(lines[lcl].data, (size_t) lines[lcl].count);
+	char* selection = strndup(_.lines[_.lcl].data, (size_t) _.lines[_.lcl].count);
 
 	if (equals(selection, "../") ) {
-		if (not equals(this.cwd, "/")) {
-			this.cwd[strlen(this.cwd) - 1] = 0;
-			*(1+strrchr(this.cwd, '/')) = 0;
+		if (not equals(_.cwd, "/")) {
+			_.cwd[strlen(_.cwd) - 1] = 0;
+			*(1+strrchr(_.cwd, '/')) = 0;
 		} else {
-			sprintf(this.message, "error: at root /");
+			sprintf(_.message, "error: at root /");
 		}
 		
 	} else if (equals(selection, "./") ) {
@@ -1619,23 +1493,25 @@ static inline void change_directory() {
 
 	} else {
 		char path[4096] = {0};
-		strlcpy(path, this.cwd, sizeof path);
+		strlcpy(path, _.cwd, sizeof path);
 		strlcat(path, selection, sizeof path);
 
 		if (is_directory(path)) {
-			strlcat(this.cwd, selection, sizeof this.cwd);
+			strlcat(_.cwd, selection, sizeof _.cwd);
 		} else {
-			sprintf(this.message, "error: not a directory");
+			sprintf(_.message, "error: not a directory");
 		}
 	}
+
+	free(selection);
 }
 
 static inline void file_select() {
-	char* line = strndup(lines[lcl].data, (size_t) lines[lcl].count);
-	strlcpy(this.selected_file, this.cwd, sizeof this.selected_file);
-	strlcat(this.selected_file, line, sizeof this.selected_file);
+	char* line = strndup(_.lines[_.lcl].data, (size_t) _.lines[_.lcl].count);
+	strlcpy(_.selected_file, _.cwd, sizeof _.selected_file);
+	strlcat(_.selected_file, line, sizeof _.selected_file);
 	free(line);
-	sprintf(this.message, "selected: %s", this.selected_file);
+	sprintf(_.message, "selected: %s", _.selected_file);
 }
 
 static inline char** split(char* string, char delim, nat* array_count) {
@@ -1667,19 +1543,19 @@ static inline char** split(char* string, char delim, nat* array_count) {
 
 static inline void execute(char c, char p) {
 
-	if (this.mode == 0) {
+	if (_.mode == 0) {
 
 		if (in_prompt and c == '\r') { in_prompt = false; return; }
-		if (c == 'c' and p == 'h') { undo(); this.mode = 1; }
-		else if (c == 27 and stdin_is_empty()) this.mode = 1;
+		if (c == 'c' and p == 'h') { undo(); _.mode = 1; }
+		else if (c == 27 and stdin_is_empty()) _.mode = 1;
 		else if (c == 27) interpret_escape_code();
 		else if (c == 127) delete(1);
 		else if (c == '\r') insert('\n', 1);
 		else insert(c, 1);
 
-	} else if (this.mode == 1) {
+	} else if (_.mode == 1) {
 	
-		const nat tlal = lcl, tlac = lcc;
+		const nat tlal = _.lcl, tlac = _.lcc;
 
 		if (c == ' ');
 		else if (c == 'l' and p == 'e') prompt_jump_line();         // unbind this?... yeah...
@@ -1700,36 +1576,36 @@ static inline void execute(char c, char p) {
 		else if (c == 'c' and p == 'h') paste(); 	
 		else if (c == 'd' and p == 'h') {}
 	
-		else if (c == 'a') this.selecting = not this.selecting;
+		else if (c == 'a') _.selecting = not _.selecting;
 		else if (c == 'd') delete(1);
 		else if (c == 'r') cut();
-		else if (c == 't') this.mode = 0;
-		else if (c == 'm') { this.mode = 2; goto command_mode; }
+		else if (c == 't') _.mode = 0;
+		else if (c == 'm') { _.mode = 2; goto command_mode; }
 		else if (c == 'c') undo();
 		else if (c == 'k') redo();
 		else if (c == 'o') move_word_right(); 
 		else if (c == 'l') move_word_left(); 
 		else if (c == 'p') move_up();
 		else if (c == 'u') move_down();
-		else if (c == 'i') { move_right(); vdc = vcc; }
-		else if (c == 'n') { move_left(); vdc = vcc; }
+		else if (c == 'i') { move_right(); _.vdc = _.vcc; }
+		else if (c == 'n') { move_left(); _.vdc = _.vcc; }
 		else if (c == '-') { if (sn_rows < window_rows) sn_rows++; } // unbind this. make it a set command.
 		else if (c == '=') { if (sn_rows) sn_rows--; }               // unbind this. make it a set command.
-		else if (c == '0') {   // change the keybinding for this please.
-			if (sn) { store(buffer_count); load(active_index); sn = false; }
-			else { store(active_index); load(buffer_count); sn = true; }
+		else if (c == '0') {
+			if (working_index == active_index) working_index = buffer_count;
+			else working_index = active_index;
 		}
 		else if (c == 's') save();
 		else if (c == 'q') {
-			if (this.saved or confirmed("discard unsaved changes", "discard", "no")) close_active_buffer(); 
+			if (_.saved or confirmed("discard unsaved changes", "discard", "no")) close_active_buffer(); 
 		}
 		else if (c == 27 and stdin_is_empty()) {}
 		else if (c == 27) interpret_escape_code();
 
-		if (not this.selecting) { lal = tlal; lac = tlac; }
+		if (not _.selecting) { _.lal = tlal; _.lac = tlac; }
 
-	} else if (this.mode == 2) {
-		command_mode: this.mode = 1;
+	} else if (_.mode == 2) {
+		command_mode: _.mode = 1;
 
 		char string[4096] = {0};
 		prompt(" •• ", string, sizeof string);
@@ -1763,12 +1639,12 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "changedirectory")) change_directory();
 			else if (equals(command, "opendirectory")) open_directory();
 			else if (equals(command, "selectfile")) file_select();
-			else if (equals(command, "openfile")) { file_select(); open_file(this.selected_file); }
-			else if (equals(command, "selection")) sprintf(this.message, "%s", this.selected_file);
-			else if (equals(command, "where")) sprintf(this.message, "@ %s", this.cwd);
-			else if (equals(command, "home")) { getcwd(this.cwd, sizeof this.cwd); strlcat(this.cwd, "/", sizeof this.cwd); }
-			else if (equals(command, "clearmessage")) memset(this.message, 0, sizeof this.message);
-			else if (equals(command, "numbers")) this.show_line_numbers = not this.show_line_numbers;
+			else if (equals(command, "openfile")) { file_select(); open_file(_.selected_file); }
+			else if (equals(command, "selection")) sprintf(_.message, "%s", _.selected_file);
+			else if (equals(command, "where")) sprintf(_.message, "@ %s", _.cwd);
+			else if (equals(command, "home")) { getcwd(_.cwd, sizeof _.cwd); strlcat(_.cwd, "/", sizeof _.cwd); }
+			else if (equals(command, "clearmessage")) memset(_.message, 0, sizeof _.message);
+			else if (equals(command, "numbers")) _.show_line_numbers = not _.show_line_numbers;
 			else if (equals(command, "snincr")) { if (sn_rows < window_rows) sn_rows++; }
 			else if (equals(command, "sndecr")) { if (sn_rows) sn_rows--; } 
 			else if (equals(command, "cut")) cut();
@@ -1779,8 +1655,8 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "redo")) redo();
 			else if (equals(command, "alternateincr")) alternate_incr();
 			else if (equals(command, "alternatedecr")) alternate_decr();
-			else if (equals(command, "moveright")) { move_right(); vdc = vcc; }
-			else if (equals(command, "moveleft")) { move_left(); vdc = vcc; }
+			else if (equals(command, "moveright")) { move_right(); _.vdc = _.vcc; }
+			else if (equals(command, "moveleft")) { move_left(); _.vdc = _.vcc; }
 			else if (equals(command, "moveup")) move_up();
 			else if (equals(command, "movedown")) move_down();
 			else if (equals(command, "movewordright")) move_word_right();
@@ -1794,22 +1670,22 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "new")) create_empty_buffer();
 			else if (equals(command, "nextbuffer")) move_to_next_buffer();
 			else if (equals(command, "previousbuffer")) move_to_previous_buffer();			
-			else if (equals(command, "mode0")) this.mode = 0;
-			else if (equals(command, "mode1")) this.mode = 1;
-			else if (equals(command, "mode2")) this.mode = 2;
+			else if (equals(command, "mode0")) _.mode = 0;
+			else if (equals(command, "mode1")) _.mode = 1;
+			else if (equals(command, "mode2")) _.mode = 2;
 
 			else if (equals(command, "goto")) {}
 			else if (equals(command, "branch")) {}
 			else if (equals(command, "incr")) {}
 			else if (equals(command, "setzero")) {}
 
-			else if (equals(command, "wrapresizetemp")) { wrap_width = 0; recalculate_position(); }
+			else if (equals(command, "wrapresizetemp")) { _.wrap_width = 0; recalculate_position(); }
 			else if (equals(command, "quit")) {
-				if (this.saved or confirmed("discard unsaved changes", "discard", "no")) 
+				if (_.saved or confirmed("discard unsaved changes", "discard", "no")) 
 					close_active_buffer(); 
 
 			} else {
-				sprintf(this.message, "command not recognized: %s", command);
+				sprintf(_.message, "command not recognized: %s", command);
 				break;
 			}
 		}
@@ -1817,7 +1693,8 @@ static inline void execute(char c, char p) {
 		for (nat i = 0; i < command_count; i++) free(commands[i]);
 		free(commands);
 		free(d);
-	} else this.mode = 1;
+
+	} else _.mode = 1;
 }
 
 static void* autosaver(void* unused) {
@@ -1825,36 +1702,10 @@ static void* autosaver(void* unused) {
 		sleep(autosave_frequency);
 		pthread_mutex_lock(&mutex);
 		if (not buffer_count) break;
-		if (not this.autosaved) autosave();
+		if (not _.autosaved) autosave();
 		pthread_mutex_unlock(&mutex);
 	}
 	return unused;
-}
-
-static inline void zero_registers() {
-	wrap_width = 0;
-	tab_width = 0;
-	capacity = 0;
-	count = 0;
-	head = 0;
-	action_count = 0;
-	lines = NULL;
-	actions = NULL;
-	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
-	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
-	sbl = 0; sbc = 0; sel = 0; sec = 0; swl = 0; swc = 0;
-
-	this = (struct buffer){0};
-	buffers = NULL;
-	buffer_count = 0;
-	active_index = 0;
-	free(screen);  screen = NULL;
-	window_rows = 0;
-	window_columns = 0;
-	window = (struct winsize){0};
-	sn_rows = 0;
-	split_point = 0; 
-	in_prompt = false;
 }
 
 static inline void editor() {
@@ -1896,26 +1747,28 @@ if (running_crash) {
 	} 
 
 	char p = 0, c = 0;
-    	getcwd(this.cwd, sizeof this.cwd);
-	strlcat(this.cwd, "/", sizeof this.cwd);
+    	getcwd(_.cwd, sizeof _.cwd);
+	strlcat(_.cwd, "/", sizeof _.cwd);
 
 loop:	display();
-	pthread_mutex_unlock(&mutex);
 	c = read_stdin(); 
-	pthread_mutex_lock(&mutex);
 	if (fuzz and not c) goto done;
 	execute(c, p);
 	p = c;
 	if (buffer_count) goto loop;
 done:	
-	if (sn) {
-		store(buffer_count);
-		load(active_index);
-		sn = false; 
-	}
+	working_index = active_index;
 	while (buffer_count) close_active_buffer();
-	close_sn_buffer();
-	zero_registers();
+	destroy(0);
+	free(buffers); buffers = NULL;
+	free(screen);  screen = NULL;
+	window = (struct winsize){0};
+	buffer_count = 0;
+	active_index = 0;	
+	window_rows = 0;
+	window_columns = 0;
+	sn_rows = 0;
+	in_prompt = false;
 
 	if (not fuzz) {
 		write(1, "\033[?1049l\033[?1000l\033[7h", 20);	
@@ -2716,6 +2569,136 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 	}
 	return length;
 }*/
+
+
+
+
+
+
+
+/*
+static inline void store(nat BUFFER) {
+
+	const nat b = BUFFER;
+	buffers[b] = this;
+
+	buffers[b].wrap_width = wrap_width;
+	buffers[b].tab_width = tab_width;
+	buffers[b].capacity = capacity;
+	buffers[b].count = count;
+	buffers[b].head = head;
+	buffers[b].action_count = action_count;
+	buffers[b].actions = actions;
+	buffers[b].lines = lines;
+
+	buffers[b].lcl = lcl;  buffers[b].lcc = lcc; 
+	buffers[b].vcl = vcl;  buffers[b].vcc = vcc; 
+	buffers[b].vol = vol;  buffers[b].voc = voc; 
+	buffers[b].vsl = vsl;  buffers[b].vsc = vsc; 
+	buffers[b].vdc = vdc;  buffers[b].lal = lal;
+	buffers[b].lac = lac; 
+
+	buffers[b].sbl = sbl; buffers[b].sbc = sbc; 
+	buffers[b].sel = sel; buffers[b].sec = sec; 
+	buffers[b].swl = swl; buffers[b].swc = swc; 
+}
+
+static inline void load(nat BUFFER) {
+
+	struct buffer ba = buffers[BUFFER];
+	this = ba;
+
+	capacity = ba.capacity;
+	count = ba.count;
+	wrap_width = ba.wrap_width;
+	tab_width = ba.tab_width;
+	head = ba.head;
+	action_count = ba.action_count;
+	lines = ba.lines;
+	actions = ba.actions;
+
+	lcl = ba.lcl;  lcc = ba.lcc;
+	vcl = ba.vcl;  vcc = ba.vcc;
+	vol = ba.vol;  voc = ba.voc; 
+	vsl = ba.vsl;  vsc = ba.vsc; 
+	vdc = ba.vdc;  lal = ba.lal;
+	lac = ba.lac;
+
+	sbl = ba.sbl; sbc = ba.sbc;
+	sel = ba.sel; sec = ba.sec;
+	swl = ba.swl; swc = ba.swc;
+}
+*/
+
+
+
+
+
+
+/*
+static inline void sanity_check() {
+
+	if (fuzz) {
+		if (_.lcl < 0) abort();
+		if (lcc < 0) abort();
+		if (vol < 0) abort();
+		if (voc < 0) abort();
+		if (vcl < 0) abort();
+		if (vcc < 0) abort();
+		if (vsl < 0) abort();
+		if (vsc < 0) abort();
+	} 
+}*/
+
+
+
+
+
+
+/*
+
+static inline void fast_store(nat BUFFER) {
+	const nat b = BUFFER;
+
+	buffers[b].wrap_width = wrap_width;
+	buffers[b].tab_width = tab_width;
+	buffers[b].capacity = capacity;
+	buffers[b].count = count;
+	buffers[b].lines = lines;
+
+	buffers[b].lcl = lcl;  buffers[b].lcc = lcc; 
+	buffers[b].vcl = vcl;  buffers[b].vcc = vcc; 
+	buffers[b].vol = vol;  buffers[b].voc = voc; 
+	buffers[b].vsl = vsl;  buffers[b].vsc = vsc; 
+	buffers[b].vdc = vdc; 
+	buffers[b].sbl = sbl; buffers[b].sbc = sbc; 
+	buffers[b].sel = sel; buffers[b].sec = sec; 
+	buffers[b].swl = swl; buffers[b].swc = swc; 
+}
+
+
+static inline void fast_load(nat BUFFER) {
+
+	const nat b = BUFFER;
+
+	capacity = buffers[b].capacity;
+	count = buffers[b].count;
+	wrap_width = buffers[b].wrap_width;
+	tab_width = buffers[b].tab_width;
+	lines = buffers[b].lines;
+	
+	lcl = buffers[b].lcl;  lcc = buffers[b].lcc;
+	vcl = buffers[b].vcl;  vcc = buffers[b].vcc;
+	vol = buffers[b].vol;  voc = buffers[b].voc; 
+	vsl = buffers[b].vsl;  vsc = buffers[b].vsc; 
+	vdc = buffers[b].vdc; 
+
+	sbl = buffers[b].sbl; sbc = buffers[b].sbc;
+	sel = buffers[b].sel; sec = buffers[b].sec;
+	swl = buffers[b].swl; swc = buffers[b].swc;
+}
+*/
+
 
 
 
