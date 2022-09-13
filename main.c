@@ -26,9 +26,9 @@
 
 		- add selecting/anchor/recent logic. (only using "lal/lac").
 
-		- get the textbox working using *n.
+	x	- get the textbox working using *n.
 
-		- get the status bar working, using *n.
+	x	- get the status bar working, using *n.
 
 		- add the ww=0 ww_disable code everywhere.
 
@@ -56,11 +56,13 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 
-#define is_fuzz_testing		0
+#define is_fuzz_testing		1
+#define reading_crash  		0
+#define running_crash  		0
+#define fuzz 			1
+#define use_main    		0
+#define memory_safe 		1
 
-#define memory_safe 	1
-#define fuzz 		is_fuzz_testing
-#define use_main    	not is_fuzz_testing
 
 typedef ssize_t nat;
 
@@ -130,7 +132,7 @@ static const uint8_t* fuzz_input = NULL;
 
 
 
-static nat running = 0;
+
 
 static nat 
 	window_rows = 0, 
@@ -140,8 +142,10 @@ static char* screen = NULL;
 
 static nat sn_rows = 0;
 static nat split_point = 0; 
-static bool in_scratch_buffer = false;
+static bool sn = false;
 static bool in_prompt = false;
+
+static nat running = 0;
 
 static nat buffer_count = 0, active_index = 0; 
 static struct buffer* buffers = NULL, this = {0};
@@ -652,31 +656,6 @@ static inline void load(nat BUFFER) {
 	swl = ba.swl; swc = ba.swc;
 }
 
-static inline void zero_registers() {
-
-	wrap_width = 0;
-	tab_width = 0;
-	capacity = 0;
-	count = 0;
-	head = 0;
-	action_count = 0;
-
-	lines = NULL;
-	actions = NULL;
-
-	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
-	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
-
-	sbl = 0; sbc = 0;
-	sel = 0; sec = 0;
-	swl = 0; swc = 0;
-
-	this = (struct buffer){0};
-	buffers = NULL;
-	buffer_count = 0;
-	active_index = 0;
-}
-
 static inline void initialize_registers() {
 	
 	this = (struct buffer) {0};
@@ -837,15 +816,13 @@ static inline nat display_proper(
 
 static inline void add_status() {        // (assumes *n is in the registers.)
 
-
-
-	const nat b = not in_scratch_buffer ? active_index : buffer_count;
+	const nat b = not sn ? active_index : buffer_count;
 
 	char status[8448] = {0};
-	nat status_length = sprintf(status, " [n=%ld m=%ld] [b=%ld ai=%ld bc=%ld] [%ld %ld] %s %c%c %s",
-		(nat) in_scratch_buffer, 
+	nat status_length = sprintf(status, " [n=%ld m=%ld] [ai=%ld bc=%ld] [%ld %ld] %s %c%c %s",
+		(nat) sn, 
 		buffers[b].mode, 
-		0L, active_index, buffer_count, 
+		active_index, buffer_count, 
 		buffers[b].lcl, buffers[b].lcc,
 		buffers[b].filename,
 		buffers[b].saved ? 's' : 'e', 
@@ -853,25 +830,29 @@ static inline void add_status() {        // (assumes *n is in the registers.)
 		buffers[b].message
 	);
 
-	if (not in_scratch_buffer) {
+	nat save_col = lcc, save_line = lcl;
+	move_top();
+	move_end();
+	while (lcc) delete(1);
+	insert_string(status, status_length);
+	jump_to(save_line, save_col);
+}
 
+static inline void display() {
+/*
 		lines->capacity = status_length;
 		lines->count = status_length;
 
 		free(lines->data);
 		lines->data = malloc((size_t) status_length);
 		memcpy(lines->data, status, (size_t) status_length);
-		move_top(); 
-
-	} else insert_string(status, status_length);
-}
+		*/
 
 
-static inline void display() {
 
 	/////////////////////////////////////////////////////
 
-	if (in_scratch_buffer) {
+	if (sn) {
 		store(buffer_count);
 	} else {
 		store(active_index);
@@ -914,7 +895,7 @@ static inline void display() {
 	length += sprintf(screen + length, "\033[%ld;%ldH", 1L, 1L); 
 	length = display_proper(length, &total, line_number_digits);
 
-	if (not in_scratch_buffer) {
+	if (not sn) {
 		cursor_line = sbl + vsl + 1;
 		cursor_col = sbc + vsc + 1;
 	}
@@ -937,7 +918,7 @@ static inline void display() {
 		swl = sel - sbl;
 		swc = sec - sbc;
 
-		if (not in_scratch_buffer) add_status();
+		if (not sn) add_status();
 
 	store(buffer_count);
 
@@ -948,7 +929,7 @@ static inline void display() {
 	length += sprintf(screen + length, "\033[%ld;%ldH",  split_point + 1L,  1L ); 
 	length = display_proper(length, &total, line_number_digits);
 
-	if (in_scratch_buffer) {
+	if (sn) {
 		cursor_line = sbl + vsl + 1;
 		cursor_col = sbc + vsc + 1;
 	}
@@ -968,7 +949,7 @@ static inline void display() {
 
 	/////////////////////////////////////////////
 
-	if (in_scratch_buffer) {
+	if (sn) {
 		load(buffer_count);
 	} else {
 		load(active_index);
@@ -976,129 +957,6 @@ static inline void display() {
 
 	/////////////////////////////////////////////
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-static inline void displttttttttay_DEBUG() {
-
-
-	nat save1 = active_index;
-	store_current_data_to_buffer();
-	active_index = last_active_index;
-	load_buffer_data_into_registers();
-
-	double f = floor(log10((double) count)) + 1;
-	int line_number_digits = (int)f;
-	nat line_number_width = this.show_line_numbers * (line_number_digits + 2);
-	
-	const nat save = last_active_index;  
-	store_current_data_to_buffer();
-	active_index = buffer_count;
-	load_buffer_data_into_registers();
-	
-	f = floor(log10((double) count)) + 1;
-	line_number_digits = (int)f;
-	line_number_width = this.show_line_numbers * (line_number_digits + 2);
-
-	sbl = split_point;
-	sbc = line_number_width;
-	sel = window_rows;
-	sec = window_columns;
-	swl = sel - sbl;
-	swc = sec - sbc;
-
-	store_current_data_to_buffer();
-	active_index = save1;
-	load_buffer_data_into_registers();
-}
-
-*/
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1153,32 +1011,24 @@ static inline void prompt(const char* prompt_message, nat color, char* out, nat 
 }
 
 
-
-
-
-
 */
-
-
-
-
 
 
 
 
 static inline void print_above_textbox(char* message) {
 
-	if (not in_scratch_buffer) { 
+	if (not sn) { 
 		store(active_index);
 		load(buffer_count);
-		in_scratch_buffer = true; 
+		sn = true; 
 	}
 	insert('\n', 1);
 	insert_string(message, (nat) strlen(message));
 
 	store(buffer_count);
 	load(active_index);
-	in_scratch_buffer = false; 
+	sn = false; 
 }
 
 
@@ -1189,16 +1039,12 @@ static inline void execute(char c, char p);
 
 
 
-
-
-
-
 static inline void prompt(const char* prompt_message, char* out, nat out_size)  {
 
-	if (not in_scratch_buffer) { 
+	if (not sn) { 
 		store(active_index);
 		load(buffer_count);
-		in_scratch_buffer = true; 
+		sn = true; 
 	}
 
 	move_bottom(); this.mode = 0;
@@ -1225,9 +1071,9 @@ done:;
 	memset(out + string_length, 0, (size_t) out_size - (size_t) string_length);
 	out[out_size - 1] = 0;
 
-	store(buffer_count);
+	store(sn ? buffer_count : active_index);
 	load(active_index);
-	in_scratch_buffer = false; 
+	sn = false; 
 }
 
 
@@ -1255,13 +1101,12 @@ static inline void create_sn_buffer() {
 	buffer_count = 0;  active_index = 0;
 	buffers = calloc(1, sizeof(struct buffer));
 	initialize_registers();
-	store(active_index);
-
+	store(buffer_count);
 	running = true;
 }
 
 static inline void create_empty_buffer() {
-	store(active_index);
+	store(sn ? buffer_count : active_index);
 	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 2));
 	buffers[buffer_count + 1] = buffers[buffer_count];
 	buffers[buffer_count] = (struct buffer) {0};
@@ -1269,65 +1114,61 @@ static inline void create_empty_buffer() {
 	active_index = buffer_count;
 	buffer_count++;
 	store(active_index);
+	sn = false;
+}
+
+static inline void destroy(nat i) {
+
+	for (nat line = 0; line < buffers[i].count; line++) 
+		free(buffers[i].lines[line].data);
+	free(buffers[i].lines);
+
+	for (nat a = 0; a < buffers[i].action_count; a++) {
+		free(buffers[i].actions[a].text);
+		free(buffers[i].actions[a].children);
+	}
+	free(buffers[i].actions);
+}
+
+static inline void close_sn_buffer() {
+	if (fuzz and buffer_count) abort();
+	destroy(0);
+	free(buffers);
+	running = false;
 }
 
 static inline void close_active_buffer() {
-	if (not buffer_count)  {
-		
-		store(active_index);
 
-
-		for (nat line = 0; line < buffers[active_index].count; line++) 
-			free(buffers[active_index].lines[line].data);
-		free(buffers[active_index].lines);
-
-		for (nat a = 0; a < buffers[active_index].action_count; a++) {
-			free(buffers[active_index].actions[a].text);
-			free(buffers[active_index].actions[a].children);
-		}
-		free(buffers[active_index].actions);
-		
-		free(buffers);
-
-		running = false;
-		return;
-
-	} else if (in_scratch_buffer) return;
-
+	if (not buffer_count) return;
+	if (sn) return;
 
 	store(active_index);
 
-	for (nat line = 0; line < buffers[active_index].count; line++) 
-		free(buffers[active_index].lines[line].data);
-	free(buffers[active_index].lines);
-
-	for (nat a = 0; a < buffers[active_index].action_count; a++) {
-		free(buffers[active_index].actions[a].text);
-		free(buffers[active_index].actions[a].children);
-	}
-	free(buffers[active_index].actions);
+	destroy(active_index);
 
 	memmove(buffers + active_index, buffers + active_index + 1, 
 		sizeof(struct buffer) * (size_t)(buffer_count - active_index));
 
 	buffer_count--;
 
-	if (active_index >= buffer_count) active_index = buffer_count - 1;  //!?!?!?!?!?  WHAT!?!?!?
+	if (active_index >= buffer_count and buffer_count) active_index = buffer_count - 1; 
+	else if (not buffer_count) active_index = 0;
 
 	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 1));
 
-	if (buffer_count) 
-		load(active_index);
+	load(active_index);
 }
 
 static inline void move_to_next_buffer() {
-	store(active_index); 
+	if (sn) return;
+	store(active_index);
 	if (active_index) active_index--; else active_index = buffer_count;
 	load(active_index);
 }
 
 static inline void move_to_previous_buffer() {
-	store(active_index); 
+	if (sn) return;
+	store(active_index);
 	if (active_index < buffer_count) active_index++; else active_index = 0;
 	load(active_index);
 }
@@ -1409,20 +1250,13 @@ static inline void emergency_save_to_file() {
 
 static inline void emergency_save_all_buffers() {
 
-	store(active_index);
-
-	nat saved_active_index = active_index;
-	for (int i = 0; i < buffer_count; i++) {
-		
-		active_index = i;
-		load(active_index);
-		emergency_save_to_file(); 
-
+	store(sn ? buffer_count : active_index);
+	for (int i = 0; i < buffer_count + 1; i++) {
+		load(i);
+		emergency_save_to_file();
 		sleep(1);
 	}
-	
-	active_index = saved_active_index;
-	load(active_index);
+	load(sn ? buffer_count : active_index);
 }
 
 static inline void autosave() {
@@ -1474,11 +1308,12 @@ static void handle_signal_interrupt(int code) {
 
 	printf("press '.' to continue running process\n\r");
 	int c = getchar(); 
-	if (c != '.') exit(1);
+	if (c != '.') exit(1);	
 }
 
 
 static inline void save() {
+
 	if (fuzz) return;
 
 	if (not strlen(this.filename)) {
@@ -1524,6 +1359,7 @@ static inline void save() {
 }
 
 static inline void rename_file() {
+
 	if (fuzz) return;
 
 	char new[4096] = {0};
@@ -1780,6 +1616,9 @@ static inline void copy() {
 }
 
 static inline void run_shell_command(const char* command) {
+	if (fuzz) return;
+
+
 	FILE* f = popen(command, "r");
 	if (not f) {
 		sprintf(this.message, "error: could not run command \"%s\": %s\n", command, strerror(errno));
@@ -1877,6 +1716,8 @@ static inline void recalculate_position() {
 }
 
 static inline void open_directory() {
+
+	if (fuzz) return;
 	
 	DIR* directory = opendir(this.cwd);
 	if (not directory) { 
@@ -1993,7 +1834,7 @@ static inline void execute(char c, char p) {
 
 	
 
-		if (true/*STATE__should_recent_anchor*/) { lal = lcl; lac = lcc; }      // where do we do this?
+		// if (true/*STATE__should_recent_anchor*/) { lal = lcl; lac = lcc; }      // where do we do this?
 	
 
 		
@@ -2070,39 +1911,23 @@ static inline void execute(char c, char p) {
 		else if (c == '.') sprintf(this.message, "this is a very long status message. i really like pasta, and beans, and pasta too. it is very delicious, and tasty, i have to have dinner now lol. yay. this is a very long status message. i am testing something cool. yay. this is working well i think.");
 		
 
-		else if (c == '1') {                         // YES, be in *n.             // (get out of *i!)
-
-
-
-			if (not in_scratch_buffer) {          // if we are currently in star i,
-				
-				// then try to get out of *i, and go to *n!
-
+		else if (c == '1') {  
+			if (not sn) { 
 				store(active_index);
 				load(buffer_count);
-				in_scratch_buffer = true; 
+				sn = true; 
 			}
 		}
-
-
-
-		else if (c == '0')  {                     // NO, dont be in *n.           go back to *i    !!!!!!!!
-
-
-			if (in_scratch_buffer) {          // if we are currently in star n,
-				
-				// then try to get out of it, and go back to active_index.         (*i)
-
+		else if (c == '0') {
+			if (sn) {
 				store(buffer_count);
 				load(active_index);
-				in_scratch_buffer = false; 
-
+				sn = false; 
 			}
 
 		}
 
-
-		else if (c == '/') { if (in_scratch_buffer) add_status(); }   // make this a command. not a keybinding.
+		///    else if (c == '/') { if (sn) add_status(); }   // make this a command. not a keybinding.
 
 		else if (c == 's') save();
 
@@ -2222,7 +2047,83 @@ static void* autosaver(void* unused) {
 	return unused;
 }
 
+
+static inline void zero_registers() {
+	wrap_width = 0;
+	tab_width = 0;
+	capacity = 0;
+	count = 0;
+	head = 0;
+	action_count = 0;
+	lines = NULL;
+	actions = NULL;
+	lcl = 0; lcc = 0; vcl = 0; vcc = 0; vol = 0; 
+	voc = 0; vsl = 0; vsc = 0; vdc = 0; lal = 0; lac = 0;
+	sbl = 0; sbc = 0; sel = 0; sec = 0; swl = 0; swc = 0;
+
+	this = (struct buffer){0};
+	buffers = NULL;
+	buffer_count = 0;
+	active_index = 0;
+
+	free(screen);  screen = NULL;
+	window_rows = 0;
+	window_columns = 0;
+	window = (struct winsize){0}; 
+
+	sn_rows = 0;
+	split_point = 0; 
+	in_prompt = false;
+}
+
+
+
+
+
+
 static inline void editor() {
+
+
+
+
+if (reading_crash) {
+
+	const char* crashname = "crash-1142af7704f1b8f9fae992339c15c51ca158992b";
+
+	FILE* file = fopen(crashname, "r");
+	fseek(file, 0, SEEK_END);
+	size_t crash_length = (size_t) ftell(file);
+	char* crash = malloc(sizeof(char) * crash_length);
+	fseek(file, 0, SEEK_SET);
+	fread(crash, sizeof(char), crash_length, file);
+	fclose(file);
+	fuzz_input = (const uint8_t*) crash;
+	fuzz_input_count = crash_length;
+	printf("\n\n\nchar str[] = {");
+	for (size_t i = 0; i < fuzz_input_count; i++) {
+		printf("0x%hhx, ", fuzz_input[i]);
+		if (i and not (i % 16)) puts("");
+	}
+	printf("};\n\n\n");
+
+	exit(1);
+}
+	
+	char str[] = {0};
+
+
+if (running_crash) {
+
+	fuzz_input_index = 0; 
+	fuzz_input = (const uint8_t*) str;
+	fuzz_input_count = sizeof str;
+
+}
+
+
+
+
+
 
 	struct termios terminal;
 	static pthread_t autosave_thread;
@@ -2240,9 +2141,6 @@ static inline void editor() {
     	getcwd(this.cwd, sizeof this.cwd);
 	strlcat(this.cwd, "/", sizeof this.cwd);
 
-
-
-
 loop:	display();
 	pthread_mutex_unlock(&mutex);
 	c = read_stdin(); 
@@ -2251,13 +2149,15 @@ loop:	display();
 	execute(c, p);
 	p = c;
 	if (buffer_count) goto loop;
-
-done:	while (buffer_count) close_active_buffer();
+done:	
+	if (sn) {
+		store(buffer_count);
+		load(active_index);
+		sn = false; 
+	}
+	while (buffer_count)  close_active_buffer();
+	close_sn_buffer();
 	zero_registers();
-	free(screen);
-	screen = NULL;
-	window_rows = 0;
-	window_columns = 0;
 
 	if (not fuzz) {
 		write(1, "\033[?1049l\033[?1000l\033[7h", 20);	
@@ -2275,8 +2175,8 @@ int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 	create_sn_buffer();
 	create_empty_buffer();
 	fuzz_input_index = 0; 
-	fuzz_input = _input;
-	fuzz_input_count = _input_count;
+	fuzz_input = input;
+	fuzz_input_count = size;
 	editor();
 	return 0;
 }
@@ -2949,5 +2849,12 @@ static inline void clear_above_textbox() {
 
 
 
+/*
+//   			h     c    1      A     A     A     h     c     /     0     h    a     c
+		char str[] = {0x68, 0x63, 0x31, 0x41, 0x41, 0x41, 0x68, 0x63, 0x2f, 0x30, 0x68, 0x61, 0x63, };
 
+
+
+
+*/
 
