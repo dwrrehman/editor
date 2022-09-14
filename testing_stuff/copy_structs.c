@@ -18,6 +18,10 @@ static void print_buffer(struct buffer t) {
 	);
 }
 
+// hello there from space! pretty cool, huh?
+// i typed this comment from my editor, actually! really happy with it, actually. 
+// just have to do more fuzz testing, with it, though. to make sure its stable. 
+// 	yay. very happy with this. 
 
 int main() {
 

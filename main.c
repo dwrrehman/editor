@@ -20,66 +20,90 @@
 // 	   
 
 /*
-	------------- todo list ----------------
+	------------- bugs todo list ----------------
+			
+			
+	x	- redo how to submit a response in the textbox. allow for new lines, somehow... i think.
 
 
-***		- fix the huge performance bug in the editor..
-			...performance is actually terrible right now. 
+		- rework in_prompt variable.      make part of the buffer struct. 
+
+	x	- make sn_rows part of the buffer struct. 
 
 
-			- - decrease the numberof context switches. they are very expensive.
-			- - make the status bar implemented more efficiently. 
-
-
-			- - make the scratch buffer implemented more efficiently. 
-
-
-
+	x	-   anchor is becoming invalid after a cut. 
 
 
 
+	------------- feature todo list ----------------
 
 
-
-		
-	
-
-
-
-		- add the ww=0 ww_disable code everywhere.
+easy	**	- add the ww=0 ww_disable code everywhere.
 					x < ww     to     x < ww or not ww
 
 
 
+hard	***	- implment word wrapping. 
 
-		- implment word wrapping. 
+hard	***	- add CORRECT scrolling code. 
 
-		- add CORRECT scrolling code. 
+easy	*	- add mouse support!
 
-		- add mouse support!
+easy	***	- split out location and filename when saving. 
 
-		- split out location and filename when saving. 
+easy	**	- implement programming lang interpter
 
-	 	- implement programming lang interpter
+		- implement a copy/paste history!?!  or mulitple copy/paste registers!
 
-		
+		- 
+
+
+testing:
+
+
+		- fuzz test for bugs  alot more 
+
+
+		- test for visual bugs alot more 
+
+
+		- make sure that all features are working as intended.
+
+
+		- test anchoring system. make sure it works. 
+
+
+
 
 	--------------- done --------------------------
 
-	x	- display the *n buffer.
-	x	- get the textbox working using *n.
-	x	- get the status bar working, using *n.
 
-		- add selecting/anchor/recent logic. (only using "lal/lac").
 
-*/
+***	x	- fix the huge performance bug in the editor..
+			...performance is actually terrible right now. 
+
+
+		x	- - decrease the numberof context switches. they are very expensive.
+		x	- - make the status bar implemented more efficiently. 
+
+
+		x	- - make the scratch buffer implemented more efficiently. 
+
+
+
+		x	- display the *n buffer.
+		x	- get the textbox working using *n.
+		x	- get the status bar working, using *n.
+
+			- add selecting/anchor/recent logic. (only using "lal/lac").
+
+	*/
 
 #include <iso646.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <stdatomic.h>
 #include <pthread.h>
 #include <string.h>
 #include <math.h>
@@ -99,34 +123,28 @@
 #define running_crash  		0
 #define fuzz 			0
 #define use_main    		1
-#define memory_safe 		1
+#define memory_safe 		0
 
 typedef ssize_t nat;
 
-// todo: make these part of the config file / parameters.
+// todo: make these part of a config struct..?  and   also  config file / parameters.
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
 static const nat autosave_frequency = 8;     // in seconds
 
 enum action_type {
-	no_action,
-	insert_action,
-	delete_action,
-	paste_action,
-	cut_action,
-	anchor_action,
+	no_action, insert_action,
+	delete_action, paste_action,
+	cut_action, anchor_action,
 };
 
-struct line { 
-	char* data; 
-	nat count, capacity; 
-};
+struct line { char* data; nat count, capacity; };
 
 struct buffer {
 	struct line* lines;
 	struct action* actions;
 
 	nat     saved, mode, autosaved, action_count, head, count, capacity, 
-		selecting,  wrap_width, tab_width, 
+		selecting,  wrap_width, tab_width, sn_rows,
 
 		lcl, lcc, 	vcl, vcc,  	vol, voc,    sbl, sbc,    sel, sec,
 		vsl, vsc, 	vdc,    	lal, lac,    swl, swc,
@@ -134,16 +152,12 @@ struct buffer {
 		show_line_numbers, ww_fix, use_txt_extension_when_absent
 	;
 
-	char filename[4096];
-	char location[4096];
-	char message[4096];
-	char cwd[4096];
-	char selected_file[4096];
+	char filename[4096], location[4096], message[4096], cwd[4096], selected_file[4096];
 };
 
 struct logical_state {
 	nat     saved, autosaved, selecting, wrap_width, tab_width,
-		lcl, lcc, 	vcl, vcc,    vol, voc,    sbl, sbc, sel, sec,
+		lcl, lcc, 	vcl, vcc,    vol, voc,    sbl, sbc,  sel, sec,
 		vsl, vsc, 	vdc,         lal, lac,    swl, swc
 	;
 };
@@ -151,43 +165,25 @@ struct logical_state {
 struct action { 
 	nat* children; 
 	char* text;
-	nat parent;
-	nat type;
-	nat choice;
-	nat count;
-	nat length;
+	nat parent, type, choice, count, length;
 	struct logical_state pre;
 	struct logical_state post;
 };
 
 static pthread_mutex_t mutex;
-static size_t fuzz_input_index = 0;       
-static size_t fuzz_input_count = 0;       
-static const uint8_t* fuzz_input = NULL; 
-
 static nat window_rows = 0, window_columns = 0;
 static char* screen = NULL;
-static struct winsize window = {0}; 
-static nat sn_rows = 0;        //    we dont need both of these.    consolidate them.   this should be a buffer member, i think...? yes.
-static bool in_prompt = false;      // rework this...    is should be a buffer member?.... 
+static size_t fuzz_input_index = 0, fuzz_input_count = 0;
+static const uint8_t* fuzz_input = NULL; 
 static nat buffer_count = 0, active_index = 0, working_index = 0;
 static struct buffer* buffers = NULL;
-
+static bool in_prompt = false;      // rework this...    is should be a buffer member?.... 
 
 #define _ buffers[working_index]
-
-
-
-// static nat split_point = 0;    //
-
-// static bool sn = false;        // this is fine.
-
-
-
-
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
 static inline bool file_exists(const char* f) { return access(f, F_OK) != -1; }
+static inline bool equals(const char* s1, const char* s2) { return not strcmp(s1, s2); }
 
 static inline char read_stdin() {
 	char c = 0;
@@ -202,10 +198,6 @@ static inline char read_stdin() {
 	return c;
 }
 
-static inline bool equals(const char* s1, const char* s2) {
-	return not strcmp(s1, s2); 
-}
-
 static inline bool is_directory(const char *path) {
 	struct stat s;
 	if (stat(path, &s)) return false;
@@ -213,20 +205,20 @@ static inline bool is_directory(const char *path) {
 }
 
 static inline void get_datetime(char datetime[16]) {
-	struct timeval tv;
-	gettimeofday(&tv, NULL);
-	struct tm* tm_info = localtime(&tv.tv_sec);
-	strftime(datetime, 15, "%y%m%d%u.%H%M%S", tm_info);
+	struct timeval t;
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 15, "%y%m%d%u.%H%M%S", tm);
 }
 
 static inline bool stdin_is_empty() {
 	if (fuzz) return fuzz_input_index >= fuzz_input_count;
 
-	fd_set readfds;
-	FD_ZERO(&readfds);
-	FD_SET(STDIN_FILENO, &readfds);
+	fd_set f;
+	FD_ZERO(&f);
+	FD_SET(STDIN_FILENO, &f);
 	struct timeval timeout = {0};
-	return select(1, &readfds, NULL, NULL, &timeout) != 1;
+	return select(1, &f, NULL, NULL, &timeout) != 1;
 }
 
 static inline struct termios configure_terminal() {
@@ -323,10 +315,8 @@ line_down:	_.vcl++; _.vcc = 0; _.voc = 0; _.vsc = 0;
 
 static inline void move_up() {
 	if (not _.vcl) {
-		_.lcl = 0; _.lcc = 0;
-		_.vcl = 0; _.vcc = 0;
-		_.vol = 0; _.voc = 0;
-		_.vsl = 0; _.vsc = 0;
+		_.lcl = 0; _.lcc = 0; _.vcl = 0; _.vcc = 0;
+		_.vol = 0; _.voc = 0; _.vsl = 0; _.vsc = 0;
 		return;
 	}
 	nat line_target = _.vcl - 1;
@@ -361,15 +351,8 @@ static inline void jump_column(nat column) {
 	_.vdc = _.vcc;
 }
 
-static inline void jump_to(nat line, nat column) {
-	jump_line(line);
-	jump_column(column);
-}
-
-static inline void move_begin() {
-	while (_.vcc) move_left();
-	_.vdc = _.vcc;
-}
+static inline void jump_to(nat line, nat column) { jump_line(line); jump_column(column); }
+static inline void move_begin() { while (_.vcc) move_left(); _.vdc = _.vcc; }
 
 static inline void move_end() {
 	while (_.lcc < _.lines[_.lcl].count and _.vcc < _.wrap_width) move_right(); 
@@ -616,18 +599,21 @@ static inline void initialize_buffer() {
 	_.lines = calloc(1, sizeof(struct line));
 	_.actions = calloc(1, sizeof(struct action));
 
+	_.sn_rows = 2;
+	_.ww_fix = 1;
 	_.show_line_numbers = 1; 
 	_.saved = true;
 	_.autosaved = true;
 	_.use_txt_extension_when_absent = 1;
 
-	_.sel = window_rows - sn_rows;
+	_.sel = window_rows - _.sn_rows;
 	_.sec = window_columns;
 	_.swl = _.sel - _.sbl;
 	_.swc = _.sec - _.sbc;
 }
 
 static inline void adjust_window_size() {
+	static struct winsize window = {0}; 
 	ioctl(1, TIOCGWINSZ, &window);
 
 	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 27; window.ws_col = 70; }
@@ -649,11 +635,10 @@ static inline void adjust_window_size() {
 
 
 static inline nat display_proper(
-		nat length, nat* total, 
-	int line_number_digits) {
-	
+	nat length, nat* total, 
+	int line_number_digits
+) {
 	nat sl = 0, sc = 0, vl = _.vol, vc = _.voc;
-
 	struct logical_state state = {0};
 	record_logical_state(&state);
 	while (1) { 
@@ -676,21 +661,19 @@ static inline nat display_proper(
 				);
 			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
 		}
-
 		do {
 			if (col >= _.lines[line].count) goto next_logical_line;  
 			
 			char k = _.lines[line].data[col++];
-
 			if (k == '\t') {
 
 				if (vc + (_.tab_width - vc % _.tab_width) > _.wrap_width) goto next_visual_line;
-
 				do { 
 					if (	vc >= _.voc and vc < _.voc + _.swc
 					and 	vl >= _.vol and vl < _.vol + _.swl
 					) {
-						screen[length++] = ' '; sc++;
+						screen[length++] = ' ';
+						sc++;
 					}
 					vc++;
 				} while (vc % _.tab_width);
@@ -734,10 +717,10 @@ static inline nat display_proper(
 static inline void add_status(nat b) {
 
 	char status[8448] = {0};
-	nat status_length = sprintf(status, " [wi=%ld m=%ld] [ai=%ld bc=%ld] [%ld %ld] %s %c%c %s",
+	nat status_length = sprintf(status, " [wi=%ld m=%ld] [s=%ld ai=%ld bc=%ld] a[%ld %ld] c[%ld %ld] %s %c%c %s",
 		(nat) working_index, buffers[b].mode, 
-		active_index, buffer_count, 
-		buffers[b].lcl, buffers[b].lcc, buffers[b].filename,
+		buffers[b].selecting, active_index, buffer_count, 
+		buffers[b].lal, buffers[b].lac, buffers[b].lcl, buffers[b].lcc, buffers[b].filename,
 		buffers[b].saved ? 's' : 'e', buffers[b].autosaved ? ' ' : '*',
 		buffers[b].message
 	);
@@ -751,9 +734,7 @@ static inline void add_status(nat b) {
 }
 
 static inline void display() {
-
 	adjust_window_size();
-
 	nat total = 0, cursor_line = 0, cursor_col = 0;
 	nat length = 6;
 	memcpy(screen, "\033[?25l", 6);
@@ -765,9 +746,10 @@ static inline void display() {
 	int line_number_digits = (int)f;
 	nat line_number_width = _.show_line_numbers * (line_number_digits + 2);
 
+	nat _sn_rows = _.sn_rows;
 	_.sbl = 0;
 	_.sbc = line_number_width;
-	_.sel = window_rows - sn_rows;
+	_.sel = window_rows - _sn_rows;
 	_.sec = window_columns;
 	_.swl = _.sel - _.sbl;
 	_.swc = _.sec - _.sbc;
@@ -780,15 +762,13 @@ static inline void display() {
 		cursor_col = _.sbc + _.vsc + 1;
 	}
 
-
 	working_index = buffer_count;
-
 
 	f = floor(log10((double) _.count)) + 1;
 	line_number_digits = (int)f;
 	line_number_width = _.show_line_numbers * (line_number_digits + 2);
 	
-	_.sbl = window_rows - sn_rows;
+	_.sbl = window_rows - _sn_rows;
 	_.sbc = line_number_width;
 	_.sel = window_rows;
 	_.sec = window_columns;
@@ -797,16 +777,16 @@ static inline void display() {
 
 	add_status(save_wi);
 
-	length += sprintf(screen + length, "\033[%ld;%ldH",  window_rows - sn_rows + 1L,  1L ); 
+	length += sprintf(screen + length, "\033[%ld;%ldH",  window_rows - _sn_rows + 1L,  1L ); 
 	length = display_proper(length, &total, line_number_digits);
 
-	if (save_wi == buffer_count) {
+	if (save_wi == buffer_count and active_index != buffer_count) {
 		cursor_line = _.sbl + _.vsl + 1;
 		cursor_col = _.sbc + _.vsc + 1;
 	}
 
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", cursor_line, cursor_col);
-	if (not fuzz)   write(1, screen, (size_t) length);
+	if (not fuzz) write(1, screen, (size_t) length);
 
 	working_index = save_wi;
 }
@@ -818,12 +798,10 @@ static inline void print_above_textbox(char* message) {
 	working_index = active_index;
 }
 
-static inline void execute(char c, char p);
+static inline void execute(char, char p);
 
 static inline void prompt(const char* prompt_message, char* out, nat out_size)  {
-
 	working_index = buffer_count;
-
 	move_bottom(); _.mode = 0;
 	insert('\n', 0);
 	insert_string(prompt_message, (nat) strlen(prompt_message));
@@ -837,15 +815,13 @@ loop:	display();
 	execute(c, p);
 	p = c;
 	if (in_prompt) goto loop;
-done:;
-	const char* string = _.lines[_.lcl].data;
+done:;  const char* string = _.lines[_.lcl].data;
 	nat string_length = _.lines[_.lcl].count;
 
 	if (string_length > out_size) string_length = out_size;
 	memcpy(out, string, (size_t) string_length);
 	memset(out + string_length, 0, (size_t) out_size - (size_t) string_length);
 	out[out_size - 1] = 0;
-
 	working_index = active_index;
 }
 
@@ -1026,7 +1002,6 @@ static inline void autosave() {
 	}
 
 	fclose(file);
-
 	_.autosaved = true;
 }
 
@@ -1054,11 +1029,8 @@ static inline void save() {
 	prompt_filename:
 
 		prompt("save as: ", _.filename, sizeof _.filename);
-
 		if (not strlen(_.filename)) { sprintf(_.message, "aborted save"); return; }
-
 		if (not strrchr(_.filename, '.') and _.use_txt_extension_when_absent) strcat(_.filename, ".txt");
-
 		if (file_exists(_.filename) and not confirmed("file already exists, overwrite", "overwrite", "no")) {
 			strcpy(_.filename, ""); goto prompt_filename;
 		}
@@ -1113,7 +1085,6 @@ static inline void rename_file() {
 static inline void interpret_escape_code() {
 
 	static nat scroll_counter = 0;
-
 	char c = read_stdin();
 	
 	if (c == '[') {
@@ -1202,13 +1173,17 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 	nat line = first_line, column = first_column;
 
 	while (line < last_line) {
-		
+
+		if (line >= _.count or column > _.lines[line].count) {
+			*out_length = 0;
+			return NULL;
+		}
+
 		if (not memory_safe) {
 			if (length + _.lines[line].count - column + 1 >= s_capacity) 
-				string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + _.lines[line].count - column + 1)));
-		} else {
-			string = realloc(string, (size_t) (length + _.lines[line].count - column));
-		}
+				string = realloc(string, (size_t) 
+					(s_capacity = 8 * (s_capacity + length + _.lines[line].count - column + 1)));
+		} else string = realloc(string, (size_t) (length + _.lines[line].count - column));
 
 		if (_.lines[line].count - column) 
 			memcpy(string + length, _.lines[line].data + column, (size_t)(_.lines[line].count - column));
@@ -1229,9 +1204,7 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 	if (not memory_safe) {
 		if (length + last_column - column >= s_capacity) 
 		 	string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + last_column - column)));
-	} else {
-		string = realloc(string, (size_t) (length + last_column - column));	
-	}
+	} else string = realloc(string, (size_t) (length + last_column - column));
 
 	if (last_column - column) memcpy(string + length, _.lines[line].data + column, (size_t)(last_column - column));
 	length += last_column - column;
@@ -1265,9 +1238,7 @@ static inline void paste() {
 		if (not memory_safe) {
 			if (length + 1 >= s_capacity) 
 				string = realloc(string, (size_t) (s_capacity = 8 * (s_capacity + length + 1)));
-		} else {
-			string = realloc(string, (size_t) (length + 1));
-		}
+		} else string = realloc(string, (size_t) (length + 1));
 
 		string[length++] = (char) c;
 		insert((char)c, 0);
@@ -1314,6 +1285,7 @@ anchor_first:
 }
 
 static inline void cut() { 
+	if (_.lal >= _.count or _.lac > _.lines[_.lal].count) return;
 	struct action new = {0};
 	record_logical_state(&new.pre);
 	nat deleted_length = 0;
@@ -1536,15 +1508,13 @@ static inline char** split(char* string, char delim, nat* array_count) {
 		array = realloc(array, sizeof(char*) * (size_t)(a_count + 1));
 		array[a_count++] = strdup(string + start);
 	}
-
 	*array_count = a_count;
 	return array;
 }
 
 static inline void execute(char c, char p) {
-
+#define a   if (not _.selecting) { _.lal = al; _.lac = ac; } 
 	if (_.mode == 0) {
-
 		if (in_prompt and c == '\r') { in_prompt = false; return; }
 		if (c == 'c' and p == 'h') { undo(); _.mode = 1; }
 		else if (c == 27 and stdin_is_empty()) _.mode = 1;
@@ -1554,20 +1524,20 @@ static inline void execute(char c, char p) {
 		else insert(c, 1);
 
 	} else if (_.mode == 1) {
-	
-		const nat tlal = _.lcl, tlac = _.lcc;
 
-		if (c == ' ');
+		const nat  al = _.lcl,  ac = _.lcc;
+	
+		if (c == ' ') {}
 		else if (c == 'l' and p == 'e') prompt_jump_line();         // unbind this?... yeah...
 		else if (c == 'k' and p == 'e') prompt_jump_column();       // unbind this?... hmm...
 		else if (c == 'd' and p == 'h') prompt_open();              // unbind this.?
 		else if (c == 'f' and p == 'h') create_empty_buffer();       // unbind this.?
 		else if (c == 'l' and p == 'e') {}
-		else if (c == 'k' and p == 'e') {}
-		else if (c == 'i' and p == 'e') move_bottom();
-		else if (c == 'p' and p == 'e') move_top();
-		else if (c == 'n' and p == 'e') move_begin();
-		else if (c == 'o' and p == 'e') move_end();
+		else if (c == 'k' and p == 'e') in_prompt = not in_prompt;
+		else if (c == 'i' and p == 'e') { move_bottom(); a }
+		else if (c == 'p' and p == 'e') { move_top(); a }
+		else if (c == 'n' and p == 'e') { move_begin(); a }
+		else if (c == 'o' and p == 'e') { move_end(); a }
 		else if (c == 'u' and p == 'e') alternate_decr();
 		else if (c == 'r' and p == 'h') alternate_incr();
 		else if (c == 'a' and p == 'h') move_to_previous_buffer();
@@ -1575,7 +1545,6 @@ static inline void execute(char c, char p) {
 		else if (c == 'm' and p == 'h') copy();
 		else if (c == 'c' and p == 'h') paste(); 	
 		else if (c == 'd' and p == 'h') {}
-	
 		else if (c == 'a') _.selecting = not _.selecting;
 		else if (c == 'd') delete(1);
 		else if (c == 'r') cut();
@@ -1583,14 +1552,14 @@ static inline void execute(char c, char p) {
 		else if (c == 'm') { _.mode = 2; goto command_mode; }
 		else if (c == 'c') undo();
 		else if (c == 'k') redo();
-		else if (c == 'o') move_word_right(); 
-		else if (c == 'l') move_word_left(); 
-		else if (c == 'p') move_up();
-		else if (c == 'u') move_down();
-		else if (c == 'i') { move_right(); _.vdc = _.vcc; }
-		else if (c == 'n') { move_left(); _.vdc = _.vcc; }
-		else if (c == '-') { if (sn_rows < window_rows) sn_rows++; } // unbind this. make it a set command.
-		else if (c == '=') { if (sn_rows) sn_rows--; }               // unbind this. make it a set command.
+		else if (c == 'o') { move_word_right(); a}
+		else if (c == 'l') { move_word_left(); a}
+		else if (c == 'p') { move_up(); a}
+		else if (c == 'u') { move_down(); a}
+		else if (c == 'i') { move_right(); _.vdc = _.vcc; a}
+		else if (c == 'n') { move_left(); _.vdc = _.vcc; a}
+		else if (c == '-') { if (_.sn_rows < window_rows) _.sn_rows++; } // unbind this. make it a set command.
+		else if (c == '=') { if (_.sn_rows) _.sn_rows--; }               // unbind this. make it a set command.
 		else if (c == '0') {
 			if (working_index == active_index) working_index = buffer_count;
 			else working_index = active_index;
@@ -1601,8 +1570,6 @@ static inline void execute(char c, char p) {
 		}
 		else if (c == 27 and stdin_is_empty()) {}
 		else if (c == 27) interpret_escape_code();
-
-		if (not _.selecting) { _.lal = tlal; _.lac = tlac; }
 
 	} else if (_.mode == 2) {
 		command_mode: _.mode = 1;
@@ -1645,8 +1612,8 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "home")) { getcwd(_.cwd, sizeof _.cwd); strlcat(_.cwd, "/", sizeof _.cwd); }
 			else if (equals(command, "clearmessage")) memset(_.message, 0, sizeof _.message);
 			else if (equals(command, "numbers")) _.show_line_numbers = not _.show_line_numbers;
-			else if (equals(command, "snincr")) { if (sn_rows < window_rows) sn_rows++; }
-			else if (equals(command, "sndecr")) { if (sn_rows) sn_rows--; } 
+			else if (equals(command, "snincr")) { if (_.sn_rows < window_rows) _.sn_rows++; }
+			else if (equals(command, "sndecr")) { if (_.sn_rows) _.sn_rows--; } 
 			else if (equals(command, "cut")) cut();
 			else if (equals(command, "delete")) delete(1);
 			else if (equals(command, "paste")) paste();
@@ -1711,7 +1678,7 @@ static void* autosaver(void* unused) {
 static inline void editor() {
 
 if (reading_crash) {
-	const char* crashname = "crash-1142af7704f1b8f9fae992339c15c51ca158992b";
+	const char* crashname = "slow-unit-1dd86789517e85cacda3ecf795d6bbea19870044";
 	FILE* file = fopen(crashname, "r");
 	fseek(file, 0, SEEK_END);
 	size_t crash_length = (size_t) ftell(file);
@@ -1723,13 +1690,21 @@ if (reading_crash) {
 	fuzz_input_count = crash_length;
 	printf("\n\n\nchar str[] = {");
 	for (size_t i = 0; i < fuzz_input_count; i++) {
+		if (not (i % 4)) printf("\n\t\t");
 		printf("0x%hhx, ", fuzz_input[i]);
-		if (i and not (i % 16)) puts("");
 	}
-	printf("};\n\n\n");
+	printf("\n};\n\n\n");
 	exit(1);
-}	
-	char str[] = {0};
+}
+	char str[] = {
+		0xa, 0xa, 0x60, 0xa, 
+		0xa, 0x63, 0x64, 0x63, 
+		0x60, 0x3d, 0x20, 0x3d, 
+		0x3d, 0x3d, 0x60, 0x20, 
+		0x3d, 0x63, 0x68, 0x61, 
+		0x3d, 0x39, 0x3d, 0x1, 
+	};
+
 if (running_crash) {
 	fuzz_input_index = 0; 
 	fuzz_input = (const uint8_t*) str;
@@ -1762,12 +1737,10 @@ done:
 	destroy(0);
 	free(buffers); buffers = NULL;
 	free(screen);  screen = NULL;
-	window = (struct winsize){0};
 	buffer_count = 0;
 	active_index = 0;	
 	window_rows = 0;
 	window_columns = 0;
-	sn_rows = 0;
 	in_prompt = false;
 
 	if (not fuzz) {
@@ -1796,7 +1769,6 @@ int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 
 int main(const int argc, const char** argv) {
 	create_sn_buffer();
-	sn_rows = 5;
 	adjust_window_size();
 	if (argc <= 1) create_empty_buffer();
 	else for (int i = 1; i < argc; i++) open_file(argv[i]);
