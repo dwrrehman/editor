@@ -23,7 +23,7 @@ static void print_buffer(struct buffer t) {
 // just have to do more fuzz testing, with it, though. to make sure its stable. 
 // 	yay. very happy with this. 
 
-int main() {
+int main() { 
 
 
 	struct buffer b = {

@@ -1,0 +1,24 @@
+ [wi=1 m=0] [s=0 ai=0 bc=1] a[2 0] c[23 12]  e* deleted 1b
+
+
+
+
+
+
+			this is my star n file. i really like it is super cool.
+
+
+					lets try to save it, now.
+
+
+
+			
+
+
+
+
+
+
+
+save as: 
+bubbles2.txt

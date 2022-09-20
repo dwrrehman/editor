@@ -27,44 +27,35 @@
 		- rework in_prompt variable.      make part of the buffer struct. 
 
 
-		- CRITICAL TEST:  allow the fuzzer to "resize" the window, using a command. (this could trigger a crash!)
+		- find any other ways we can improve the runtime performance of the editor. 
 
 
-
-
----- testing: ----
 
 		- do some performance testing, with large files!
 		- - (disable autosaving!)
 
 
----- features: ----
 
-		- find any other ways we can improve the runtime performance of the editor. 
 
 		- allow the user to disable autosaving.
 
-		- allow the mode=2 commands to modify the anchor 
+		- allow the mode=2 commands to modify the anchor as well as the keybindings.
 
-		- allow the mode=2 commands to modify the keybindings.
-
-		- make the set-param command.
-		
-
-
----- cleanup: ----
-
-		- get the editor down to only 1500 lines. i think its possible. 
+		-  get the editor down to only 1500 lines. i think its possible. 
 
 		- remove unneccessary commands. 
 
+		- make the set-param command as well. 
+		
 
 
 
 
-	------------- editor features todo list ----------------
+	------------- feature todo list ----------------
 
 
+easy	**	- add the ww=0 ww_disable code everywhere.
+					x < ww     to     x < ww or not ww
 
 hard	***	- implment word wrapping. 
 
@@ -79,12 +70,7 @@ easy	**	- implement programming lang interpter
 		- implement a copy/paste history!?!  or mulitple copy/paste registers!
 
 
-
-
-
  ------------------ testing: ------------------------------
-
-
 
 		- fuzz test for bugs  alot more 
 
@@ -93,30 +79,12 @@ easy	**	- implement programming lang interpter
 		- make sure that all features are working as intended.
 
 
+
+
 	x	- test anchoring system. make sure it works. 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 	--------------- done --------------------------
-
-
-
-
-done	 easy	**	- add the ww=0 ww_disable code everywhere.
-					x < ww     to     x < ww or not ww
-
-
 
 
 
@@ -203,7 +171,7 @@ struct buffer {
 		lcl, lcc, 	vcl, vcc,  	vol, voc,    sbl, sbc,    sel, sec,
 		vsl, vsc, 	vdc,    	lal, lac,    swl, swc,
 
-		show_line_numbers, fixed_wrap, use_txt_extension_when_absent
+		show_line_numbers, ww_fix, use_txt_extension_when_absent
 	;
 
 	char filename[4096], location[4096], message[4096], cwd[4096], selected_file[4096];
@@ -231,7 +199,6 @@ static size_t fuzz_input_index = 0, fuzz_input_count = 0;
 static const uint8_t* fuzz_input = NULL; 
 static nat buffer_count = 0, active_index = 0, working_index = 0;
 static struct buffer* buffers = NULL;
-
 static bool in_prompt = false;      // rework this...    is should be a buffer member?.... 
 
 #define _ buffers[working_index]
@@ -297,12 +264,12 @@ static inline nat compute_vcc() {
 	for (nat c = 0; c < _.lcc; c++) {
 		char k = _.lines[_.lcl].data[c];
 		if (k == '\t') { 
-			if (v + _.tab_width - v % _.tab_width < _.wrap_width or not _.wrap_width) 
+			if (v + _.tab_width - v % _.tab_width <= _.wrap_width) 
 				do v++;
 				while (v % _.tab_width);  
 			else v = 0;
 		} else if (visual(k)) {
-			if (v < _.wrap_width or not _.wrap_width) v++; else v = 0;
+			if (v < _.wrap_width) v++; else v = 0;
 		}
 	}
 	return v;
@@ -350,7 +317,7 @@ line_down:	_.vcl++; _.vcc = 0; _.voc = 0; _.vsc = 0;
 		if (_.lines[_.lcl].data[_.lcc] == '\t') {
 			do _.lcc++; 
 			while (_.lcc < _.lines[_.lcl].count and zero_width(_.lines[_.lcl].data[_.lcc]));
-			if (_.vcc + _.tab_width - _.vcc % _.tab_width >= _.wrap_width and _.wrap_width) goto line_down;
+			if (_.vcc + _.tab_width - _.vcc % _.tab_width > _.wrap_width) goto line_down;
 			do {
 				_.vcc++; 
 				if (_.vsc + 1 < _.swc) _.vsc++;
@@ -360,7 +327,7 @@ line_down:	_.vcl++; _.vcc = 0; _.voc = 0; _.vsc = 0;
 		} else {
 			do _.lcc++; 
 			while (_.lcc < _.lines[_.lcl].count and zero_width(_.lines[_.lcl].data[_.lcc]));
-			if (_.vcc >= _.wrap_width and _.wrap_width) goto line_down;
+			if (_.vcc >= _.wrap_width) goto line_down;
 			_.vcc++; 
 			if (_.vsc + 1 < _.swc) _.vsc++; 
 			else _.voc++;
@@ -410,7 +377,7 @@ static inline void jump_to(nat line, nat column) { jump_line(line); jump_column(
 static inline void move_begin() { while (_.vcc) move_left(); _.vdc = _.vcc; }
 
 static inline void move_end() {
-	while (_.lcc < _.lines[_.lcl].count and (_.vcc < _.wrap_width or not _.wrap_width)) move_right(); 
+	while (_.lcc < _.lines[_.lcl].count and _.vcc < _.wrap_width) move_right(); 
 	_.vdc = _.vcc;
 }
 
@@ -655,7 +622,7 @@ static inline void initialize_buffer() {
 	_.actions = calloc(1, sizeof(struct action));
 
 	_.sn_rows = 2;
-	_.fixed_wrap = 1;
+	_.ww_fix = 0;
 	_.show_line_numbers = 1; 
 	_.saved = true;
 	_.autosaved = true;
@@ -665,12 +632,6 @@ static inline void initialize_buffer() {
 	_.sec = window_columns;
 	_.swl = _.sel - _.sbl;
 	_.swc = _.sec - _.sbc;
-}
-
-static inline void recalculate_position() {
-	nat save_lcl = _.lcl, save_lcc = _.lcc;
-	move_top();
-	jump_to(save_lcl, save_lcc);
 }
 
 static inline void adjust_window_size() {
@@ -683,23 +644,15 @@ static inline void adjust_window_size() {
 		window_rows = window.ws_row;
 		window_columns = window.ws_col - 1; 
 		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));	
-
-		
 	}
 
-	const double f = floor(log10((double) _.count)) + 1;
-	const int line_number_digits = (int)f;
-	const nat line_number_width = _.show_line_numbers * (line_number_digits + 2);
+	//		 todo:
 
-	const nat _sn_rows = _.sn_rows;
-	_.sbl = 0;
-	_.sbc = line_number_width;
-	_.sel = window_rows - _sn_rows;
-	_.sec = window_columns;
-	_.swl = _.sel - _.sbl;
-	_.swc = _.sec - _.sbc;
+	// const nat w = (window_columns - 1) - (this.line_number_width);
+	// if (this.ww_fix and wrap_width != w) wrap_width = w;
 
-	if (_.fixed_wrap and _.wrap_width != _.swc - 1) { _.wrap_width = _.swc - 1; recalculate_position(); }
+	_.wrap_width = 80;   // temp;
+	// split_point = ;     // temp... 
 }
 
 
@@ -736,7 +689,7 @@ static inline nat display_proper(
 			char k = _.lines[line].data[col++];
 			if (k == '\t') {
 
-				if (vc + (_.tab_width - vc % _.tab_width) >= _.wrap_width and _.wrap_width) goto next_visual_line;
+				if (vc + (_.tab_width - vc % _.tab_width) > _.wrap_width) goto next_visual_line;
 				do { 
 					if (	vc >= _.voc and vc < _.voc + _.swc
 					and 	vl >= _.vol and vl < _.vol + _.swl
@@ -756,7 +709,7 @@ static inline nat display_proper(
 					if (visual(k)) sc++;	
 				}
 				if (visual(k)) {
-					if (vc >= _.wrap_width and _.wrap_width) goto next_visual_line; 
+					if (vc >= _.wrap_width) goto next_visual_line; 
 					vc++; 
 				} 
 			}
@@ -844,7 +797,7 @@ static inline void display() {
 	_.swl = _.sel - _.sbl;
 	_.swc = _.sec - _.sbc;
 
-	add_status(active_index); 
+	add_status(save_wi);
 
 	length += sprintf(screen + length, "\033[%ld;%ldH",  window_rows - _sn_rows + 1L,  1L ); 
 	length = display_proper(length, &total, line_number_digits);
@@ -861,17 +814,15 @@ static inline void display() {
 }
 
 static inline void print_above_textbox(char* message) {
-	const nat save_index = working_index;
 	working_index = buffer_count;
 	insert('\n', 1);
 	insert_string(message, (nat) strlen(message));
-	working_index = save_index;
+	working_index = active_index;
 }
 
 static inline void execute(char, char p);
 
 static inline void prompt(const char* prompt_message, char* out, nat out_size)  {
-	const nat save_index = working_index;
 	working_index = buffer_count;
 	move_bottom(); _.mode = 0;
 	insert('\n', 0);
@@ -893,7 +844,7 @@ done:;  const char* string = _.lines[_.lcl].data;
 	memcpy(out, string, (size_t) string_length);
 	memset(out + string_length, 0, (size_t) out_size - (size_t) string_length);
 	out[out_size - 1] = 0;
-	working_index = save_index;
+	working_index = active_index;
 }
 
 static inline bool confirmed(const char* question, const char* yes_action, const char* no_action) {
@@ -1474,6 +1425,11 @@ static inline void alternate_decr() {
 	sprintf(_.message, "switched %ld %ld", _.actions[_.head].choice, _.actions[_.head].count);
 }
 
+static inline void recalculate_position() {
+	nat save_lcl = _.lcl, save_lcc = _.lcc;
+	move_top();
+	jump_to(save_lcl, save_lcc);
+}
 
 static inline void open_directory() {
 	if (fuzz) return;
@@ -1611,7 +1567,7 @@ static inline void execute(char c, char p) {
 		else if (c == 'c' and p == 'h') paste(); 	
 		else if (c == 'd' and p == 'h') {}
 		else if (c == 'a') _.selecting = not _.selecting;
-		else if (c == 'W') _.fixed_wrap = not _.fixed_wrap;
+		else if (c == 'W') _.ww_fix = not _.ww_fix;
 		else if (c == 'd') delete(1);
 		else if (c == 'r') cut();
 		else if (c == 't') _.mode = 0;
@@ -1624,10 +1580,8 @@ static inline void execute(char c, char p) {
 		else if (c == 'u') { move_down(); a}
 		else if (c == 'i') { move_right(); _.vdc = _.vcc; a}
 		else if (c == 'n') { move_left(); _.vdc = _.vcc; a}
-
-		else if (c == '-') { if (buffers[active_index].sn_rows < window_rows) buffers[active_index].sn_rows++; } // unbind this. make it a set command.
-		else if (c == '=') { if (buffers[active_index].sn_rows) buffers[active_index].sn_rows--; }               // unbind this. make it a set command.
-
+		else if (c == '-') { if (_.sn_rows < window_rows) _.sn_rows++; } // unbind this. make it a set command.
+		else if (c == '=') { if (_.sn_rows) _.sn_rows--; }               // unbind this. make it a set command.
 		else if (c == '0') {
 			if (working_index == active_index) working_index = buffer_count;
 			else working_index = active_index;
@@ -1714,12 +1668,7 @@ static inline void execute(char c, char p) {
 			else if (equals(command, "incr")) {}
 			else if (equals(command, "setzero")) {}
 
-			else if (equals(command, "toggle_selecting")) _.selecting = not _.selecting;
-			else if (equals(command, "toggle_fixed_wrap")) _.fixed_wrap = not _.fixed_wrap;
-
-			else if (equals(command, "disable_wrap")) { _.fixed_wrap = 0; _.wrap_width = 0;  recalculate_position(); }
-			else if (equals(command, "enable_wrap")) { _.fixed_wrap = 0; _.wrap_width = 80; recalculate_position(); }
-
+			else if (equals(command, "wrapresizetemp")) { _.wrap_width = 0; recalculate_position(); }
 			else if (equals(command, "quit")) {
 				if (_.saved or confirmed("discard unsaved changes", "discard", "no")) 
 					close_active_buffer(); 
