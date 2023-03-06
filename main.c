@@ -17,8 +17,8 @@
 // 	   debugged on 2208151.002947
 // 	     edited on 2209036.110503
 //	   debugged on 2209121.211839
-// 	   
-
+//           edited on 2303061.005150
+//
 #include <iso646.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,7 +47,6 @@
 
 typedef ssize_t nat; 
 
-// todo: make these part of a config struct..?  and   also  config file / parameters.
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
 static const nat autosave_frequency = 8;     // in seconds
 
@@ -56,14 +55,11 @@ enum action_type {
 	delete_action, paste_action,
 	cut_action, anchor_action,
 };
-
 struct line { char* data; nat count, capacity; };
-
 struct logical_state {
 	nat     saved, autosaved, selecting, wrap_width, tab_width,
 		lcl, lcc, 	vcl, vcc,    vol, voc,   
-		vsl, vsc, 	vdc,         lal, lac   
-	;
+		vsl, vsc, 	vdc,         lal, lac   ;
 };
 
 struct action { 
@@ -81,21 +77,18 @@ static char* screen = NULL;
 static size_t fuzz_input_index = 0, fuzz_input_count = 0;
 static const uint8_t* fuzz_input = NULL; 
 
-
-
 static struct line* lines;
 static struct action* actions;
 
 static nat     saved, mode, autosaved, action_count, head, count, capacity, 
 	selecting,  wrap_width, tab_width, line_number_width,
-
 	lcl, lcc, 	vcl, vcc,  	vol, voc,   
 	vsl, vsc, 	vdc,    	lal, lac,   
-
 	show_line_numbers, fixed_wrap, use_txt_extension_when_absent
 ;
 static char filename[4096], location[4096], message[4096];
-	// cwd[4096], selected_file[4096];
+static char* user_response = NULL;
+static nat user_response_length = 0;
 
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
@@ -114,13 +107,6 @@ static inline char read_stdin(void) {
 	pthread_mutex_lock(&mutex);
 	return c;
 }
-/*
-static inline bool is_directory(const char *path) {
-	struct stat s;
-	if (stat(path, &s)) return false;
-	return S_ISDIR(s.st_mode);
-}
-*/
 
 static inline void get_datetime(char datetime[16]) {
 	struct timeval t;
@@ -401,8 +387,8 @@ static inline void insert(char c, bool should_record) {
 	if (zero_width(c)) lcc++; 
 	else { move_right(); vdc = vcc; }
 
-	saved = false;
-	autosaved = false;
+	saved = 0;
+	autosaved = 0;
 	if (not should_record) return;
 
 	if (zero_width(c)) {
@@ -473,8 +459,8 @@ static inline void delete(bool should_record) {
 		if (memory_safe) here->data = realloc(here->data, (size_t)(here->count));
 	}
 
-	saved = false;
-	autosaved = false;
+	saved = 0;
+	autosaved = 0;
 	if (not should_record) return;
 
 	record_logical_state(&new_action.post);
@@ -498,8 +484,8 @@ static inline void initialize_buffer(void) {
 	
 	fixed_wrap = 1;
 	show_line_numbers = 1; 
-	saved = true;
-	autosaved = true;
+	saved = 1;
+	autosaved = 1;
 	use_txt_extension_when_absent = 1;
 }
 
@@ -525,7 +511,7 @@ static inline void adjust_window_size(void) {
 static inline void display(void) {
 	adjust_window_size();
 	
-	nat length = 6;
+	nat length = 9;
 	memcpy(screen, "\033[?25l\033[H", 9);
 
 	nat sl = 0, sc = 0, vl = vol, vc = voc;
@@ -547,7 +533,7 @@ static inline void display(void) {
 	do {
 		if (line >= count) goto next_visual_line;
 
-		if (show_line_numbers and vl >= vol and vl < vol + window_rows - 1) {
+		if (show_line_numbers and vl >= vol and vl < vol + window_rows) {
 			if (not col or (not sc and not sl)) 
 				length += sprintf(screen + length, 
 					"\033[38;5;%ldm%*ld\033[0m  ", 
@@ -563,8 +549,8 @@ static inline void display(void) {
 
 				if (vc + (tab_width - vc % tab_width) >= wrap_width and wrap_width) goto next_visual_line;
 				do { 
-					if (	vc >= voc and vc < voc + window_columns - line_number_width - 1
-					and 	vl >= vol and vl < vol + window_rows - 1
+					if (	vc >= voc and vc < voc + window_columns - line_number_width
+					and 	vl >= vol and vl < vol + window_rows
 					) {
 						screen[length++] = ' ';
 						sc++;
@@ -573,8 +559,8 @@ static inline void display(void) {
 				} while (vc % tab_width);
 
 			} else {
-				if (	vc >= voc and vc < voc + window_columns - line_number_width - 1
-				and 	vl >= vol and vl < vol + window_rows - 1
+				if (	vc >= voc and vc < voc + window_columns - line_number_width
+				and 	vl >= vol and vl < vol + window_rows
 				and 	(sc or visual(k))
 				) { 
 					screen[length++] = k;
@@ -586,7 +572,7 @@ static inline void display(void) {
 				} 
 			}
 
-		} while (sc < window_columns - line_number_width - 1 or col < lines[line].count);
+		} while (sc < window_columns - line_number_width or col < lines[line].count);
 
 	next_logical_line:
 		line++; col = 0;
@@ -596,14 +582,14 @@ static inline void display(void) {
 			screen[length++] = '\033';
 			screen[length++] = '[';	
 			screen[length++] = 'K';
-			if (sl < window_rows - 2) {
+			if (sl < window_rows - 1) {
 				screen[length++] = '\r';
 				screen[length++] = '\n';
 			}
 			sl++; sc = 0;
 		}
 		vl++; vc = 0; 
-	} while (sl < window_rows - 1);
+	} while (sl < window_rows);
 
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", vsl + 1, vsc + 1 + line_number_width);
 
@@ -631,8 +617,8 @@ static inline void open_file(const char* given_filename) {
 
 	for (size_t i = 0; i < length; i++) insert(text[i], 0);
 	free(text); 
-	saved = true; 
-	autosaved = true; 
+	saved = 1; 
+	autosaved = 1; 
 	mode = 1; 
 	move_top();
 
@@ -713,7 +699,7 @@ static inline void autosave(void) {
 	}
 
 	fclose(file);
-	autosaved = true;
+	autosaved = 1;
 }
 
 static void handle_signal_interrupt(int code) {
@@ -738,17 +724,13 @@ static inline void save(void) {
 	if (not strlen(filename)) {
 
 	prompt_filename:
-
-		//prompt("save as: ", filename, sizeof filename);
-
-
+		////// we need to get a string from the user some how, here.  the user needs to give the filename for the current file, somehow. 
+		
 		if (not strlen(filename)) { sprintf(message, "aborted save"); return; }
 		if (not strrchr(filename, '.') and use_txt_extension_when_absent) strcat(filename, ".txt");
-		if (file_exists(filename) 
-		/*and not confirmed("file already exists, overwrite", "overwrite", "no")*/) {
+		if (file_exists(filename)) {
 			strcpy(filename, ""); goto prompt_filename;
 		}
-
 	}
 
 	FILE* file = fopen(filename, "w+");
@@ -774,7 +756,7 @@ static inline void save(void) {
 
 	fclose(file);
 	sprintf(message, "wrote %lldb;%ldl", bytes, count);
-	saved = true;
+	saved = 1;
 }
 /*
 static inline void rename_file(void) {        // buggy!!!! fix me. 
@@ -805,7 +787,6 @@ static inline void interpret_escape_code(void) {
 		else if (c == 'B') move_down();
 		else if (c == 'C') { move_right(); vdc = vcc; }
 		else if (c == 'D') { move_left(); vdc = vcc; }
-		//  TODO:   i need to completely redo the way that we scroll the screen, using mouse/trackpad scrolling. 
 		else if (c == 'M') {
 			read_stdin();
 			if (c == 97) {
@@ -887,7 +868,6 @@ static char* get_sel(nat* out_length, nat first_line, nat first_column, nat last
 		length += lines[line].count - column;
 
 		if (not memory_safe) {
-			// do nothing. 
 		} else {
 			string = realloc(string, (size_t) (length + 1));
 		}
@@ -915,6 +895,20 @@ static inline char* get_selection(nat* out) {
 	if (lcc < lac) return get_sel(out, lcl, lcc, lal, lac);
 	*out = 0;
 	return NULL;
+}
+
+static void insert_string(const char* string, nat length) {
+	struct action new = {0};
+	record_logical_state(&new.pre);
+
+	for (nat i = 0; i < length; i++) 
+		insert((char) string[i], 0);
+	
+	record_logical_state(&new.post);
+	new.type = paste_action;
+	new.text = strndup(string, (size_t) length);
+	new.length = length;
+	create_action(new);
 }
 
 static inline void paste(void) {
@@ -995,12 +989,27 @@ static inline void cut(void) {
 	create_action(new);
 }
 
+static inline void submit(void) { 
+	if (lal >= count or lac > lines[lal].count) return;
+	struct action new = {0};
+	record_logical_state(&new.pre);
+	nat response_length = 0;
+	char* response = get_selection(&response_length);
+	cut_selection();
+	user_response = response;
+	user_response_length = response_length;
+	record_logical_state(&new.post);
+	new.type = cut_action;
+	new.text = response;
+	new.length = response_length;
+	create_action(new);
+}
+
 static inline void copy(void) {
 	if (fuzz) return;
 
 	FILE* file = popen("pbcopy", "w");
 	if (not file) { sprintf(message, "error: copy: popen(): %s", strerror(errno)); return; }
-
 	nat length = 0;
 	char* selection = get_selection(&length);
 	fwrite(selection, 1, (size_t)length, file);
@@ -1009,41 +1018,7 @@ static inline void copy(void) {
 	sprintf(message, "copied %ldb", length);
 }
 
-/*
-static inline void run_shell_command(const char* command) {
-	if (fuzz) return;
-
-	FILE* f = popen(command, "r");
-	if (not f) {
-		sprintf(message, "error: could not run command \"%s\": %s\n", command, strerror(errno));
-		return;
-	}
-
-	char line[4096] = {0};
-	nat length = 0;
-	char* output = NULL;
-
-	while (fgets(line, sizeof line, f)) {
-		const nat line_length = (nat) strlen(line);
-		output = realloc(output, (size_t) length + 1 + (size_t) line_length); 
-		sprintf(output + length, "%s", line);
-		length += line_length;
-	}
-	pclose(f);
-	lal = lcl; lac = lcc;
-	sprintf(message, "output %ldb", length);
-	insert_string(output, length);
-}
-
-static inline void prompt_run(void) {
-	char command[4096] = {0};
-	//prompt("run(2>&1): ", command, sizeof command);
-	if (not strlen(command)) { sprintf(message, "aborted run"); return; }
-	sprintf(message, "running: %s", command);
-	run_shell_command(command);
-}
-*/
-static inline void replay_action(struct action a) {
+static inline void replay_action(struct action a) { // inline me
 	require_logical_state(&a.pre);
 	if (a.type == no_action or a.type == anchor_action) {}
 	else if (a.type == insert_action or a.type == paste_action) {
@@ -1053,7 +1028,7 @@ static inline void replay_action(struct action a) {
 	require_logical_state(&a.post); 
 }
 
-static inline void reverse_action(struct action a) {
+static inline void reverse_action(struct action a) {    // inline me
 	require_logical_state(&a.post);
 	if (a.type == no_action or a.type == anchor_action) {}
 	else if (a.type == insert_action) delete(0);
@@ -1067,20 +1042,12 @@ static inline void reverse_action(struct action a) {
 static inline void undo(void) {
 	if (not head) return;
 	reverse_action(actions[head]);
-
-	sprintf(message, "undoing %ld ", actions[head].type);
-	if (actions[head].count != 1) 
-		sprintf(message + strlen(message), "%ld %ld", actions[head].choice, actions[head].count);
-
 	head = actions[head].parent;
 }
 
 static inline void redo(void) {
 	if (not actions[head].count) return;
 	head = actions[head].children[actions[head].choice];
-	sprintf(message, "redoing %ld ", actions[head].type);
-	if (actions[head].count != 1) 
-		sprintf(message + strlen(message), "%ld %ld", actions[head].choice, actions[head].count);
 	replay_action(actions[head]);
 }
 
@@ -1094,15 +1061,11 @@ static inline void alternate_decr(void) {
 	sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
 }
 
-
-
-
 static inline void execute(char c, char p) {
 
 #define a   if (not selecting) { lal = al; lac = ac; } 
 
 	if (mode == 1) {
-		//if (in_prompt and c == '\r') { in_prompt = false; return; }
 		if (c == 'c' and p == 'h') { undo(); mode = 2; }
 		else if (c == 27 and stdin_is_empty()) mode = 2;
 		else if (c == 27) interpret_escape_code();
@@ -1111,9 +1074,8 @@ static inline void execute(char c, char p) {
 		else insert(c, 1);
 
 	} else if (mode == 2) {
-		const nat  al = lcl,  ac = lcc;
+		const nat al = lcl, ac = lcc;
 		if (c == ' ') {} 
-		// we should be using     (c == keys[34] and (p == keys[35] or keys[35] == 27))
 		else if (c == 'l' and p == 'e') prompt_jump_line();       
 		else if (c == 'k' and p == 'e') prompt_jump_column();     		
 		else if (c == 'i' and p == 'e') { move_bottom(); a }
@@ -1129,7 +1091,7 @@ static inline void execute(char c, char p) {
 		else if (c == 'd') delete(1);
 		else if (c == 'r') cut();
 		else if (c == 't') mode = 1;
-		else if (c == 'm') mode = 2;
+		else if (c == 'm') insert_string(message, (nat) strlen(message));
 		else if (c == 'c') undo();
 		else if (c == 'k') redo();
 		else if (c == 'o') { move_word_right(); a }
@@ -1139,13 +1101,9 @@ static inline void execute(char c, char p) {
 		else if (c == 'i') { move_right(); vdc = vcc; a }
 		else if (c == 'n') { move_left(); vdc = vcc; a }
 		else if (c == 's') save();
-		else if (c == 'q') mode = 0;
-
+		else if (c == 'q') { if (saved) mode = 0; }
 		else if (c == 27 and stdin_is_empty()) {}
 		else if (c == 27) interpret_escape_code();
-
-	} else if (mode == 3) {
-		mode = 2;
 	} else mode = 2;
 }
 
@@ -1156,7 +1114,7 @@ static void* autosaver(void* unused) {
 		if (not mode) break;
 		if (not autosaved) autosave();
 		pthread_mutex_unlock(&mutex);
-	}
+	} 
 	return unused;
 }
 
@@ -1214,10 +1172,24 @@ int main(const int argc, const char** argv) {
 
 #endif
 
+
+
 // ---------------------------------------------------------------------------------------------------1747 before changes
 
 
 
+
+/*
+	sprintf(message, "redoing %ld ", actions[head].type);
+	if (actions[head].count != 1) 
+		sprintf(message + strlen(message), "%ld %ld", actions[head].choice, actions[head].count);
+*/
+
+/*
+	sprintf(message, "undoing %ld ", actions[head].type);
+	if (actions[head].count != 1) 
+		sprintf(message + strlen(message), "%ld %ld", actions[head].choice, actions[head].count);
+*/
 
 
 
@@ -1828,5 +1800,73 @@ static inline void move_to_next_buffer(void) {
 */
 
 
+
+
+
+
+
+
+
+
+
+
+/*
+static inline void run_shell_command(const char* command) {
+	if (fuzz) return;
+
+	FILE* f = popen(command, "r");
+	if (not f) {
+		sprintf(message, "error: could not run command \"%s\": %s\n", command, strerror(errno));
+		return;
+	}
+
+	char line[4096] = {0};
+	nat length = 0;
+	char* output = NULL;
+
+	while (fgets(line, sizeof line, f)) {
+		const nat line_length = (nat) strlen(line);
+		output = realloc(output, (size_t) length + 1 + (size_t) line_length); 
+		sprintf(output + length, "%s", line);
+		length += line_length;
+	}
+	pclose(f);
+	lal = lcl; lac = lcc;
+	sprintf(message, "output %ldb", length);
+	insert_string(output, length);
+}
+
+static inline void prompt_run(void) {
+	char command[4096] = {0};
+	//prompt("run(2>&1): ", command, sizeof command);
+	if (not strlen(command)) { sprintf(message, "aborted run"); return; }
+	sprintf(message, "running: %s", command);
+	run_shell_command(command);
+}
+*/
+
+
+
+
+
+
+
+// we should be using     (c == keys[34] and (p == keys[35] or keys[35] == 27))
+
+
+
+
+
+/*
+static inline bool is_directory(const char *path) {
+	struct stat s;
+	if (stat(path, &s)) return false;
+	return S_ISDIR(s.st_mode);
+}
+*/
+
+
+
+// todo: make these part of a config struct..?  and   also  config file / parameters.
 
 
