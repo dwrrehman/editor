@@ -61,8 +61,8 @@ struct line { char* data; nat count, capacity; };
 
 struct logical_state {
 	nat     saved, autosaved, selecting, wrap_width, tab_width,
-		lcl, lcc, 	vcl, vcc,    vol, voc,    sbl, sbc,  sel, sec,
-		vsl, vsc, 	vdc,         lal, lac,    swl, swc
+		lcl, lcc, 	vcl, vcc,    vol, voc,   
+		vsl, vsc, 	vdc,         lal, lac   
 	;
 };
 
@@ -89,8 +89,8 @@ static struct action* actions;
 static nat     saved, mode, autosaved, action_count, head, count, capacity, 
 	selecting,  wrap_width, tab_width, line_number_width,
 
-	lcl, lcc, 	vcl, vcc,  	vol, voc,    //sbl, sbc,    sel, sec,
-	vsl, vsc, 	vdc,    	lal, lac,    //swl, swc,
+	lcl, lcc, 	vcl, vcc,  	vol, voc,   
+	vsl, vsc, 	vdc,    	lal, lac,   
 
 	show_line_numbers, fixed_wrap, use_txt_extension_when_absent
 ;
@@ -100,7 +100,7 @@ static char filename[4096], location[4096], message[4096];
 static inline bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
 static inline bool visual(char c) { return not zero_width(c); }
 static inline bool file_exists(const char* f) { return access(f, F_OK) != -1; }
-static inline bool equals(const char* s1, const char* s2) { return not strcmp(s1, s2); }
+//static inline bool equals(const char* s1, const char* s2) { return not strcmp(s1, s2); }
 
 static inline char read_stdin(void) {
 	char c = 0;
@@ -267,7 +267,7 @@ static inline void jump_column(nat column) {
 	vdc = vcc;
 }
 
-static inline void jump_to(nat line, nat column) { jump_line(line); jump_column(column); }
+//static inline void jump_to(nat line, nat column) { jump_line(line); jump_column(column); }
 static inline void move_begin(void) { while (vcc) move_left(); vdc = vcc; }
 
 static inline void move_end(void) {
@@ -484,26 +484,6 @@ static inline void delete(bool should_record) {
 	create_action(new_action);
 }
 
-static void insert_string(const char* string, nat length) {
-	struct action new = {0};
-	record_logical_state(&new.pre);
-
-	for (nat i = 0; i < length; i++) 
-		insert((char) string[i], 0);
-	
-	record_logical_state(&new.post);
-	new.type = paste_action;
-	new.text = strndup(string, (size_t) length);
-	new.length = length;
-	create_action(new);
-}
-
-static inline void insertdt(void) {
-	char datetime[16] = {0};
-	get_datetime(datetime);
-	insert_string(datetime, 14);
-}
-
 static inline void initialize_buffer(void) {
 	move_top();
 
@@ -523,11 +503,6 @@ static inline void initialize_buffer(void) {
 	use_txt_extension_when_absent = 1;
 }
 
-static inline void recalculate_position(void) {
-	nat save_lcl = lcl, save_lcc = lcc;
-	move_top();
-	jump_to(save_lcl, save_lcc);
-}
 
 static inline void adjust_window_size(void) {
 	static struct winsize window = {0}; 
@@ -636,170 +611,15 @@ static inline void display(void) {
 }
 
 
-	//if (save_wi == active_index) {
-	//	cursor_line = _.sbl + _.vsl + 1;
-	//	cursor_col = _.sbc + _.vsc + 1;
-	//}
-
-	// working_index = buffer_count;
-
-	// f = floor(log10((double) _.count)) + 1;
-	// line_number_digits = (int)f;
-	// line_number_width = show_line_numbers * (line_number_digits + 2);
-	
-	//_.sbl = window_rows - _sn_rows;
-	//_.sbc = line_number_width;
-	//_.sel = window_rows;
-	//_.sec = window_columns;
-	//_.swl = _.sel - _.sbl;
-	//_.swc = _.sec - _.sbc;
-
-	//  if (save_wi != buffer_count)
-	//	add_status(active_index); 
-
-	// length += sprintf(screen + length, "\033[%ld;%ldH",  window_rows - _sn_rows + 1L,  1L ); 
-	// length = display_proper(length, &total, line_number_digits);
-
-	//if (save_wi == buffer_count and active_index != buffer_count) {
-	//	cursor_line = _.sbl + _.vsl + 1;
-	//	cursor_col = _.sbc + _.vsc + 1;
-	//}
-
-
-	
-
-	//working_index = save_wi;
-
-
-/*
-static inline void print_above_textbox(char* message) {
-	const nat save_index = working_index;
-	working_index = buffer_count;
-	insert('\n', 1);
-	insert_string(message, (nat) strlen(message));
-	working_index = save_index;
-}
-*/
-
-/*
-static inline void prompt(const char* prompt_message, char* out, nat out_size)  {
-	const nat save_index = working_index;
-	working_index = buffer_count;
-	move_bottom(); _.mode = 0;
-	insert('\n', 0);
-	insert_string(prompt_message, (nat) strlen(prompt_message));
-	insert('\n', 0);
-	in_prompt = true;
-	char c = 0, p = 0;
-
-loop:	display(); 
-	c = read_stdin(); 
-	if (fuzz and not c) goto done;
-	execute(c, p);
-	p = c;
-	if (in_prompt) goto loop;
-
-done:;  const char* string = _.lines[_.lcl].data;
-	nat string_length = _.lines[_.lcl].count;
-
-	if (string_length > out_size) string_length = out_size;
-	memcpy(out, string, (size_t) string_length);
-	memset(out + string_length, 0, (size_t) out_size - (size_t) string_length);
-	out[out_size - 1] = 0;
-
-	move_top();     // ????????..... hmmmmmmmmmmmmmmm
-
-	working_index = save_index;
-}*/
-
-/*
-static inline bool confirmed(const char* question, const char* yes_action, const char* no_action) {
-	
-	char prompt_message[4096] = {0}, invalid_response[4096] = {0};
-	sprintf(prompt_message, "%s? (%s/%s): ", question, yes_action, no_action);
-	sprintf(invalid_response, "please type \"%s\" or \"%s\".", yes_action, no_action);
-	
-	while (1) {
-		char response[4096] = {0};
-		prompt(prompt_message, response, sizeof response);
-
-		if (equals(response, yes_action)) return true;
-		else if (equals(response, no_action)) return false;
-		else if (equals(response, "")) return false;
-		else print_above_textbox(invalid_response);
-
-		if (fuzz) return true;
-	}
-}
-
-static inline void create_sn_buffer(void) {
-	buffer_count = 0; active_index = 0; working_index = 0;
-	buffers = calloc(1, sizeof(struct buffer));
-	initialize_buffer();
-}
-
-*/
-//static inline void create_empty_buffer(void) {
-	//buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 2));
-	//buffers[buffer_count + 1] = buffers[buffer_count];
-	//working_index = active_index = buffer_count;
-	//buffer_count++;
-	
-//}
-/*
-
-
-static inline void destroy(nat b) {
-	for (nat line = 0; line < buffers[b].count; line++) 
-		free(buffers[b].lines[line].data);
-	free(buffers[b].lines);
-	for (nat a = 0; a < buffers[b].action_count; a++) {
-		free(buffers[b].actions[a].text);
-		free(buffers[b].actions[a].children);
-	}
-	free(buffers[b].actions);
-}
-*/
-
-/*
-static inline void close_active_buffer(void) {
-	if (not buffer_count) return;
-
-	destroy(active_index);
-	memmove(buffers + active_index, buffers + active_index + 1, 
-		sizeof(struct buffer) * (size_t)(buffer_count - active_index));
-	buffer_count--;
-	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 1));
-
-	if (active_index >= buffer_count and buffer_count) active_index = buffer_count - 1; 
-	else if (not buffer_count) active_index = 0;	
-	working_index = active_index;
-}
-
-
-static inline void move_to_previous_buffer(void) {
-	if (active_index) active_index--; else active_index = buffer_count;
-	working_index = active_index;
-}
-
-static inline void move_to_next_buffer(void) {
-	if (active_index < buffer_count) active_index++; else active_index = 0;
-	working_index = active_index;
-}
-*/
 
 static inline void open_file(const char* given_filename) {
 	if (fuzz) return;
-
 	if (not strlen(given_filename)) return;
-	
+
 	FILE* file = fopen(given_filename, "r");
 	if (not file) {
-		
 		sprintf(message, "error: fopen: %s", strerror(errno));
 		return;
-
-		// perror("fopen"); exit(1);
 	}
 
 	fseek(file, 0, SEEK_END);        
@@ -809,9 +629,6 @@ static inline void open_file(const char* given_filename) {
         fread(text, sizeof(char), length, file);
 	fclose(file);
 
-	//create_empty_buffer();
-	
-
 	for (size_t i = 0; i < length; i++) insert(text[i], 0);
 	free(text); 
 	saved = true; 
@@ -819,19 +636,9 @@ static inline void open_file(const char* given_filename) {
 	mode = 1; 
 	move_top();
 
-
-
-
-
-
-
-
-
 	// open file 996      this overwrites.                 these should be     strlcpy's!!!!!!!!
 	// execute 1677
 	// editor 1812
-
-
 
 	strlcpy(filename, 
 
@@ -839,12 +646,8 @@ static inline void open_file(const char* given_filename) {
 
 		sizeof filename);
 
-
 	strlcpy(location, given_filename, sizeof filename); // todo:   seperate out these two things!!!
 	sprintf(message, "read %lub", length);
-
-
-
 }
 
 static inline void emergency_save_to_file(void) {
@@ -881,16 +684,6 @@ static inline void emergency_save_to_file(void) {
 	fclose(file);
 	printf("interrupt: emergency wrote %lldb;%ldl to %s\n\r", bytes, count, local_filename);
 }
-
-//static inline void emergency_save_all_buffers(void) {
-	//nat save_wi = working_index;
-	//for (int i = 0; i < buffer_count + 1; i++) {
-	//	working_index = i;
-		
-	//	sleep(1);
-	//}
-	//working_index = save_wi;
-//}
 
 static inline void autosave(void) {
 	if (fuzz) return;
@@ -983,7 +776,7 @@ static inline void save(void) {
 	sprintf(message, "wrote %lldb;%ldl", bytes, count);
 	saved = true;
 }
-
+/*
 static inline void rename_file(void) {        // buggy!!!! fix me. 
 	if (fuzz) return;
 
@@ -992,7 +785,7 @@ static inline void rename_file(void) {        // buggy!!!! fix me.
 	//prompt("rename to: ", new, sizeof new);
 	if (not strlen(new)) { sprintf(message, "aborted rename"); return; }
 
-	if (file_exists(new) /*and not confirmed("file already exists, overwrite", "overwrite", "no")*/) {
+	if (file_exists(new) ///and not confirmed("file already exists, overwrite", "overwrite", "no")) {
 		strcpy(new, ""); goto prompt_filename;
 	}
 
@@ -1002,7 +795,7 @@ static inline void rename_file(void) {        // buggy!!!! fix me.
 		sprintf(message, "renamed to \"%s\"", filename);
 	}
 }
-
+*/
 static inline void interpret_escape_code(void) {
 	static nat scroll_counter = 0;
 	char c = read_stdin();
@@ -1281,13 +1074,7 @@ static inline void undo(void) {
 
 	head = actions[head].parent;
 }
-/*
-static inline void undo_silent(void) {
-	if (not head) return;
-	reverse_action(actions[head]);
-	head = actions[head].parent;
-}
-*/
+
 static inline void redo(void) {
 	if (not actions[head].count) return;
 	head = actions[head].children[actions[head].choice];
@@ -1308,32 +1095,6 @@ static inline void alternate_decr(void) {
 }
 
 
-
-static inline char** split(char* string, char delim, nat* array_count) {
-
-	nat a_count = 0;
-	char** array = NULL;
-	nat start = 0, i = 0;
-	const nat length = (nat)strlen(string);
-
-	for (; i < length; i++) {
-		if (string[i] == delim) {
-			string[i] = 0;
-			if (strlen(string + start)) {
-				array = realloc(array, sizeof(char*) * (size_t)(a_count + 1));
-				array[a_count++] = strdup(string + start);
-			}
-			start = i + 1;
-		}
-	}
-
-	if (strlen(string + start)) {
-		array = realloc(array, sizeof(char*) * (size_t)(a_count + 1));
-		array[a_count++] = strdup(string + start);
-	}
-	*array_count = a_count;
-	return array;
-}
 
 
 static inline void execute(char c, char p) {
@@ -1368,7 +1129,7 @@ static inline void execute(char c, char p) {
 		else if (c == 'd') delete(1);
 		else if (c == 'r') cut();
 		else if (c == 't') mode = 1;
-		else if (c == 'm') { mode = 3; goto command_mode; }
+		else if (c == 'm') mode = 2;
 		else if (c == 'c') undo();
 		else if (c == 'k') redo();
 		else if (c == 'o') { move_word_right(); a }
@@ -1384,75 +1145,7 @@ static inline void execute(char c, char p) {
 		else if (c == 27) interpret_escape_code();
 
 	} else if (mode == 3) {
-		command_mode: mode = 2;
-
-		char string[4096] = {0};
-		// prompt(" • ", string, sizeof string);
-		
-		nat length = (nat) strlen(string);
-		char* d = calloc((size_t) length + 1, sizeof(char));
-		nat d_length = 0;
-		
-		for (nat i = 0; i < length; i++) {
-			if ((unsigned char) string[i] < 33) continue;
-			d[d_length++] = string[i];
-		}
-
-		d[d_length] = 0;
-		nat command_count = 0;
-		char** commands = split(d, '.', &command_count);
-
-		for (int i = 0; i < command_count; i++) {
-			const char* command = commands[i];
-			     if (equals(command, "donothing")) {}
-			else if (equals(command, "datetime")) insertdt();
-			else if (equals(command, "rename")) rename_file();  
-			else if (equals(command, "save")) save();
-			else if (equals(command, "duplicate")) {/* duplicate(); */}
-			else if (equals(command, "autosave")) autosave();
-			else if (equals(command, "clearmessage")) memset(message, 0, sizeof message);
-			else if (equals(command, "numbers")) show_line_numbers = not show_line_numbers;
-			else if (equals(command, "cut")) cut();
-			else if (equals(command, "delete")) delete(1);
-			else if (equals(command, "paste")) paste();
-			else if (equals(command, "copy")) copy();
-			else if (equals(command, "undo")) undo();
-			else if (equals(command, "redo")) redo();
-			else if (equals(command, "alternateincr")) alternate_incr();
-			else if (equals(command, "alternatedecr")) alternate_decr();
-			else if (equals(command, "moveright")) { move_right(); vdc = vcc; }
-			else if (equals(command, "moveleft")) { move_left(); vdc = vcc; }
-			else if (equals(command, "moveup")) move_up();
-			else if (equals(command, "movedown")) move_down();
-			else if (equals(command, "movewordright")) move_word_right();
-			else if (equals(command, "movewordleft")) move_word_left();
-			else if (equals(command, "movebegin")) move_begin();
-			else if (equals(command, "moveend")) move_end();
-			else if (equals(command, "movetop")) move_top();
-			else if (equals(command, "movebottom")) move_bottom();
-			else if (equals(command, "jumpline")) prompt_jump_line();
-			else if (equals(command, "jumpcolumn")) prompt_jump_column();
-			else if (equals(command, "quit")) mode = 0;
-			else if (equals(command, "mode0")) mode = 0;
-			else if (equals(command, "mode1")) mode = 1;
-			else if (equals(command, "mode2")) mode = 2;
-			else if (equals(command, "goto")) {}
-			else if (equals(command, "branch")) {}
-			else if (equals(command, "incr")) {}
-			else if (equals(command, "setzero")) {}
-			else if (equals(command, "toggle_selecting")) selecting = not selecting;
-			else if (equals(command, "toggle_fixed_wrap")) fixed_wrap = not fixed_wrap;
-			else if (equals(command, "disable_wrap")) { fixed_wrap = 0; wrap_width = 0; recalculate_position(); }
-			else if (equals(command, "enable_wrap")) { fixed_wrap = 0; wrap_width = 80; recalculate_position(); }
-			else {
-				sprintf(message, "command not recognized: %s", command);
-				break;
-			}
-		}
-	
-		for (nat i = 0; i < command_count; i++) free(commands[i]);
-		free(commands);
-		free(d);
+		mode = 2;
 	} else mode = 2;
 }
 
@@ -1816,6 +1509,324 @@ static inline void add_status(nat b) {
 
 
 */
+
+
+
+
+
+
+
+/*command_mode: mode = 2;
+
+		char string[4096] = {0};
+		// prompt(" • ", string, sizeof string);
+		
+		nat length = (nat) strlen(string);
+		char* d = calloc((size_t) length + 1, sizeof(char));
+		nat d_length = 0;
+		
+		for (nat i = 0; i < length; i++) {
+			if ((unsigned char) string[i] < 33) continue;
+			d[d_length++] = string[i];
+		}
+
+		d[d_length] = 0;
+		nat command_count = 0;
+		char** commands = split(d, '.', &command_count);
+
+		for (int i = 0; i < command_count; i++) {
+			const char* command = commands[i];
+			     if (equals(command, "donothing")) {}
+			else if (equals(command, "datetime")) insertdt();
+			else if (equals(command, "rename")) rename_file();  
+			else if (equals(command, "save")) save();
+			else if (equals(command, "duplicate")) { duplicate(); }
+			else if (equals(command, "autosave")) autosave();
+			else if (equals(command, "clearmessage")) memset(message, 0, sizeof message);
+			else if (equals(command, "numbers")) show_line_numbers = not show_line_numbers;
+			else if (equals(command, "cut")) cut();
+			else if (equals(command, "delete")) delete(1);
+			else if (equals(command, "paste")) paste();
+			else if (equals(command, "copy")) copy();
+			else if (equals(command, "undo")) undo();
+			else if (equals(command, "redo")) redo();
+			else if (equals(command, "alternateincr")) alternate_incr();
+			else if (equals(command, "alternatedecr")) alternate_decr();
+			else if (equals(command, "moveright")) { move_right(); vdc = vcc; }
+			else if (equals(command, "moveleft")) { move_left(); vdc = vcc; }
+			else if (equals(command, "moveup")) move_up();
+			else if (equals(command, "movedown")) move_down();
+			else if (equals(command, "movewordright")) move_word_right();
+			else if (equals(command, "movewordleft")) move_word_left();
+			else if (equals(command, "movebegin")) move_begin();
+			else if (equals(command, "moveend")) move_end();
+			else if (equals(command, "movetop")) move_top();
+			else if (equals(command, "movebottom")) move_bottom();
+			else if (equals(command, "jumpline")) prompt_jump_line();
+			else if (equals(command, "jumpcolumn")) prompt_jump_column();
+			else if (equals(command, "quit")) mode = 0;
+			else if (equals(command, "mode0")) mode = 0;
+			else if (equals(command, "mode1")) mode = 1;
+			else if (equals(command, "mode2")) mode = 2;
+			else if (equals(command, "goto")) {}
+			else if (equals(command, "branch")) {}
+			else if (equals(command, "incr")) {}
+			else if (equals(command, "setzero")) {}
+			else if (equals(command, "toggle_selecting")) selecting = not selecting;
+			else if (equals(command, "toggle_fixed_wrap")) fixed_wrap = not fixed_wrap;
+			else if (equals(command, "disable_wrap")) { fixed_wrap = 0; wrap_width = 0; recalculate_position(); }
+			else if (equals(command, "enable_wrap")) { fixed_wrap = 0; wrap_width = 80; recalculate_position(); }
+			else {
+				sprintf(message, "command not recognized: %s", command);
+				break;
+			}
+		}
+	
+		for (nat i = 0; i < command_count; i++) free(commands[i]);
+		free(commands);
+		free(d);
+	*/
+
+
+
+
+
+
+
+
+
+/*
+static inline char** split(char* string, char delim, nat* array_count) {
+
+	nat a_count = 0;
+	char** array = NULL;
+	nat start = 0, i = 0;
+	const nat length = (nat)strlen(string);
+
+	for (; i < length; i++) {
+		if (string[i] == delim) {
+			string[i] = 0;
+			if (strlen(string + start)) {
+				array = realloc(array, sizeof(char*) * (size_t)(a_count + 1));
+				array[a_count++] = strdup(string + start);
+			}
+			start = i + 1;
+		}
+	}
+
+	if (strlen(string + start)) {
+		array = realloc(array, sizeof(char*) * (size_t)(a_count + 1));
+		array[a_count++] = strdup(string + start);
+	}
+	*array_count = a_count;
+	return array;
+}*/
+
+
+
+
+
+/*
+static void insert_string(const char* string, nat length) {
+	struct action new = {0};
+	record_logical_state(&new.pre);
+
+	for (nat i = 0; i < length; i++) 
+		insert((char) string[i], 0);
+	
+	record_logical_state(&new.post);
+	new.type = paste_action;
+	new.text = strndup(string, (size_t) length);
+	new.length = length;
+	create_action(new);
+}
+*/
+
+
+/*
+static inline void insertdt(void) {
+	char datetime[16] = {0};
+	get_datetime(datetime);
+	insert_string(datetime, 14);
+}
+*/
+
+/*
+static inline void recalculate_position(void) {
+	nat save_lcl = lcl, save_lcc = lcc;
+	move_top();
+	jump_to(save_lcl, save_lcc);
+}*/
+
+
+
+
+/*
+static inline void undo_silent(void) {
+	if (not head) return;
+	reverse_action(actions[head]);
+	head = actions[head].parent;
+}
+*/
+
+
+
+
+
+
+
+	//if (save_wi == active_index) {
+	//	cursor_line = _.sbl + _.vsl + 1;
+	//	cursor_col = _.sbc + _.vsc + 1;
+	//}
+
+	// working_index = buffer_count;
+
+	// f = floor(log10((double) _.count)) + 1;
+	// line_number_digits = (int)f;
+	// line_number_width = show_line_numbers * (line_number_digits + 2);
+	
+	//_.sbl = window_rows - _sn_rows;
+	//_.sbc = line_number_width;
+	//_.sel = window_rows;
+	//_.sec = window_columns;
+	//_.swl = _.sel - _.sbl;
+	//_.swc = _.sec - _.sbc;
+
+	//  if (save_wi != buffer_count)
+	//	add_status(active_index); 
+
+	// length += sprintf(screen + length, "\033[%ld;%ldH",  window_rows - _sn_rows + 1L,  1L ); 
+	// length = display_proper(length, &total, line_number_digits);
+
+	//if (save_wi == buffer_count and active_index != buffer_count) {
+	//	cursor_line = _.sbl + _.vsl + 1;
+	//	cursor_col = _.sbc + _.vsc + 1;
+	//}
+
+
+	
+
+	//working_index = save_wi;
+
+
+/*
+static inline void print_above_textbox(char* message) {
+	const nat save_index = working_index;
+	working_index = buffer_count;
+	insert('\n', 1);
+	insert_string(message, (nat) strlen(message));
+	working_index = save_index;
+}
+*/
+
+/*
+static inline void prompt(const char* prompt_message, char* out, nat out_size)  {
+	const nat save_index = working_index;
+	working_index = buffer_count;
+	move_bottom(); _.mode = 0;
+	insert('\n', 0);
+	insert_string(prompt_message, (nat) strlen(prompt_message));
+	insert('\n', 0);
+	in_prompt = true;
+	char c = 0, p = 0;
+
+loop:	display(); 
+	c = read_stdin(); 
+	if (fuzz and not c) goto done;
+	execute(c, p);
+	p = c;
+	if (in_prompt) goto loop;
+
+done:;  const char* string = _.lines[_.lcl].data;
+	nat string_length = _.lines[_.lcl].count;
+
+	if (string_length > out_size) string_length = out_size;
+	memcpy(out, string, (size_t) string_length);
+	memset(out + string_length, 0, (size_t) out_size - (size_t) string_length);
+	out[out_size - 1] = 0;
+
+	move_top();     // ????????..... hmmmmmmmmmmmmmmm
+
+	working_index = save_index;
+}*/
+
+/*
+static inline bool confirmed(const char* question, const char* yes_action, const char* no_action) {
+	
+	char prompt_message[4096] = {0}, invalid_response[4096] = {0};
+	sprintf(prompt_message, "%s? (%s/%s): ", question, yes_action, no_action);
+	sprintf(invalid_response, "please type \"%s\" or \"%s\".", yes_action, no_action);
+	
+	while (1) {
+		char response[4096] = {0};
+		prompt(prompt_message, response, sizeof response);
+
+		if (equals(response, yes_action)) return true;
+		else if (equals(response, no_action)) return false;
+		else if (equals(response, "")) return false;
+		else print_above_textbox(invalid_response);
+
+		if (fuzz) return true;
+	}
+}
+
+static inline void create_sn_buffer(void) {
+	buffer_count = 0; active_index = 0; working_index = 0;
+	buffers = calloc(1, sizeof(struct buffer));
+	initialize_buffer();
+}
+
+*/
+//static inline void create_empty_buffer(void) {
+	//buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 2));
+	//buffers[buffer_count + 1] = buffers[buffer_count];
+	//working_index = active_index = buffer_count;
+	//buffer_count++;
+	
+//}
+/*
+
+
+static inline void destroy(nat b) {
+	for (nat line = 0; line < buffers[b].count; line++) 
+		free(buffers[b].lines[line].data);
+	free(buffers[b].lines);
+	for (nat a = 0; a < buffers[b].action_count; a++) {
+		free(buffers[b].actions[a].text);
+		free(buffers[b].actions[a].children);
+	}
+	free(buffers[b].actions);
+}
+*/
+
+/*
+static inline void close_active_buffer(void) {
+	if (not buffer_count) return;
+
+	destroy(active_index);
+	memmove(buffers + active_index, buffers + active_index + 1, 
+		sizeof(struct buffer) * (size_t)(buffer_count - active_index));
+	buffer_count--;
+	buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 1));
+
+	if (active_index >= buffer_count and buffer_count) active_index = buffer_count - 1; 
+	else if (not buffer_count) active_index = 0;	
+	working_index = active_index;
+}
+
+
+static inline void move_to_previous_buffer(void) {
+	if (active_index) active_index--; else active_index = buffer_count;
+	working_index = active_index;
+}
+
+static inline void move_to_next_buffer(void) {
+	if (active_index < buffer_count) active_index++; else active_index = 0;
+	working_index = active_index;
+}
+*/
+
 
 
 
