@@ -1,0 +1,154 @@
+/*
+	------------- bugs todo list ----------------
+			
+
+	- save the current position of the sn cursor before moving it for a textbox entry!
+
+
+
+
+
+
+		- found a crashing bug, to do with the filename, i think, in openfile. 
+
+
+		- rework in_prompt variable.      make part of the buffer struct. 
+
+`
+		- CRITICAL TEST:  allow the fuzzer to "resize" the window, using a command. (this could trigger a crash!)
+
+
+
+
+---- testing: ----
+
+		- do some performance testing, with large files!
+		- - (disable autosaving!)
+
+
+---- features: ----
+
+		- find any other ways we can improve the runtime performance of the editor. 
+
+		- allow the user to disable autosaving.
+
+		- allow the mode=2 commands to modify the anchor 
+
+		- allow the mode=2 commands to modify the keybindings.
+
+		- make the set-param command.
+		
+
+
+---- cleanup: ----
+
+		- get the editor down to only 1500 lines. i think its possible. 
+
+		- remove unneccessary commands. 
+
+
+
+
+	------------- editor features todo list ----------------
+
+
+
+
+
+hard    ****    -  SEARCH!!!      jump-search using regex++
+
+hard    ****    -  replace???      using jump-search using regex++      with a replace functionality?... 
+
+
+
+
+hard	***	- implment word wrapping. 
+
+hard	***	- add CORRECT scrolling code. 
+
+easy	*	- add mouse support!
+
+easy	***	- split out location and filename when saving. 
+
+easy	**	- implement programming lang interpter
+
+		- implement a copy/paste history!?!  or mulitple copy/paste registers!
+
+
+
+
+
+ ------------------ testing: ------------------------------
+
+
+
+		- fuzz test for bugs  alot more 
+
+		- test for visual bugs alot more 
+
+		- make sure that all features are working as intended.
+
+
+	x	- test anchoring system. make sure it works. 
+
+
+
+
+
+
+
+
+
+
+// delete   sb  and se?
+
+
+
+	--------------- done --------------------------
+
+
+
+
+done	 easy	**	- add the ww=0 ww_disable code everywhere.
+					x < ww     to     x < ww or not ww
+
+
+
+
+
+***	x	- fix the huge performance bug in the editor..
+			...performance is actually terrible right now. 
+
+
+		x	- - decrease the numberof context switches. they are very expensive.
+		x	- - make the status bar implemented more efficiently. 
+
+
+		x	- - make the scratch buffer implemented more efficiently. 
+
+
+
+		x	- display the *n buffer.
+		x	- get the textbox working using *n.
+		x	- get the status bar working, using *n.
+
+			- add selecting/anchor/recent logic. (only using "lal/lac").
+
+
+
+
+		x	- redo how to submit a response in the textbox. allow for new lines, somehow... i think.
+
+		x	- make sn_rows part of the buffer struct. 
+
+
+		x	-   anchor is becoming invalid after a cut. 
+
+
+
+
+	*/
+
+
+
+
