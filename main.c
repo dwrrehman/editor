@@ -87,10 +87,10 @@ static struct line* lines;
 static struct action* actions;
 
 static nat     saved, mode, autosaved, action_count, head, count, capacity, 
-	selecting,  wrap_width, tab_width,
+	selecting,  wrap_width, tab_width, line_number_width,
 
 	lcl, lcc, 	vcl, vcc,  	vol, voc,    //sbl, sbc,    sel, sec,
-	vsl, vsc, 	vdc,    	lal, lac,    swl, swc,
+	vsl, vsc, 	vdc,    	lal, lac,    //swl, swc,
 
 	show_line_numbers, fixed_wrap, use_txt_extension_when_absent
 ;
@@ -181,8 +181,8 @@ static inline void move_left(void) {
 		if (vsl) vsl--;
 		else if (vol) vol--;
 		vcc = compute_vcc();
-		if (vcc >= swc) { 
-			vsc = swc;  voc = vcc - vsc; 
+		if (vcc >= window_columns - line_number_width) { 
+			vsc = window_columns - line_number_width;  voc = vcc - vsc; 
 		} else { vsc = vcc; voc = 0; }
 	} else {
 		do lcc--; while (lcc and zero_width(lines[lcl].data[lcc]));
@@ -207,7 +207,7 @@ static inline void move_right(void) {
 		if (lcl + 1 >= count) return;
 		lcl++; lcc = 0; 
 line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
-		if (vsl + 1 < swl) vsl++; 
+		if (vsl + 1 < window_rows) vsl++; 
 		else vol++;
 	} else {
 		if (lines[lcl].data[lcc] == '\t') {
@@ -215,7 +215,7 @@ line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
 			if (vcc + tab_width - vcc % tab_width >= wrap_width and wrap_width) goto line_down;
 			do {
 				vcc++; 
-				if (vsc + 1 < swc) vsc++;
+				if (vsc + 1 < window_columns - line_number_width) vsc++;
 				else voc++;
 			} while (vcc % tab_width);
 			
@@ -223,7 +223,7 @@ line_down:	vcl++; vcc = 0; voc = 0; vsc = 0;
 			do lcc++; while (lcc < lines[lcl].count and zero_width(lines[lcl].data[lcc]));
 			if (vcc >= wrap_width and wrap_width) goto line_down;
 			vcc++; 
-			if (vsc + 1 < swc) vsc++; 
+			if (vsc + 1 < window_columns - line_number_width) vsc++; 
 			else voc++;
 		}
 	}
@@ -238,8 +238,8 @@ static inline void move_up(void) {
 	nat line_target = vcl - 1;
 	while (vcc and vcl > line_target) move_left(); 
 	do move_left(); while (vcc > vdc and vcl == line_target);
-	if (vcc >= swc) { 
-		vsc = swc; voc = vcc - vsc; 
+	if (vcc >= window_columns - line_number_width) { 
+		vsc = window_columns - line_number_width; voc = vcc - vsc; 
 	} 
 	else { vsc = vcc; voc = 0; }
 }
@@ -540,19 +540,16 @@ static inline void adjust_window_size(void) {
 		window_columns = window.ws_col - 1; 
 		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));	
 	}
-
-	const double f = floor(log10((double) count)) + 1;
-	const int line_number_digits = (int)f;
-	const nat line_number_width = show_line_numbers * (line_number_digits + 2);
-
 	//if (_.fixed_wrap and _.wrap_width != swc - 1) { _.wrap_width = swc - 1; recalculate_position(); }
 }
 
-
+/*
 static inline nat display_proper(
 	nat length, nat* total, 
 	int line_number_digits
 ) {
+	
+
 	nat sl = 0, sc = 0, vl = vol, vc = voc;
 	struct logical_state state = {0};
 	record_logical_state(&state);
@@ -561,6 +558,14 @@ static inline nat display_proper(
 		if (vcl <= state.vol and vcc <= state.voc) break;
 		move_left();
 	}
+
+
+	const double f = floor(log10((double) count)) + 1;
+	const int line_number_digits = (int)f;
+	line_number_width = show_line_numbers * (line_number_digits + 2);
+
+
+
 
  	nat line = lcl, col = lcc; 
 	require_logical_state(&state); 
@@ -629,7 +634,7 @@ static inline nat display_proper(
 	return length;
 }
 
-/*
+
 static inline void add_status(nat b) {
 
 	char status[8448] = {0};
@@ -648,31 +653,110 @@ static inline void add_status(nat b) {
 	insert_string(status, status_length);
 	jump_to(save_line, save_col);
 }
+
+//nat save_wi = working_index;
+	//working_index = active_index;
+
+	//_.sbl = 0;
+	//_.sbc = ;
+	//_.sel = ;
+	//_.sec = ;
+	//_.swl = window_rows;
+	//_.swc = window_columns - line_number_width;
+
+	//nat cursor_line = 0, cursor_col = 0;
+
+
 */
 
 static inline void display(void) {
 	adjust_window_size();
-	nat total = 0, cursor_line = 0, cursor_col = 0;
-	nat length = 6;
-	memcpy(screen, "\033[?25l", 6);
-
-	//nat save_wi = working_index;
-	//working_index = active_index;
-
-	double f = floor(log10((double) count)) + 1;
-	int line_number_digits = (int)f;
-	nat line_number_width = show_line_numbers * (line_number_digits + 2);
-
 	
-	//_.sbl = 0;
-	//_.sbc = line_number_width;
-	//_.sel = window_rows - _sn_rows;
-	//_.sec = window_columns;
-	//_.swl = _.sel - _.sbl;
-	//_.swc = _.sec - _.sbc;
+	nat length = 6;
+	memcpy(screen, "\033[?25l\033[H", 9);
 
-	length += sprintf(screen + length, "\033[%ld;%ldH", 1L, 1L); 
-	length = display_proper(length, &total, line_number_digits);
+	nat sl = 0, sc = 0, vl = vol, vc = voc;
+	struct logical_state state = {0};
+	record_logical_state(&state);
+	while (1) { 
+		if (vcl <= 0 and vcc <= 0) break;
+		if (vcl <= state.vol and vcc <= state.voc) break;
+		move_left();
+	}
+
+	const double f = floor(log10((double) count)) + 1;
+	const int line_number_digits = (int)f;
+	line_number_width = show_line_numbers * (line_number_digits + 2);
+
+ 	nat line = lcl, col = lcc; 
+	require_logical_state(&state); 
+
+	do {
+		if (line >= count) goto next_visual_line;
+
+		if (show_line_numbers and vl >= vol and vl < vol + window_rows) {
+			if (not col or (not sc and not sl)) 
+				length += sprintf(screen + length, 
+					"\033[38;5;%ldm%*ld\033[0m  ", 
+					236L + (line == lcl ? 5 : 0), line_number_digits, line
+				);
+			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
+		}
+		do {
+			if (col >= lines[line].count) goto next_logical_line;  
+			
+			char k = lines[line].data[col++];
+			if (k == '\t') {
+
+				if (vc + (tab_width - vc % tab_width) >= wrap_width and wrap_width) goto next_visual_line;
+				do { 
+					if (	vc >= voc and vc < voc + window_columns - line_number_width
+					and 	vl >= vol and vl < vol + window_rows
+					) {
+						screen[length++] = ' ';
+						sc++;
+					}
+					vc++;
+				} while (vc % tab_width);
+
+			} else {
+				if (	vc >= voc and vc < voc + window_columns - line_number_width
+				and 	vl >= vol and vl < vol + window_rows
+				and 	(sc or visual(k))
+				) { 
+					screen[length++] = k;
+					if (visual(k)) sc++;	
+				}
+				if (visual(k)) {
+					if (vc >= wrap_width and wrap_width) goto next_visual_line; 
+					vc++; 
+				} 
+			}
+
+		} while (sc < window_columns - line_number_width or col < lines[line].count);
+
+	next_logical_line:
+		line++; col = 0;
+
+	next_visual_line:
+		if (vl >= vol and vl < vol + window_rows) {
+			screen[length++] = '\033';
+			screen[length++] = '[';	
+			screen[length++] = 'K';
+			if (sl < window_rows - 1) {
+				screen[length++] = '\r';
+				screen[length++] = '\n';
+			}
+			sl++; sc = 0;
+		}
+		vl++; vc = 0; 
+	} while (sl < window_rows);
+
+	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", vsl + 1, vsc + 1 + line_number_width);
+
+	if (not fuzz) write(1, screen, (size_t) length);
+}
+
 
 	//if (save_wi == active_index) {
 	//	cursor_line = _.sbl + _.vsl + 1;
@@ -704,12 +788,10 @@ static inline void display(void) {
 	//}
 
 
-	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", cursor_line, cursor_col);
-
-	if (not fuzz) write(1, screen, (size_t) length);
+	
 
 	//working_index = save_wi;
-}
+
 
 /*
 static inline void print_above_textbox(char* message) {
@@ -779,13 +861,13 @@ static inline void create_sn_buffer(void) {
 }
 
 */
-static inline void create_empty_buffer(void) {
+//static inline void create_empty_buffer(void) {
 	//buffers = realloc(buffers, sizeof(struct buffer) * (size_t)(buffer_count + 2));
 	//buffers[buffer_count + 1] = buffers[buffer_count];
 	//working_index = active_index = buffer_count;
 	//buffer_count++;
-	initialize_buffer();
-}
+	
+//}
 /*
 
 
@@ -849,7 +931,9 @@ static inline void open_file(const char* given_filename) {
         fread(text, sizeof(char), length, file);
 	fclose(file);
 
-	create_empty_buffer();
+	//create_empty_buffer();
+	
+
 	for (size_t i = 0; i < length; i++) insert(text[i], 0);
 	free(text); 
 	saved = true; 
@@ -1743,9 +1827,6 @@ done:
 	}
 }
 
-
-
-
 #if fuzz && !use_main
 
 int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
@@ -1762,15 +1843,9 @@ int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
 #else
 
 int main(const int argc, const char** argv) {
-	//create_sn_buffer();
-
-	// adjust_window_size();
-
-	if (argc == 1) create_empty_buffer();
-	else if (argc == 2) open_file(argv[1]); else exit(1);
-
+	initialize_buffer();
+	if (argc == 2) open_file(argv[1]);
 	signal(SIGINT, handle_signal_interrupt);
-
 	editor();
 }
 

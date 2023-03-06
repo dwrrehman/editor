@@ -11,11 +11,11 @@ elif [ "clean" = "$1" ]; then
 
 
 elif [ "" = "$1" ]; then 
-	clang -g -O0 -Weverything -Wno-declaration-after-statement -fsanitize=address,undefined main.c -o editor -ferror-limit=3
+	clang -g -O0 -Weverything -Wno-declaration-after-statement -Wno-poison-system-directories -fsanitize=address,undefined main.c -o editor -ferror-limit=3
 
 
 elif [ "fuzz" = "$1" ]; then 
-	clang -g -O0 -Weverything -Wno-declaration-after-statement -fsanitize=fuzzer,address,undefined,leak main.c -o editor
+	clang -g -O0 -Weverything -Wno-declaration-after-statement -Wno-poison-system-directories -fsanitize=fuzzer,address,undefined,leak main.c -o editor
 
 
 else 

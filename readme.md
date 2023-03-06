@@ -19,11 +19,13 @@ It's features and behavior are loosely based on that of TextEdit, kakoune, ed, a
  - togglable absolute and relative line numbers 
  - copy/paste to global clipboard
  - uses an undo-tree system
- - built-in file tree explorer 
- - highly versatile "\*n buffer"
- - multiple buffers
  - smooth scrolling and mouse support                         (coming soon!)
  - No dependancies besides the C standard library.
+
+deleted:
+ - x:built-in file tree explorer;
+ - x:highly versatile "\*n buffer";
+ - x:multiple buffers;
 
 ### Other notes:
 
@@ -31,5 +33,5 @@ It's features and behavior are loosely based on that of TextEdit, kakoune, ed, a
  - line numbers are 0-based.
  - no unicode encoding besides UTF8, ever.
  - no syntax highlighting, ever.
- - no mulitple-file display besides \*n buffer, ever.
+ - no mulitple-file support at all, ever;
  - VT100 terminal based.
