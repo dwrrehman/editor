@@ -39,8 +39,8 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 
-#define reading_crash  		0
-#define running_crash  		0
+//#define reading_crash  		0
+//#define running_crash  		0
 #define fuzz 			0
 #define use_main    		1
 #define memory_safe 		1
@@ -505,7 +505,7 @@ static inline void insertdt(void) {
 }
 
 static inline void initialize_buffer(void) {
-	//todo: set all variables to zero.
+	move_top();
 
 	wrap_width = 80;     
 	tab_width = 8; 
@@ -540,134 +540,12 @@ static inline void adjust_window_size(void) {
 		window_columns = window.ws_col - 1; 
 		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));	
 	}
-	//if (_.fixed_wrap and _.wrap_width != swc - 1) { _.wrap_width = swc - 1; recalculate_position(); }
+	//if (_.fixed_wrap and _.wrap_width != window_columns - line_number_width - 1) {
+	//		 _.wrap_width = window_columns - line_number_width - 1; recalculate_position(); }
+
+	window.ws_row = 27; window.ws_col = 50;
 }
 
-/*
-static inline nat display_proper(
-	nat length, nat* total, 
-	int line_number_digits
-) {
-	
-
-	nat sl = 0, sc = 0, vl = vol, vc = voc;
-	struct logical_state state = {0};
-	record_logical_state(&state);
-	while (1) { 
-		if (vcl <= 0 and vcc <= 0) break;
-		if (vcl <= state.vol and vcc <= state.voc) break;
-		move_left();
-	}
-
-
-	const double f = floor(log10((double) count)) + 1;
-	const int line_number_digits = (int)f;
-	line_number_width = show_line_numbers * (line_number_digits + 2);
-
-
-
-
- 	nat line = lcl, col = lcc; 
-	require_logical_state(&state); 
-
-	do {
-		if (line >= count) goto next_visual_line;
-
-		if (show_line_numbers and vl >= vol and vl < vol + swl) {
-			if (not col or (not sc and not sl)) 
-				length += sprintf(screen + length, 
-					"\033[38;5;%ldm%*ld\033[0m  ", 
-					236L + (line == lcl ? 5 : 0), line_number_digits, line
-				);
-			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
-		}
-		do {
-			if (col >= lines[line].count) goto next_logical_line;  
-			
-			char k = lines[line].data[col++];
-			if (k == '\t') {
-
-				if (vc + (tab_width - vc % tab_width) >= wrap_width and wrap_width) goto next_visual_line;
-				do { 
-					if (	vc >= voc and vc < voc + swc
-					and 	vl >= vol and vl < vol + swl
-					) {
-						screen[length++] = ' ';
-						sc++;
-					}
-					vc++;
-				} while (vc % tab_width);
-
-			} else {
-				if (	vc >= voc and vc < voc + swc
-				and 	vl >= vol and vl < vol + swl
-				and 	(sc or visual(k))
-				) { 
-					screen[length++] = k;
-					if (visual(k)) sc++;	
-				}
-				if (visual(k)) {
-					if (vc >= wrap_width and wrap_width) goto next_visual_line; 
-					vc++; 
-				} 
-			}
-
-		} while (sc < swc or col < lines[line].count);
-
-	next_logical_line:
-		line++; col = 0;
-
-	next_visual_line:
-		if (vl >= vol and vl < vol + swl) {
-			screen[length++] = '\033';
-			screen[length++] = '[';	
-			screen[length++] = 'K';
-			if (*total < window_rows - 1) {
-				screen[length++] = '\r';
-				screen[length++] = '\n';
-			}
-			sl++; sc = 0; (*total)++;
-		}
-		vl++; vc = 0; 
-	} while (sl < swl);
-
-	return length;
-}
-
-
-static inline void add_status(nat b) {
-
-	char status[8448] = {0};
-	nat status_length = sprintf(status, " [wi=%ld m=%ld] [s=%ld ai=%ld bc=%ld] a[%ld %ld] c[%ld %ld] %s %c%c %s",
-		(nat) working_index, buffers[b].mode, 
-		buffers[b].selecting, active_index, buffer_count, 
-		buffers[b].lal, buffers[b].lac, buffers[b].lcl, buffers[b].lcc, buffers[b].filename,
-		buffers[b].saved ? 's' : 'e', buffers[b].autosaved ? ' ' : '*',
-		buffers[b].message
-	);
-
-	nat save_col = lcc, save_line = lcl;
-	move_top();
-	move_end();
-	while (lcc) delete(0);
-	insert_string(status, status_length);
-	jump_to(save_line, save_col);
-}
-
-//nat save_wi = working_index;
-	//working_index = active_index;
-
-	//_.sbl = 0;
-	//_.sbc = ;
-	//_.sel = ;
-	//_.sec = ;
-	//_.swl = window_rows;
-	//_.swc = window_columns - line_number_width;
-
-	//nat cursor_line = 0, cursor_col = 0;
-
-
-*/
 
 static inline void display(void) {
 	adjust_window_size();
@@ -694,7 +572,7 @@ static inline void display(void) {
 	do {
 		if (line >= count) goto next_visual_line;
 
-		if (show_line_numbers and vl >= vol and vl < vol + window_rows) {
+		if (show_line_numbers and vl >= vol and vl < vol + window_rows - 1) {
 			if (not col or (not sc and not sl)) 
 				length += sprintf(screen + length, 
 					"\033[38;5;%ldm%*ld\033[0m  ", 
@@ -710,8 +588,8 @@ static inline void display(void) {
 
 				if (vc + (tab_width - vc % tab_width) >= wrap_width and wrap_width) goto next_visual_line;
 				do { 
-					if (	vc >= voc and vc < voc + window_columns - line_number_width
-					and 	vl >= vol and vl < vol + window_rows
+					if (	vc >= voc and vc < voc + window_columns - line_number_width - 1
+					and 	vl >= vol and vl < vol + window_rows - 1
 					) {
 						screen[length++] = ' ';
 						sc++;
@@ -720,8 +598,8 @@ static inline void display(void) {
 				} while (vc % tab_width);
 
 			} else {
-				if (	vc >= voc and vc < voc + window_columns - line_number_width
-				and 	vl >= vol and vl < vol + window_rows
+				if (	vc >= voc and vc < voc + window_columns - line_number_width - 1
+				and 	vl >= vol and vl < vol + window_rows - 1
 				and 	(sc or visual(k))
 				) { 
 					screen[length++] = k;
@@ -733,7 +611,7 @@ static inline void display(void) {
 				} 
 			}
 
-		} while (sc < window_columns - line_number_width or col < lines[line].count);
+		} while (sc < window_columns - line_number_width - 1 or col < lines[line].count);
 
 	next_logical_line:
 		line++; col = 0;
@@ -743,14 +621,14 @@ static inline void display(void) {
 			screen[length++] = '\033';
 			screen[length++] = '[';	
 			screen[length++] = 'K';
-			if (sl < window_rows - 1) {
+			if (sl < window_rows - 2) {
 				screen[length++] = '\r';
 				screen[length++] = '\n';
 			}
 			sl++; sc = 0;
 		}
 		vl++; vc = 0; 
-	} while (sl < window_rows);
+	} while (sl < window_rows - 1);
 
 	length += sprintf(screen + length, "\033[%ld;%ldH\033[?25h", vsl + 1, vsc + 1 + line_number_width);
 
@@ -1004,15 +882,15 @@ static inline void emergency_save_to_file(void) {
 	printf("interrupt: emergency wrote %lldb;%ldl to %s\n\r", bytes, count, local_filename);
 }
 
-static inline void emergency_save_all_buffers(void) {
+//static inline void emergency_save_all_buffers(void) {
 	//nat save_wi = working_index;
 	//for (int i = 0; i < buffer_count + 1; i++) {
 	//	working_index = i;
-		emergency_save_to_file();
+		
 	//	sleep(1);
 	//}
 	//working_index = save_wi;
-}
+//}
 
 static inline void autosave(void) {
 	if (fuzz) return;
@@ -1053,7 +931,7 @@ static void handle_signal_interrupt(int code) {
 		code);
 
 	srand((unsigned)time(NULL));
-	emergency_save_all_buffers();
+	emergency_save_to_file();
 
 	printf("press '.' to continue running process\n\r");
 	int c = getchar(); 
@@ -1107,14 +985,11 @@ static inline void save(void) {
 }
 
 static inline void rename_file(void) {        // buggy!!!! fix me. 
-
 	if (fuzz) return;
 
 	char new[4096] = {0};
 	prompt_filename:
-
 	//prompt("rename to: ", new, sizeof new);
-
 	if (not strlen(new)) { sprintf(message, "aborted rename"); return; }
 
 	if (file_exists(new) /*and not confirmed("file already exists, overwrite", "overwrite", "no")*/) {
@@ -1129,32 +1004,23 @@ static inline void rename_file(void) {        // buggy!!!! fix me.
 }
 
 static inline void interpret_escape_code(void) {
-
 	static nat scroll_counter = 0;
 	char c = read_stdin();
-	
 	if (c == '[') {
-
 		c = read_stdin();
-
 		if (c == 'A') move_up();
 		else if (c == 'B') move_down();
 		else if (c == 'C') { move_right(); vdc = vcc; }
 		else if (c == 'D') { move_left(); vdc = vcc; }
-
 		//  TODO:   i need to completely redo the way that we scroll the screen, using mouse/trackpad scrolling. 
-
 		else if (c == 'M') {
-
 			read_stdin();
-
 			if (c == 97) {
 
 				char str[3] = {0};
 				read(0, str + 0, 1); // x
 				read(0, str + 1, 1); // y
 				//sprintf(message, "scroll reporting: [%d:%d:%d]", c, str[0], str[1]);
-
 				if (not scroll_counter) {
 					move_down();
 				}
@@ -1167,8 +1033,6 @@ static inline void interpret_escape_code(void) {
 				read(0, str + 0, 1); // x
 				read(0, str + 1, 1); // y
 				//sprintf(message, "scroll reporting: [%d:%d:%d]", c, str[0], str[1]);
-
-	
 				if (not scroll_counter) {
 					move_up();
 				}
@@ -1178,20 +1042,12 @@ static inline void interpret_escape_code(void) {
 				char str[3] = {0};
 				read(0, str + 0, 1); // x
 				read(0, str + 1, 1); // y
-
 				//sprintf(message, "mouse reporting: [%d:%d:%d].", c, str[0], str[1]);
 			}
 		}
 	} 
 }
-/*
-static inline void prompt_open(void) {
-	char new_filename[4096] = {0};
-	//prompt("open: ", new_filename, sizeof new_filename);
-	if (not strlen(new_filename)) { sprintf(message, "aborted open"); return; }
-	open_file(new_filename);
-}
-*/
+
 
 static inline void prompt_jump_line(void) {
 	char string_number[128] = {0};
@@ -1452,6 +1308,292 @@ static inline void alternate_decr(void) {
 }
 
 
+
+static inline char** split(char* string, char delim, nat* array_count) {
+
+	nat a_count = 0;
+	char** array = NULL;
+	nat start = 0, i = 0;
+	const nat length = (nat)strlen(string);
+
+	for (; i < length; i++) {
+		if (string[i] == delim) {
+			string[i] = 0;
+			if (strlen(string + start)) {
+				array = realloc(array, sizeof(char*) * (size_t)(a_count + 1));
+				array[a_count++] = strdup(string + start);
+			}
+			start = i + 1;
+		}
+	}
+
+	if (strlen(string + start)) {
+		array = realloc(array, sizeof(char*) * (size_t)(a_count + 1));
+		array[a_count++] = strdup(string + start);
+	}
+	*array_count = a_count;
+	return array;
+}
+
+
+static inline void execute(char c, char p) {
+
+#define a   if (not selecting) { lal = al; lac = ac; } 
+
+	if (mode == 1) {
+		//if (in_prompt and c == '\r') { in_prompt = false; return; }
+		if (c == 'c' and p == 'h') { undo(); mode = 2; }
+		else if (c == 27 and stdin_is_empty()) mode = 2;
+		else if (c == 27) interpret_escape_code();
+		else if (c == 127) delete(1);
+		else if (c == '\r') insert('\n', 1);
+		else insert(c, 1);
+
+	} else if (mode == 2) {
+		const nat  al = lcl,  ac = lcc;
+		if (c == ' ') {} 
+		// we should be using     (c == keys[34] and (p == keys[35] or keys[35] == 27))
+		else if (c == 'l' and p == 'e') prompt_jump_line();       
+		else if (c == 'k' and p == 'e') prompt_jump_column();     		
+		else if (c == 'i' and p == 'e') { move_bottom(); a }
+		else if (c == 'p' and p == 'e') { move_top(); a }
+		else if (c == 'n' and p == 'e') { move_begin(); a }
+		else if (c == 'o' and p == 'e') { move_end(); a }
+		else if (c == 'u' and p == 'e') alternate_decr();
+		else if (c == 'r' and p == 'h') alternate_incr();
+		else if (c == 'm' and p == 'h') copy();
+		else if (c == 'c' and p == 'h') paste(); 
+		else if (c == 'a') { selecting = not selecting; lal = al; lac = ac; }
+		else if (c == 'W') fixed_wrap = not fixed_wrap;
+		else if (c == 'd') delete(1);
+		else if (c == 'r') cut();
+		else if (c == 't') mode = 1;
+		else if (c == 'm') { mode = 3; goto command_mode; }
+		else if (c == 'c') undo();
+		else if (c == 'k') redo();
+		else if (c == 'o') { move_word_right(); a }
+		else if (c == 'l') { move_word_left(); a }
+		else if (c == 'p') { move_up(); a }
+		else if (c == 'u') { move_down(); a }
+		else if (c == 'i') { move_right(); vdc = vcc; a }
+		else if (c == 'n') { move_left(); vdc = vcc; a }
+		else if (c == 's') save();
+		else if (c == 'q') mode = 0;
+
+		else if (c == 27 and stdin_is_empty()) {}
+		else if (c == 27) interpret_escape_code();
+
+	} else if (mode == 3) {
+		command_mode: mode = 2;
+
+		char string[4096] = {0};
+		// prompt(" • ", string, sizeof string);
+		
+		nat length = (nat) strlen(string);
+		char* d = calloc((size_t) length + 1, sizeof(char));
+		nat d_length = 0;
+		
+		for (nat i = 0; i < length; i++) {
+			if ((unsigned char) string[i] < 33) continue;
+			d[d_length++] = string[i];
+		}
+
+		d[d_length] = 0;
+		nat command_count = 0;
+		char** commands = split(d, '.', &command_count);
+
+		for (int i = 0; i < command_count; i++) {
+			const char* command = commands[i];
+			     if (equals(command, "donothing")) {}
+			else if (equals(command, "datetime")) insertdt();
+			else if (equals(command, "rename")) rename_file();  
+			else if (equals(command, "save")) save();
+			else if (equals(command, "duplicate")) {/* duplicate(); */}
+			else if (equals(command, "autosave")) autosave();
+			else if (equals(command, "clearmessage")) memset(message, 0, sizeof message);
+			else if (equals(command, "numbers")) show_line_numbers = not show_line_numbers;
+			else if (equals(command, "cut")) cut();
+			else if (equals(command, "delete")) delete(1);
+			else if (equals(command, "paste")) paste();
+			else if (equals(command, "copy")) copy();
+			else if (equals(command, "undo")) undo();
+			else if (equals(command, "redo")) redo();
+			else if (equals(command, "alternateincr")) alternate_incr();
+			else if (equals(command, "alternatedecr")) alternate_decr();
+			else if (equals(command, "moveright")) { move_right(); vdc = vcc; }
+			else if (equals(command, "moveleft")) { move_left(); vdc = vcc; }
+			else if (equals(command, "moveup")) move_up();
+			else if (equals(command, "movedown")) move_down();
+			else if (equals(command, "movewordright")) move_word_right();
+			else if (equals(command, "movewordleft")) move_word_left();
+			else if (equals(command, "movebegin")) move_begin();
+			else if (equals(command, "moveend")) move_end();
+			else if (equals(command, "movetop")) move_top();
+			else if (equals(command, "movebottom")) move_bottom();
+			else if (equals(command, "jumpline")) prompt_jump_line();
+			else if (equals(command, "jumpcolumn")) prompt_jump_column();
+			else if (equals(command, "quit")) mode = 0;
+			else if (equals(command, "mode0")) mode = 0;
+			else if (equals(command, "mode1")) mode = 1;
+			else if (equals(command, "mode2")) mode = 2;
+			else if (equals(command, "goto")) {}
+			else if (equals(command, "branch")) {}
+			else if (equals(command, "incr")) {}
+			else if (equals(command, "setzero")) {}
+			else if (equals(command, "toggle_selecting")) selecting = not selecting;
+			else if (equals(command, "toggle_fixed_wrap")) fixed_wrap = not fixed_wrap;
+			else if (equals(command, "disable_wrap")) { fixed_wrap = 0; wrap_width = 0; recalculate_position(); }
+			else if (equals(command, "enable_wrap")) { fixed_wrap = 0; wrap_width = 80; recalculate_position(); }
+			else {
+				sprintf(message, "command not recognized: %s", command);
+				break;
+			}
+		}
+	
+		for (nat i = 0; i < command_count; i++) free(commands[i]);
+		free(commands);
+		free(d);
+	} else mode = 2;
+}
+
+static void* autosaver(void* unused) {
+	while (1) {
+		sleep(autosave_frequency);
+		pthread_mutex_lock(&mutex);
+		if (not mode) break;
+		if (not autosaved) autosave();
+		pthread_mutex_unlock(&mutex);
+	}
+	return unused;
+}
+
+static inline void editor(void) {
+
+	struct termios terminal;
+	static pthread_t autosave_thread;
+
+	if (not fuzz) {
+		terminal = configure_terminal();
+		write(1, "\033[?1049h\033[?1000h\033[7l", 20);
+		pthread_mutex_init(&mutex, NULL);
+		pthread_mutex_lock(&mutex);
+		pthread_create(&autosave_thread, NULL, &autosaver, NULL);
+	} 
+
+	char p = 0, c = 0;
+loop:	display();
+	c = read_stdin(); 
+	if (fuzz and not c) goto done;
+	execute(c, p);
+	p = c;
+	if (mode) goto loop;
+done:	free(screen); screen = NULL;
+	window_rows = 0; window_columns = 0;
+	if (not fuzz) {
+		write(1, "\033[?1049l\033[?1000l\033[7h", 20);	
+		tcsetattr(0, TCSAFLUSH, &terminal);
+		pthread_mutex_unlock(&mutex);
+		pthread_detach(autosave_thread);
+		pthread_mutex_destroy(&mutex);
+	}
+}
+
+#if fuzz && !use_main
+
+int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
+int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
+	create_empty_buffer();
+	fuzz_input_index = 0; 
+	fuzz_input = input;
+	fuzz_input_count = size;
+	editor();
+	return 0;
+}
+
+#else
+
+int main(const int argc, const char** argv) {
+	initialize_buffer();
+	if (argc == 2) open_file(argv[1]);
+	signal(SIGINT, handle_signal_interrupt);
+	editor();
+}
+
+#endif
+
+// ---------------------------------------------------------------------------------------------------1747 before changes
+
+
+
+
+
+
+
+
+/*
+if (reading_crash) {
+	const char* crashname = "slow-unit-b038966e9f5ed3ef1df6e108df29fe92e9fcd748";
+	// 
+	FILE* file = fopen(crashname, "r");
+	fseek(file, 0, SEEK_END);
+	size_t crash_length = (size_t) ftell(file);
+	char* crash = malloc(sizeof(char) * crash_length);
+	fseek(file, 0, SEEK_SET);
+	fread(crash, sizeof(char), crash_length, file);
+	fclose(file);
+	fuzz_input = (const uint8_t*) crash;
+	fuzz_input_count = crash_length;
+	printf("\n\n\nchar str[] = {");
+	for (size_t i = 0; i < fuzz_input_count; i++) {
+		if (not (i % 4)) printf("\n\t\t");
+		printf("0x%hhx, ", fuzz_input[i]);
+	}
+	printf("\n};\n\n\n");
+	exit(1);
+}
+	
+char str[] = {
+		0xea, 0x89, 0x3d, 0x23, 
+		0x60, 0xc9, 0x1c, 0x3c, 
+		0x1c, 0x1c, 0x1c, 0x8, 
+		0x1, 0xa, 0x88, 0x3b, 
+		0xff, 0xff, 0xff, 0x9, 
+		0x9, 0x9, 0x9, 0x25, 
+		0x9, 0x9, 0x9, 0x9, 
+		0x9, 0x48, 0x9, 0x9, 
+		0x9, 0x9, 0x9, 0x9, 
+		0x9, 0x9, 0x9, 0x9, 
+};
+
+char str[] = {0};
+
+if (running_crash) {
+	fuzz_input_index = 0; 
+	fuzz_input = (const uint8_t*) str;
+	fuzz_input_count = sizeof str;
+}
+
+
+*/
+
+
+
+
+
+//working_index = active_index;
+	//while (buffer_count) 
+
+	//close_active_buffer();
+
+	// destroy(0);
+
+
+	//free(buffers); buffers = NULL;
+
+
+
+
+
 /*
 static inline void open_directory(void) {
 	if (fuzz) return;
@@ -1530,326 +1672,150 @@ static inline void file_select(void) {
 }
 */
 
-static inline char** split(char* string, char delim, nat* array_count) {
 
-	nat a_count = 0;
-	char** array = NULL;
-	nat start = 0, i = 0;
-	const nat length = (nat)strlen(string);
 
-	for (; i < length; i++) {
-		if (string[i] == delim) {
-			string[i] = 0;
-			if (strlen(string + start)) {
-				array = realloc(array, sizeof(char*) * (size_t)(a_count + 1));
-				array[a_count++] = strdup(string + start);
-			}
-			start = i + 1;
-		}
-	}
 
-	if (strlen(string + start)) {
-		array = realloc(array, sizeof(char*) * (size_t)(a_count + 1));
-		array[a_count++] = strdup(string + start);
-	}
-	*array_count = a_count;
-	return array;
+
+
+/*
+static inline void prompt_open(void) {
+	char new_filename[4096] = {0};
+	//prompt("open: ", new_filename, sizeof new_filename);
+	if (not strlen(new_filename)) { sprintf(message, "aborted open"); return; }
+	open_file(new_filename);
 }
+*/
 
 
-static inline void execute(char c, char p) {
 
 
-#define a   if (not selecting) { lal = al; lac = ac; } 
 
 
-	if (mode == 1) {
-		//if (in_prompt and c == '\r') { in_prompt = false; return; }
-		if (c == 'c' and p == 'h') { undo(); mode = 2; }
-		else if (c == 27 and stdin_is_empty()) mode = 2;
-		else if (c == 27) interpret_escape_code();
-		else if (c == 127) delete(1);
-		else if (c == '\r') insert('\n', 1);
-		else insert(c, 1);
-
-	} else if (mode == 2) {
-
-		const nat  al = lcl,  ac = lcc;
+/*
+static inline nat display_proper(
+	nat length, nat* total, 
+	int line_number_digits
+) {
 	
-		if (c == ' ') {} 
 
-				// we should be using     (c == keys[34] and (p == keys[35] or keys[35] == 27))
+	nat sl = 0, sc = 0, vl = vol, vc = voc;
+	struct logical_state state = {0};
+	record_logical_state(&state);
+	while (1) { 
+		if (vcl <= 0 and vcc <= 0) break;
+		if (vcl <= state.vol and vcc <= state.voc) break;
+		move_left();
+	}
+
+
+	const double f = floor(log10((double) count)) + 1;
+	const int line_number_digits = (int)f;
+	line_number_width = show_line_numbers * (line_number_digits + 2);
 
 
 
-		else if (c == 'l' and p == 'e') prompt_jump_line();         // unbind this?... yeah...
-		else if (c == 'k' and p == 'e') prompt_jump_column();       // unbind this?... hmm...
-		//else if (c == 'd' and p == 'h') prompt_open();              // unbind this.?
-		//else if (c == 'f' and p == 'h') create_empty_buffer();       // unbind this.?
-		else if (c == 'l' and p == 'e') {}
-		//else if (c == 'k' and p == 'e') in_prompt = not in_prompt;
-		else if (c == 'i' and p == 'e') { move_bottom(); a }
-		else if (c == 'p' and p == 'e') { move_top(); a }
-		else if (c == 'n' and p == 'e') { move_begin(); a }
-		else if (c == 'o' and p == 'e') { move_end(); a }
-		else if (c == 'u' and p == 'e') alternate_decr();
-		else if (c == 'r' and p == 'h') alternate_incr();
-		//else if (c == 'a' and p == 'h') move_to_previous_buffer();
-		//else if (c == 's' and p == 'h') move_to_next_buffer();
-		else if (c == 'm' and p == 'h') copy();
-		else if (c == 'c' and p == 'h') paste(); 
-		else if (c == 'd' and p == 'h') {}
-		else if (c == 'a') { selecting = not selecting; lal = al; lac = ac; }
-		else if (c == 'W') fixed_wrap = not fixed_wrap;
-		else if (c == 'd') delete(1);
-		else if (c == 'r') cut();
-		else if (c == 't') mode = 1;
-		else if (c == 'm') { mode = 3; goto command_mode; }
-		else if (c == 'c') undo();
-		else if (c == 'k') redo();
-		else if (c == 'o') { move_word_right(); a }
-		else if (c == 'l') { move_word_left(); a }
-		else if (c == 'p') { move_up(); a }
-		else if (c == 'u') { move_down(); a }
-		else if (c == 'i') { move_right(); vdc = vcc; a }
-		else if (c == 'n') { move_left(); vdc = vcc; a }
 
-		/*else if (c == '-') { if (buffers[active_index].sn_rows < window_rows) buffers[active_index].sn_rows++; } // unbind this. make it a set command.
-		else if (c == '=') { if (buffers[active_index].sn_rows) buffers[active_index].sn_rows--; }               // unbind this. make it a set command.
-		
-		else if (c == '0') {
-			if (working_index == active_index) working_index = buffer_count;
-			else working_index = active_index;
-		}*/
-		else if (c == 's') save();
-		else if (c == 'q') {
-			if (saved /*or confirmed("discard unsaved changes", "discard", "no")*/) /*close_active_buffer(); */{}
+ 	nat line = lcl, col = lcc; 
+	require_logical_state(&state); 
+
+	do {
+		if (line >= count) goto next_visual_line;
+
+		if (show_line_numbers and vl >= vol and vl < vol + swl) {
+			if (not col or (not sc and not sl)) 
+				length += sprintf(screen + length, 
+					"\033[38;5;%ldm%*ld\033[0m  ", 
+					236L + (line == lcl ? 5 : 0), line_number_digits, line
+				);
+			else length += sprintf(screen + length, "%*s  " , line_number_digits, " ");
 		}
-		else if (c == 27 and stdin_is_empty()) {}
-		else if (c == 27) interpret_escape_code();
+		do {
+			if (col >= lines[line].count) goto next_logical_line;  
+			
+			char k = lines[line].data[col++];
+			if (k == '\t') {
 
-	} else if (mode == 3) {
-		command_mode: mode = 2;
-
-		char string[4096] = {0};
-		// prompt(" • ", string, sizeof string);
-		
-		nat length = (nat) strlen(string);
-		char* d = calloc((size_t) length + 1, sizeof(char));
-		nat d_length = 0;
-		
-		for (nat i = 0; i < length; i++) {
-			if ((unsigned char) string[i] < 33) continue;
-			d[d_length++] = string[i];
-		}
-
-		d[d_length] = 0;
-		nat command_count = 0;
-		char** commands = split(d, '.', &command_count);
-
-		for (int i = 0; i < command_count; i++) {
-			const char* command = commands[i];
-
-			     if (equals(command, "donothing")) {}
-			else if (equals(command, "datetime")) insertdt();
-			//else if (equals(command, "run")) prompt_run();
-			//else if (equals(command, "run")) prompt_run();
-			//else if (equals(command, "open")) prompt_open();
-			else if (equals(command, "rename")) rename_file();       // might want to check the rename_file()..... 
-			else if (equals(command, "save")) save();
-			else if (equals(command, "duplicate")) {/* duplicate(); */}
-			else if (equals(command, "autosave")) autosave();
-			//else if (equals(command, "in")) { change_directory(); undo_silent(); open_directory(); }
-			//else if (equals(command, "changedirectory")) change_directory();
-			//else if (equals(command, "opendirectory")) open_directory();
-			//else if (equals(command, "selectfile")) file_select();
-			//else if (equals(command, "openfile")) { file_select(); open_file(selected_file); }
-			//else if (equals(command, "selection")) sprintf(message, "%s", selected_file);
-			//else if (equals(command, "where")) sprintf(message, "@ %s", cwd);
-			//else if (equals(command, "home")) { getcwd(cwd, sizeof cwd); strlcat(cwd, "/", sizeof cwd); }
-			else if (equals(command, "clearmessage")) memset(message, 0, sizeof message);
-			else if (equals(command, "numbers")) show_line_numbers = not show_line_numbers;
-			//else if (equals(command, "snincr")) { if (_.sn_rows < window_rows) _.sn_rows++; }
-			//else if (equals(command, "sndecr")) { if (_.sn_rows) _.sn_rows--; } 
-			else if (equals(command, "cut")) cut();
-			else if (equals(command, "delete")) delete(1);
-			else if (equals(command, "paste")) paste();
-			else if (equals(command, "copy")) copy();
-			else if (equals(command, "undo")) undo();
-			else if (equals(command, "redo")) redo();
-			else if (equals(command, "alternateincr")) alternate_incr();
-			else if (equals(command, "alternatedecr")) alternate_decr();
-			else if (equals(command, "moveright")) { move_right(); vdc = vcc; }
-			else if (equals(command, "moveleft")) { move_left(); vdc = vcc; }
-			else if (equals(command, "moveup")) move_up();
-			else if (equals(command, "movedown")) move_down();
-			else if (equals(command, "movewordright")) move_word_right();
-			else if (equals(command, "movewordleft")) move_word_left();
-			else if (equals(command, "movebegin")) move_begin();
-			else if (equals(command, "moveend")) move_end();
-			else if (equals(command, "movetop")) move_top();
-			else if (equals(command, "movebottom")) move_bottom();
-			else if (equals(command, "jumpline")) prompt_jump_line();
-			else if (equals(command, "jumpcolumn")) prompt_jump_column();
-			//else if (equals(command, "new")) create_empty_buffer();
-			//else if (equals(command, "nextbuffer")) move_to_next_buffer();
-			//else if (equals(command, "previousbuffer")) move_to_previous_buffer();			
-			else if (equals(command, "mode0")) mode = 0;
-			else if (equals(command, "mode1")) mode = 1;
-			else if (equals(command, "mode2")) mode = 2;
-
-			else if (equals(command, "goto")) {}
-			else if (equals(command, "branch")) {}
-			else if (equals(command, "incr")) {}
-			else if (equals(command, "setzero")) {}
-
-			else if (equals(command, "toggle_selecting")) selecting = not selecting;
-			else if (equals(command, "toggle_fixed_wrap")) fixed_wrap = not fixed_wrap;
-
-			else if (equals(command, "disable_wrap")) { fixed_wrap = 0; wrap_width = 0;  recalculate_position(); }
-			else if (equals(command, "enable_wrap")) { fixed_wrap = 0; wrap_width = 80; recalculate_position(); }
-
-			else if (equals(command, "quit")) {
-				if (saved /*or confirmed("discard unsaved changes", "discard", "no")*/) 
-					/*close_active_buffer(); */ mode = 0;
+				if (vc + (tab_width - vc % tab_width) >= wrap_width and wrap_width) goto next_visual_line;
+				do { 
+					if (	vc >= voc and vc < voc + swc
+					and 	vl >= vol and vl < vol + swl
+					) {
+						screen[length++] = ' ';
+						sc++;
+					}
+					vc++;
+				} while (vc % tab_width);
 
 			} else {
-				sprintf(message, "command not recognized: %s", command);
-				break;
+				if (	vc >= voc and vc < voc + swc
+				and 	vl >= vol and vl < vol + swl
+				and 	(sc or visual(k))
+				) { 
+					screen[length++] = k;
+					if (visual(k)) sc++;	
+				}
+				if (visual(k)) {
+					if (vc >= wrap_width and wrap_width) goto next_visual_line; 
+					vc++; 
+				} 
 			}
+
+		} while (sc < swc or col < lines[line].count);
+
+	next_logical_line:
+		line++; col = 0;
+
+	next_visual_line:
+		if (vl >= vol and vl < vol + swl) {
+			screen[length++] = '\033';
+			screen[length++] = '[';	
+			screen[length++] = 'K';
+			if (*total < window_rows - 1) {
+				screen[length++] = '\r';
+				screen[length++] = '\n';
+			}
+			sl++; sc = 0; (*total)++;
 		}
-	
-		for (nat i = 0; i < command_count; i++) free(commands[i]);
-		free(commands);
-		free(d);
+		vl++; vc = 0; 
+	} while (sl < swl);
 
-	} else mode = 2;
+	return length;
 }
 
-static void* autosaver(void* unused) {
-	while (1) {
-		sleep(autosave_frequency);
-		pthread_mutex_lock(&mutex);
-		if (not mode) break;
-		if (not autosaved) autosave();
-		pthread_mutex_unlock(&mutex);
-	}
-	return unused;
+
+static inline void add_status(nat b) {
+
+	char status[8448] = {0};
+	nat status_length = sprintf(status, " [wi=%ld m=%ld] [s=%ld ai=%ld bc=%ld] a[%ld %ld] c[%ld %ld] %s %c%c %s",
+		(nat) working_index, buffers[b].mode, 
+		buffers[b].selecting, active_index, buffer_count, 
+		buffers[b].lal, buffers[b].lac, buffers[b].lcl, buffers[b].lcc, buffers[b].filename,
+		buffers[b].saved ? 's' : 'e', buffers[b].autosaved ? ' ' : '*',
+		buffers[b].message
+	);
+
+	nat save_col = lcc, save_line = lcl;
+	move_top();
+	move_end();
+	while (lcc) delete(0);
+	insert_string(status, status_length);
+	jump_to(save_line, save_col);
 }
 
-static inline void editor(void) {
-
-if (reading_crash) {
-	const char* crashname = "slow-unit-b038966e9f5ed3ef1df6e108df29fe92e9fcd748";
-	// 
-	FILE* file = fopen(crashname, "r");
-	fseek(file, 0, SEEK_END);
-	size_t crash_length = (size_t) ftell(file);
-	char* crash = malloc(sizeof(char) * crash_length);
-	fseek(file, 0, SEEK_SET);
-	fread(crash, sizeof(char), crash_length, file);
-	fclose(file);
-	fuzz_input = (const uint8_t*) crash;
-	fuzz_input_count = crash_length;
-	printf("\n\n\nchar str[] = {");
-	for (size_t i = 0; i < fuzz_input_count; i++) {
-		if (not (i % 4)) printf("\n\t\t");
-		printf("0x%hhx, ", fuzz_input[i]);
-	}
-	printf("\n};\n\n\n");
-	exit(1);
-}
-/*	
-char str[] = {
-		0xea, 0x89, 0x3d, 0x23, 
-		0x60, 0xc9, 0x1c, 0x3c, 
-		0x1c, 0x1c, 0x1c, 0x8, 
-		0x1, 0xa, 0x88, 0x3b, 
-		0xff, 0xff, 0xff, 0x9, 
-		0x9, 0x9, 0x9, 0x25, 
-		0x9, 0x9, 0x9, 0x9, 
-		0x9, 0x48, 0x9, 0x9, 
-		0x9, 0x9, 0x9, 0x9, 
-		0x9, 0x9, 0x9, 0x9, 
-};*/
-
-char str[] = {0};
-
-if (running_crash) {
-	fuzz_input_index = 0; 
-	fuzz_input = (const uint8_t*) str;
-	fuzz_input_count = sizeof str;
-}
-	struct termios terminal;
-	static pthread_t autosave_thread;
-
-	if (not fuzz) {
-		terminal = configure_terminal();
-		write(1, "\033[?1049h\033[?1000h\033[7l", 20);
-		pthread_mutex_init(&mutex, NULL);
-		pthread_mutex_lock(&mutex);
-		pthread_create(&autosave_thread, NULL, &autosaver, NULL);
-	} 
-
-	char p = 0, c = 0;
-    	//getcwd(cwd, sizeof cwd);
-	//strlcat(cwd, "/", sizeof cwd);
-
-loop:	display();
-	c = read_stdin(); 
-	if (fuzz and not c) goto done;
-	execute(c, p);
-	p = c;
-	if (mode) goto loop;
-done:	
+//nat save_wi = working_index;
 	//working_index = active_index;
-	//while (buffer_count) 
 
-	//close_active_buffer();
+	//_.sbl = 0;
+	//_.sbc = ;
+	//_.sel = ;
+	//_.sec = ;
+	//_.swl = window_rows;
+	//_.swc = window_columns - line_number_width;
 
-	// destroy(0);
+	//nat cursor_line = 0, cursor_col = 0;
 
 
-	//free(buffers); buffers = NULL;
-	free(screen);  screen = NULL;
-	//buffer_count = 0;
-	//active_index = 0;	
-	window_rows = 0;
-	window_columns = 0;
-	//in_prompt = false;
+*/
 
-	if (not fuzz) {
-		write(1, "\033[?1049l\033[?1000l\033[7h", 20);	
-		tcsetattr(0, TCSAFLUSH, &terminal);
-		pthread_mutex_unlock(&mutex);
-		pthread_detach(autosave_thread);
-		pthread_mutex_destroy(&mutex);
-	}
-}
 
-#if fuzz && !use_main
-
-int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size);
-int LLVMFuzzerTestOneInput(const uint8_t *input, size_t size) {
-	//create_sn_buffer();
-	create_empty_buffer();
-	fuzz_input_index = 0; 
-	fuzz_input = input;
-	fuzz_input_count = size;
-	editor();
-	return 0;
-}
-
-#else
-
-int main(const int argc, const char** argv) {
-	initialize_buffer();
-	if (argc == 2) open_file(argv[1]);
-	signal(SIGINT, handle_signal_interrupt);
-	editor();
-}
-
-#endif
-
-// ---------------------------------------------------------------------------------------------------1747 before changes
 
