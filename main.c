@@ -4,7 +4,7 @@
 //     Designed with reliability, minimalism, 
 //     simplicity, and ergonimics in mind.
 //
-//          tentatively named:   "...?".
+//          currently unnamed
 //
 // -------------------------------------------
 //
@@ -19,6 +19,10 @@
 //	   debugged on 2209121.211839
 //           edited on 2303061.005150
 //
+/*
+	bugs:     crashing bug:   open_file,    performance bug: long lines.    
+*/
+
 #include <iso646.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -481,7 +485,6 @@ static inline void initialize_buffer(void) {
 	lines = calloc(1, sizeof(struct line));
 	actions = calloc(1, sizeof(struct action));
 
-	
 	fixed_wrap = 1;
 	show_line_numbers = 1; 
 	saved = 1;
@@ -636,7 +639,7 @@ static inline void open_file(const char* given_filename) {
 	sprintf(message, "read %lub", length);
 }
 
-static inline void emergency_save_to_file(void) {
+static inline void emergency_save_to_file(void) { // todo: remove this. 
 	if (fuzz) return;
 
 	char dt[16] = {0};
@@ -671,7 +674,7 @@ static inline void emergency_save_to_file(void) {
 	printf("interrupt: emergency wrote %lldb;%ldl to %s\n\r", bytes, count, local_filename);
 }
 
-static inline void autosave(void) {
+static inline void autosave(void) {    // todo: make this not use threads anymore. 
 	if (fuzz) return;
 
 	char dt[16] = {0};
@@ -702,7 +705,7 @@ static inline void autosave(void) {
 	autosaved = 1;
 }
 
-static void handle_signal_interrupt(int code) {
+static void handle_signal_interrupt(int code) {   // have the program ignore interrupts. 
 	if (fuzz) exit(1);
 
 	printf(	"interrupt: caught signal SIGINT(%d), "
@@ -718,7 +721,7 @@ static void handle_signal_interrupt(int code) {
 }
 
 
-static inline void save(void) {
+static inline void save(void) {  // abort the save if the user has not specified a file. to save an unnamed file, theyll use the create command.
 	if (fuzz) return;
 
 	if (not strlen(filename)) {
@@ -778,7 +781,7 @@ static inline void rename_file(void) {        // buggy!!!! fix me.
 	}
 }
 */
-static inline void interpret_escape_code(void) {
+static inline void interpret_escape_code(void) {         // get scrolling and mouse support working. please. its critical feature.
 	static nat scroll_counter = 0;
 	char c = read_stdin();
 	if (c == '[') {
@@ -823,7 +826,7 @@ static inline void interpret_escape_code(void) {
 }
 
 
-static inline void prompt_jump_line(void) {
+static inline void prompt_jump_line(void) {                // instead, require the user to issue the "line XXX" command.
 	char string_number[128] = {0};
 	//prompt("line: ", string_number, sizeof string_number);
 	nat line = atoi(string_number);
@@ -832,7 +835,7 @@ static inline void prompt_jump_line(void) {
 	sprintf(message, "jumped to %ld %ld", lcl, lcc);
 }
 
-static inline void prompt_jump_column(void) {
+static inline void prompt_jump_column(void) {            // instead reqiure the user to issue the "column XXXX" command.
 	char string_number[128] = {0};
 	//prompt("column: ", string_number, sizeof string_number);
 	nat column = atoi(string_number);
@@ -974,7 +977,7 @@ anchor_first:
 	while (lal < lcl or lac < lcc) delete(0);
 }
 
-static inline void cut(void) { 
+static inline void cut(bool should_execute) { 
 	if (lal >= count or lac > lines[lal].count) return;
 	struct action new = {0};
 	record_logical_state(&new.pre);
@@ -987,22 +990,11 @@ static inline void cut(void) {
 	new.text = deleted_string;
 	new.length = deleted_length;
 	create_action(new);
-}
 
-static inline void submit(void) { 
-	if (lal >= count or lac > lines[lal].count) return;
-	struct action new = {0};
-	record_logical_state(&new.pre);
-	nat response_length = 0;
-	char* response = get_selection(&response_length);
-	cut_selection();
-	user_response = response;
-	user_response_length = response_length;
-	record_logical_state(&new.post);
-	new.type = cut_action;
-	new.text = response;
-	new.length = response_length;
-	create_action(new);
+	if (not deleted_length) insert_string(message, (nat) strlen(message));
+	else if (should_execute) {
+		// execute the command "deleted_string:deleted_length". 
+	}
 }
 
 static inline void copy(void) {
@@ -1045,7 +1037,7 @@ static inline void undo(void) {
 	head = actions[head].parent;
 }
 
-static inline void redo(void) {
+static inline void redo(void) {                      how do we make an undo/redo tell you iff there is a tree node in the undo tree?...
 	if (not actions[head].count) return;
 	head = actions[head].children[actions[head].choice];
 	replay_action(actions[head]);
@@ -1075,24 +1067,36 @@ static inline void execute(char c, char p) {
 
 	} else if (mode == 2) {
 		const nat al = lcl, ac = lcc;
+
 		if (c == ' ') {} 
-		else if (c == 'l' and p == 'e') prompt_jump_line();       
-		else if (c == 'k' and p == 'e') prompt_jump_column();     		
+
+		else if (c == 'l' and p == 'e') {}   // 
+		else if (c == 'k' and p == 'e') {}
 		else if (c == 'i' and p == 'e') { move_bottom(); a }
 		else if (c == 'p' and p == 'e') { move_top(); a }
 		else if (c == 'n' and p == 'e') { move_begin(); a }
 		else if (c == 'o' and p == 'e') { move_end(); a }
+
 		else if (c == 'u' and p == 'e') alternate_decr();
 		else if (c == 'r' and p == 'h') alternate_incr();
+
 		else if (c == 'm' and p == 'h') copy();
 		else if (c == 'c' and p == 'h') paste(); 
-		else if (c == 'a') { selecting = not selecting; lal = al; lac = ac; }
-		else if (c == 'W') fixed_wrap = not fixed_wrap;
+		else if (c == 't' and p == 'h') {}             //submit response!
+		else if (c == 's' and p == 'h') {}
+		else if (c == 'a' and p == 'h') {}      // swap anchors?...
+		else if (c == 'd' and p == 'h') {}
+
+
+
+		else if (c == 'a') { selecting = not selecting; lal = al; lac = ac; }		
+		else if (c == 's') save();
 		else if (c == 'd') delete(1);
-		else if (c == 'r') cut();
+		else if (c == 'r') cut(0);
 		else if (c == 't') mode = 1;
-		else if (c == 'm') insert_string(message, (nat) strlen(message));
 		else if (c == 'c') undo();
+		else if (c == 'm') cut(1) 
+
 		else if (c == 'k') redo();
 		else if (c == 'o') { move_word_right(); a }
 		else if (c == 'l') { move_word_left(); a }
@@ -1100,37 +1104,25 @@ static inline void execute(char c, char p) {
 		else if (c == 'u') { move_down(); a }
 		else if (c == 'i') { move_right(); vdc = vcc; a }
 		else if (c == 'n') { move_left(); vdc = vcc; a }
-		else if (c == 's') save();
+		
+		
+		else if (c == '#') fixed_wrap = not fixed_wrap;   // rebind this one.
+ 
 		else if (c == 'q') { if (saved) mode = 0; }
 		else if (c == 27 and stdin_is_empty()) {}
 		else if (c == 27) interpret_escape_code();
+
+
 	} else mode = 2;
 }
 
-static void* autosaver(void* unused) {
-	while (1) {
-		sleep(autosave_frequency);
-		pthread_mutex_lock(&mutex);
-		if (not mode) break;
-		if (not autosaved) autosave();
-		pthread_mutex_unlock(&mutex);
-	} 
-	return unused;
-}
 
 static inline void editor(void) {
-
 	struct termios terminal;
-	static pthread_t autosave_thread;
-
 	if (not fuzz) {
 		terminal = configure_terminal();
 		write(1, "\033[?1049h\033[?1000h\033[7l", 20);
-		pthread_mutex_init(&mutex, NULL);
-		pthread_mutex_lock(&mutex);
-		pthread_create(&autosave_thread, NULL, &autosaver, NULL);
 	} 
-
 	char p = 0, c = 0;
 loop:	display();
 	c = read_stdin(); 
@@ -1143,9 +1135,6 @@ done:	free(screen); screen = NULL;
 	if (not fuzz) {
 		write(1, "\033[?1049l\033[?1000l\033[7h", 20);	
 		tcsetattr(0, TCSAFLUSH, &terminal);
-		pthread_mutex_unlock(&mutex);
-		pthread_detach(autosave_thread);
-		pthread_mutex_destroy(&mutex);
 	}
 }
 
@@ -1174,7 +1163,67 @@ int main(const int argc, const char** argv) {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // ---------------------------------------------------------------------------------------------------1747 before changes
+
+//static pthread_t autosave_thread;
+
+//pthread_mutex_init(&mutex, NULL);
+		//pthread_mutex_lock(&mutex);
+		//pthread_create(&autosave_thread, NULL, &autosaver, NULL);
+
+
+//pthread_mutex_unlock(&mutex);
+		//pthread_detach(autosave_thread);
+		//pthread_mutex_destroy(&mutex);
+
+
+
+
+/*
+static void autosaver(void) {
+	while (1) {
+		//sleep(autosave_frequency);
+		//pthread_mutex_lock(&mutex);
+		//if (not mode) break;
+
+		if (not autosaved) autosave();
+
+		//pthread_mutex_unlock(&mutex);
+	} 
+}
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
