@@ -1,14 +1,11 @@
-// simplified rewrite of the text editor by dwrr on 2304307.024007
-#include <iso646.h>
+#include <iso646.h>     
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-#include <math.h>
 #include <time.h>
-#include <ctype.h>
-#include <errno.h>
+#include <errno.h>      // simplified rewrite of the text editor by dwrr on 2304307.024007
 #include <signal.h>
 #include <unistd.h>
 #include <termios.h>
@@ -19,19 +16,17 @@
 
 typedef uint64_t nat;
 struct word { char* data; nat count; };
-
 static nat m = 0, n = 0, cm = 0, cn = 0, om = 0, on = 0, window_rows = 0, window_columns = 0, mode = 0, cursor_column = 0, cursor_row = 0;
 static struct word* text = NULL;
 static char* screen = NULL;
 
-static bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2;  }
-
+static bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2; }
 static bool stdin_is_empty(void) {
 	fd_set f;
 	FD_ZERO(&f);
-	FD_SET(STDIN_FILENO, &f);
+	FD_SET(0, &f);
 	struct timeval timeout = {0};
-	return select(1, &f, NULL, NULL, &timeout) != 1;
+	return select(1, &f, 0, 0, &timeout) != 1;
 }
 
 static struct termios configure_terminal(void) {
@@ -50,28 +45,15 @@ static struct termios configure_terminal(void) {
 	return save;
 }
 
-static void move_right(void) {
-	if (cm < text[cn].count) cm++; 
-	else if (cn < n - 1) { cm = 1; cn++; }
-}
-
-static void move_left(void) {
-	if (cm > 1) cm--; 
-	else if (cn) { cn--; cm = text[cn].count; }
-	else if (cn == 0 and cm == 1) cm = 0;
-}
-
 static void insert(char c) {
-	if (cm == m)  { 
+	 if (cm == m or cn == n) {
 		text = realloc(text, (n + 1) * sizeof *text);
 		memmove(text + cn + 1, text + cn, (n - cn) * sizeof *text);
-		n++;
-		cn++; 
+		if (cn < n) cn++; 
 		text[cn].data = malloc(m);
 		text[cn].data[0] = c;
 		text[cn].count = 1;
-		cm = 1;
-
+		n++; cm = 1;
 	} else if (text[cn].count < m) { 
 		memmove(text[cn].data + cm + 1, text[cn].data + cm, text[cn].count - cm);
 		text[cn].data[cm++] = c;
@@ -80,7 +62,6 @@ static void insert(char c) {
 		text = realloc(text, (n + 1) * sizeof *text);
 		memmove(text + cn + 1, text + cn, (n - cn) * sizeof *text);
 		n++;
-
 		text[cn + 1].data = malloc(m);
 		memmove(text[cn + 1].data, text[cn].data + cm, text[cn].count - cm);
 		text[cn + 1].count = text[cn].count - cm;
@@ -96,15 +77,14 @@ static bool delete(void) {
 		bool b = zero_width(text[cn].data[cm]);
 		memmove(text[cn].data + cm, text[cn].data + cm + 1, text[cn].count - cm);
 		if (text[cn].count) return b;
-		if (not cn) return 0;
+		if (not cn) return b;
 		n--;
 		memmove(text + cn, text + cn + 1, (n - cn) * sizeof *text);
 		text = realloc(text, n * sizeof *text); 
 		cn--;
 		cm = text[cn].count;
 		return b;
-
-	} else if (text[cn].count) {
+	} else if (cn < n and text[cn].count) {
 		if (not cn) return 0;
 		cn--;
 		cm = text[cn].count;
@@ -112,16 +92,18 @@ static bool delete(void) {
 	} else return 0;
 }
 
-static void move_left_char(void) {
-	do move_left(); while (
-		cm  < text[cn].count and zero_width(text[cn].data[cm]) or
+static void move_left(void) {
+	do 
+	if (cm) cm--; else if (cn) { cn--; cm = text[cn].count - 1; }
+	while ( cm  < text[cn].count and zero_width(text[cn].data[cm]) or
 		cm >= text[cn].count and cn + 1 < n and zero_width(text[cn + 1].data[0])
 	);
 }
 
-static void move_right_char(void) {
-	do move_right(); while (
-		cm  < text[cn].count and zero_width(text[cn].data[cm]) or
+static void move_right(void) {
+	do 
+	if (cm < text[cn].count) cm++; else if (cn < n - 1) { cn++; cm = 1; }
+	while ( cm  < text[cn].count and zero_width(text[cn].data[cm]) or
 		cm >= text[cn].count and cn + 1 < n and zero_width(text[cn + 1].data[0])
 	);
 }
@@ -139,52 +121,43 @@ static inline void adjust_window_size(void) {
 
 static void display(void) {
 	adjust_window_size();
-	
-	//nat im = om, in = on;
 	nat screen_column = 0, screen_row = 0;
-
-	cursor_column = 0;
-	cursor_row = 0;
-
+	cursor_column = 0; cursor_row = 0;
 	nat i = 0, j = 0;
 	int length = 9;
 	memcpy(screen, "\033[?25l\033[H", 9);
 
 	for (i = 0; i < n; i++) {
-		for (j = 0; j <= m; j++) {
-
-			if (i == cn and j == cm) {
-				cursor_row = screen_row;
-				cursor_column = screen_column;
-			}
+		for (j = 0; j <= m; ) {
 			if (i >= n) break;
+			if (i == cn and j == cm) { cursor_row = screen_row; cursor_column = screen_column; }
 			if (j >= text[i].count) break;
 			const char c = text[i].data[j];
-			
-			if (c == 10) goto print_newline;
+
+			if (c == 10) { j++; goto print_newline; }
 			if (c == 9) {
 				do {
-					if (screen_column >= window_columns) goto print_newline;
+					if (screen_column < window_columns) screen_column++; else { j++; goto print_newline; }
 					length += sprintf(screen + length, " ");
-					screen_column++;
 				} while (screen_column % 8);
 			} else {
+				if (not zero_width(c)) {
+					if (screen_column < window_columns) screen_column++; else goto print_newline;
+				}
 				length += sprintf(screen + length, "%c", c);
-				if (not zero_width(c)) screen_column++;				
 			}
-
-			if (screen_column == window_columns) {
-				print_newline:
-				screen[length++] = '\033';
-				screen[length++] = '[';
-				screen[length++] = 'K';
-				if (screen_row < window_rows - 1) {
-					screen[length++] = '\r';
-					screen[length++] = '\n';
-				} else goto print_cursor;
-				screen_row++;
-				screen_column = 0;
-			}
+			j++;
+			continue;
+			print_newline:
+			screen[length++] = '\033';
+			screen[length++] = '[';
+			screen[length++] = 'K';
+			if (screen_row < window_rows - 1) {
+				screen[length++] = '\r';
+				screen[length++] = '\n';
+			} else goto print_cursor;
+			screen_row++;
+			screen_column = 0;
 		}
 	}
 	if (screen_row < window_rows) goto print_newline;
@@ -193,7 +166,51 @@ static void display(void) {
 	write(1, screen, (size_t) length);
 }
 
+int main(void) {
+	m = 10; n = 0; mode = 1;
+	struct termios terminal = configure_terminal();
+	write(1, "\033[?1049h\033[?1000h\033[7l\033[r", 23);
+	char c = 0; bool scroll = false;
+loop:	if (not scroll) display(); else scroll = false;
+	read(0, &c, 1);
+	if (c == 27 and stdin_is_empty()) mode = 0;
+	else if (c == 27) {
+		read(0, &c, 1);  if (c != '[') goto loop; read(0, &c, 1);
+		     if (c == 'D') move_left();
+		else if (c == 'C') move_right();
+		else if (c == 'M') {
+			read(0, &c, 1);
+			if (c == 97) { read(0, &c, 1); read(0, &c, 1); write(1, "\033D", 2); /*display_bottom_row();*/ } 
+			else if (c == 96) { read(0, &c, 1); read(0, &c, 1); write(1, "\033M", 2); /*display_top_row();*/ } 
+			else { char str[3] = {0}; read(0, str + 0, 1); read(0, str + 1, 1); }
+		}
+	}
+	else if (c == 127) while (delete());
+	else if (c == 13) insert(10);
+	else insert(c);
+	if (mode) goto loop;
+	write(1, "\033[?1049l\033[?1000l\033[7h", 20);
+	tcsetattr(0, TCSAFLUSH, &terminal);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 static void display_bottom_row(void) {
+	return;
 	adjust_window_size();
 		
 	int length = 6;
@@ -218,49 +235,125 @@ static void display_top_row(void) {
 	write(1, screen, (size_t) length);
 }
 
-int main(void) { //  int argc, const char** argv
-	m = 10; n = 1; mode = 1;
-	struct termios terminal = configure_terminal();
-	write(1, "\033[?1049h\033[?1000h\033[7l\033[r", 23);
-	text = malloc(sizeof *text);
-	text->data = malloc(m);
-	text->count = 0;
-	char c = 0;
-	nat scroll = 0;
 
-loop:	if (not scroll) display(); 
-	else if (scroll == 1) display_top_row();
-	else if (scroll == 2) display_bottom_row();
-	scroll = 0;
-	read(0, &c, 1);
-	if (c == 'Q') goto done;
-	else if (c == 27 and stdin_is_empty()) mode = 0;
-	else if (c == 27) {
-		read(0, &c, 1);  if (c != '[') goto loop; read(0, &c, 1);
-		     if (c == 'D') move_left_char();
-		else if (c == 'C') move_right_char();
-		else if (c == 'M') {
-			read(0, &c, 1);
-			if (c == 97) {
-				read(0, &c, 1); read(0, &c, 1); write(1, "\033D", 2);
-				scroll = 2;
-			} else if (c == 96) {
-				read(0, &c, 1); read(0, &c, 1); write(1, "\033M", 2);
-				scroll = 1;
-			} else {
-				char str[3] = {0};
-				read(0, str + 0, 1);
-				read(0, str + 1, 1);
-			}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+//	2. vertical scrolling, and vertical SMOOTH scrolling by moving origin
+
+
+
+
+
+
+
+
+
+/*
+
+[a] [b] [c] [d] {-}
+[-] [-] [-] [-] [-]
+
+
+
+
+
+
+static void debug_display(void) {
+	printf("\033[H\033[J");
+	printf("displaying the text { (m=%llu,n=%llu)(cm=%llu,cn=%llu) }: \n", m, n, cm, cn);
+	for (nat i = 0; i < n; i++) {
+		printf("%-3llu %c ", i, i == cn ? '*' : ':' );
+		printf("%-3llu", text[i].count);
+		if (i and not text[i].count) abort();
+		for (nat j = 0; j < m; j++) {
+			putchar(j == cm and i == cn ? '[' : ' ');
+			if (j < text[i].count) 
+				{ if (((unsigned char)text[i].data[j]) >> 7) 
+					printf("(%02hhx)", (unsigned char) text[i].data[j]); 
+				else printf("%c", text[i].data[j]);  }
+			else  printf("-");
+			putchar(j == cm and i == cn ? ']' : ' ');
 		}
+		puts(" | ");
 	}
-	else if (c == 127) while (delete());
-	else if (c == 13) insert(10);
-	else insert(c);
-	if (mode) goto loop;
-	done: write(1, "\033[?1049l\033[?1000l\033[7h", 20);
-	tcsetattr(0, TCSAFLUSH, &terminal);
+	puts(".");
+	printf("(cm=%llu,cn=%llu): ", cm, cn);
 }
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1103,6 +1196,32 @@ static inline void display(void) {
 */
 	
 
+
+
+
+
+
+
+  ////bug:     this case shouldnt exist:   we should be sitting at the cn+1  cm=0   position when we are at the end of the previous line. ie move instantly. make moveright and movelft do this too!   dont avoid the 0th position. 
+
+
+
+
+
+
+
+/*
+	if (cm == m)  {
+		text = realloc(text, (n + 1) * sizeof *text);
+		memmove(text + cn + 1, text + cn, (n - cn) * sizeof *text);
+		n++;
+		cn++; 
+		text[cn].data = malloc(m);
+		text[cn].data[0] = c;
+		text[cn].count = 1;
+		cm = 1;
+	} else 
+*/
 
 
 
