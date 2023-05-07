@@ -13,18 +13,14 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
-
 typedef uint64_t nat;
 struct word { char* data; nat count; };
-static nat m = 0, n = 0, cm = 0, cn = 0, om = 0, on = 0, window_rows = 0, window_columns = 0, mode = 0, cursor_column = 0, cursor_row = 0;
+static nat m = 0, n = 0, cm = 0, cn = 0, mode = 0;
 static struct word* text = NULL;
-static char* screen = NULL;
 
 static bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2; }
 static bool stdin_is_empty(void) {
-	fd_set f;
-	FD_ZERO(&f);
-	FD_SET(0, &f);
+	fd_set f; FD_ZERO(&f); FD_SET(0, &f);
 	struct timeval timeout = {0};
 	return select(1, &f, 0, 0, &timeout) != 1;
 }
@@ -33,14 +29,9 @@ static struct termios configure_terminal(void) {
 	struct termios save = {0};
 	tcgetattr(0, &save);
 	struct termios raw = save;
-	raw.c_oflag &= ~( (unsigned long)OPOST );
-	raw.c_iflag &= ~( (unsigned long)BRKINT 
-			| (unsigned long)ICRNL 
-			| (unsigned long)INPCK 
-			| (unsigned long)IXON );
-	raw.c_lflag &= ~( (unsigned long)ECHO 
-			| (unsigned long)ICANON 
-			| (unsigned long)IEXTEN );
+	//raw.c_oflag &= ~((size_t)OPOST);
+	//raw.c_iflag &= ~((size_t)BRKINT | (size_t)ICRNL | (size_t)INPCK | (size_t)IXON);
+	raw.c_lflag &= ~((size_t)ECHO | (size_t)ICANON | (size_t)IEXTEN);
 	tcsetattr(0, TCSAFLUSH, &raw);
 	return save;
 }
@@ -54,7 +45,7 @@ static void insert(char c) {
 		text[cn].data[0] = c;
 		text[cn].count = 1;
 		n++; cm = 1;
-	} else if (text[cn].count < m) { 
+	} else if (text[cn].count < m) {
 		memmove(text[cn].data + cm + 1, text[cn].data + cm, text[cn].count - cm);
 		text[cn].data[cm++] = c;
 		text[cn].count++;
@@ -70,100 +61,139 @@ static void insert(char c) {
 	}
 }
 
-static bool delete(void) {
-	if (cm) {
-		delete_char: cm--;
+static char delete(void) {
+	top: if (cm) {
+		cm--;
+		char c = text[cn].data[cm];
 		text[cn].count--;
-		bool b = zero_width(text[cn].data[cm]);
 		memmove(text[cn].data + cm, text[cn].data + cm + 1, text[cn].count - cm);
-		if (text[cn].count) return b;
-		if (not cn) return b;
+		if (text[cn].count) goto r;
 		n--;
 		memmove(text + cn, text + cn + 1, (n - cn) * sizeof *text);
-		text = realloc(text, n * sizeof *text); 
+		text = realloc(text, n * sizeof *text);
+		if (not n or not cn) goto r;
 		cn--;
 		cm = text[cn].count;
-		return b;
+		r: return c;
 	} else if (cn < n and text[cn].count) {
 		if (not cn) return 0;
 		cn--;
 		cm = text[cn].count;
-		goto delete_char;
+		goto top;
 	} else return 0;
 }
 
 static void move_left(void) {
-	do 
-	if (cm) cm--; else if (cn) { cn--; cm = text[cn].count - 1; }
+	if (not n) return;
+	do if (cm) cm--; else if (cn) { cn--; cm = text[cn].count - 1; }
 	while ( cm  < text[cn].count and zero_width(text[cn].data[cm]) or
 		cm >= text[cn].count and cn + 1 < n and zero_width(text[cn + 1].data[0])
 	);
 }
 
 static void move_right(void) {
-	do 
-	if (cm < text[cn].count) cm++; else if (cn < n - 1) { cn++; cm = 1; }
+	if (not n) return;
+	do if (cm < text[cn].count) cm++; else if (cn < n - 1) { cn++; cm = 1; }
 	while ( cm  < text[cn].count and zero_width(text[cn].data[cm]) or
 		cm >= text[cn].count and cn + 1 < n and zero_width(text[cn + 1].data[0])
 	);
 }
 
-static inline void adjust_window_size(void) {
-	static struct winsize window = {0}; 
+static char* screen = NULL;
+static nat screen_size = 0, window_rows = 0, window_columns = 0;
+static nat cursor_column = 0, cursor_row = 0;
+static nat om = 0, on = 0;
+
+static void move_origin_backwards(void) {
+	if (not n) return;            
+
+	
+		  /// ALSO make this code not buggy as heck. it doesnt print the top line until you are on it, and it doesnt move through softwrapped lines properly. we need to be keeping track of the cursor_column, cursor_row, and calculating the visual position based on the characters we move over.
+
+
+
+	do do if (om) om--; else if (on) { on--; om = text[on].count - 1; } else goto done;
+		while ( om  < text[on].count and zero_width(text[on].data[om]) or
+			om >= text[on].count and on + 1 < n and zero_width(text[on + 1].data[0])
+		);
+	while (   om  < text[on].count and text[on].data[om] != 10 or
+		  om >= text[on].count and on + 1 < n and text[on + 1].data[0] != 10
+	); done:;
+}
+
+static void display(nat first_row_only) {
+	
+	static struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
-	if (window.ws_row == 0 or window.ws_col == 0) { window.ws_row = 27; window.ws_col = 70; }
+	if (not window.ws_row or not window.ws_col) { window.ws_row = 24; window.ws_col = 60; }
 	if (window.ws_row != window_rows or window.ws_col != window_columns) {
 		window_rows = window.ws_row;
 		window_columns = window.ws_col - 1; 
-		screen = realloc(screen, (size_t) (window_rows * window_columns * 4));	
+		screen_size = 32 + window_rows * (window_columns * 4 + 5);
+		screen = realloc(screen, (size_t) screen_size);
 	}
-}
+	nat screen_column = 0, screen_row = 0; bool should_move_origin_forwards = false;
+	int length = snprintf(screen, screen_size, "\033[?25l\033[H");
+	if (cursor_row == window_rows - 1) should_move_origin_forwards = true;
+	//if (not cursor_row) move_origin_backwards();
 
-static void display(void) {
-	adjust_window_size();
-	nat screen_column = 0, screen_row = 0;
-	cursor_column = 0; cursor_row = 0;
-	nat i = 0, j = 0;
-	int length = 9;
-	memcpy(screen, "\033[?25l\033[H", 9);
+	nat i = on, j = om;        
+	while (i <= n) {            
 
-	for (i = 0; i < n; i++) {
-		for (j = 0; j <= m; ) {
-			if (i >= n) break;
+
+
+
+				    ////THIS CODE SUCKS. make it more idiomatic. and simpler. and fix this bug where the veiw doesnt shift until theres a single character on that line. thats so dumb. yeah. fix that. 
+
+
+
+
+
+		while (j <= m) {
 			if (i == cn and j == cm) { cursor_row = screen_row; cursor_column = screen_column; }
-			if (j >= text[i].count) break;
+			if (i >= n or j >= text[i].count) break;
 			const char c = text[i].data[j];
-
-			if (c == 10) { j++; goto print_newline; }
-			if (c == 9) {
+			if (c == 10) {
+				if (first_row_only == 1) goto print_cursor; j++; goto print_newline; 
+			} else if (c == 9) {
 				do {
 					if (screen_column < window_columns) screen_column++; else { j++; goto print_newline; }
-					length += sprintf(screen + length, " ");
+					length += snprintf(screen + length, screen_size, " ");
 				} while (screen_column % 8);
 			} else {
 				if (not zero_width(c)) {
 					if (screen_column < window_columns) screen_column++; else goto print_newline;
 				}
-				length += sprintf(screen + length, "%c", c);
+				length += snprintf(screen + length, screen_size, "%c", c);
 			}
-			j++;
-			continue;
-			print_newline:
-			screen[length++] = '\033';
-			screen[length++] = '[';
-			screen[length++] = 'K';
-			if (screen_row < window_rows - 1) {
-				screen[length++] = '\r';
-				screen[length++] = '\n';
-			} else goto print_cursor;
-			screen_row++;
-			screen_column = 0;
+			j++; continue;
+			print_newline: length += snprintf(screen + length, screen_size, "\033[K");
+			if (screen_row >= window_rows - 1) goto print_cursor;
+			length += snprintf(screen + length, screen_size, "\r\n");
+			screen_row++; screen_column = 0;
+			if (should_move_origin_forwards and screen_row == 1) {
+				screen_row = 0; length = 9; should_move_origin_forwards = false;
+				on = i; om = j;
+			}
 		}
+		i++; j = 0; 
 	}
 	if (screen_row < window_rows) goto print_newline;
-	print_cursor: 
-	length += sprintf(screen + length, "\033[%llu;%lluH\033[?25h", cursor_row + 1, cursor_column + 1);
+	print_cursor: length += snprintf(screen + length, screen_size, "\033[%llu;%lluH\033[?25h", cursor_row + 1, cursor_column + 1);
 	write(1, screen, (size_t) length);
+}
+
+static void interpret_sequence(bool* scroll) {
+	char c = 0; read(0, &c, 1);  
+	if (c != '[') return; read(0, &c, 1);
+	if (c == 'D') move_left();
+	else if (c == 'C') move_right();
+	else if (c == 'M') {
+		read(0, &c, 1);
+		if (c == 97) { read(0, &c, 1); read(0, &c, 1); 
+		} else if (c == 96) { read(0, &c, 1); read(0, &c, 1); 
+		} else { char str[3] = {0}; read(0, str + 0, 1); read(0, str + 1, 1); }
+	}
 }
 
 int main(void) {
@@ -171,21 +201,11 @@ int main(void) {
 	struct termios terminal = configure_terminal();
 	write(1, "\033[?1049h\033[?1000h\033[7l\033[r", 23);
 	char c = 0; bool scroll = false;
-loop:	if (not scroll) display(); else scroll = false;
+loop:	if (not scroll) display(0);  else scroll = false;   //debug_display();
 	read(0, &c, 1);
 	if (c == 27 and stdin_is_empty()) mode = 0;
-	else if (c == 27) {
-		read(0, &c, 1);  if (c != '[') goto loop; read(0, &c, 1);
-		     if (c == 'D') move_left();
-		else if (c == 'C') move_right();
-		else if (c == 'M') {
-			read(0, &c, 1);
-			if (c == 97) { read(0, &c, 1); read(0, &c, 1); write(1, "\033D", 2); /*display_bottom_row();*/ } 
-			else if (c == 96) { read(0, &c, 1); read(0, &c, 1); write(1, "\033M", 2); /*display_top_row();*/ } 
-			else { char str[3] = {0}; read(0, str + 0, 1); read(0, str + 1, 1); }
-		}
-	}
-	else if (c == 127) while (delete());
+	else if (c == 27) interpret_sequence(&scroll);
+	else if (c == 127) while (zero_width(delete()));
 	else if (c == 13) insert(10);
 	else insert(c);
 	if (mode) goto loop;
@@ -199,6 +219,14 @@ loop:	if (not scroll) display(); else scroll = false;
 
 
 
+/*
+			although, i am still happy that this code is only 200ish lines long!!!
+
+
+				so amazing. i can't believe it still. so cool.  yayyyyy. alotta hard work and thought pays off!!!
+
+
+*/
 
 
 
@@ -209,31 +237,6 @@ loop:	if (not scroll) display(); else scroll = false;
 
 
 
-static void display_bottom_row(void) {
-	return;
-	adjust_window_size();
-		
-	int length = 6;
-	memcpy(screen, "\033[?25l", 6);
-	length += sprintf(screen + length, "\033[%llu;%lluH", window_rows, 1LLU);
-	length += sprintf(screen + length, "BUBBLES AND BEANS LOLOLOLLOL\033[K");
-	length += sprintf(screen + length, "\033[%llu;%lluH\033[?25h", cursor_row + 1, cursor_column + 1);
-
-	write(1, screen, (size_t) length);
-}
-
-static void display_top_row(void) {
-	return;
-	adjust_window_size();
-	
-	int length = 6;
-	memcpy(screen, "\033[?25l", 6);
-	length += sprintf(screen + length, "\033[%llu;%lluH", 1LLU, 1LLU);
-	length += sprintf(screen + length, "BUBBLES AND BEANS LOLOLOLLOL\033[K");
-	length += sprintf(screen + length, "\033[%llu;%lluH\033[?25h", cursor_row + 1, cursor_column + 1);
-
-	write(1, screen, (size_t) length);
-}
 
 
 
@@ -263,10 +266,172 @@ static void display_top_row(void) {
 /*
 
 
+static void debug_display(void) {
+	printf("\033[H\033[J");
+	printf("displaying the text { (m=%llu,n=%llu)(cm=%llu,cn=%llu) }: \n", m, n, cm, cn);
+	for (nat i = 0; i < n; i++) {
+		printf("%-3llu %c ", i, i == cn ? '*' : ':' );
+		printf("%-3llu", text[i].count);
+		if (i and not text[i].count) abort();
+		for (nat j = 0; j < m; j++) {
+			putchar(j == cm and i == cn ? '[' : ' ');
+			if (j < text[i].count) 
+				{ if (((unsigned char)text[i].data[j]) >> 7) 
+					printf("(%02hhx)", (unsigned char) text[i].data[j]); 
+				else printf("%c", text[i].data[j]);  }
+			else  printf("-");
+			putchar(j == cm and i == cn ? ']' : ' ');
+		}
+		puts(" | ");
+	}
+	puts(".");
+	printf("(cm=%llu,cn=%llu): ", cm, cn);
+}
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+///   2305066.170942
+//OH MY GOD!!! WE HAVE THE CURSOR_COLUMN!!!!! that solves the problem!!! that makes it so that we can know where the beginning!!! obviously!!!!
+
+
+
+
+/*
+
+
+//write(1, "\033D", 2); 
+			do {
+				if (om < text[on].count) om++; 
+				else if (on < n - 1) { on++; om = 0; } 
+			} while (
+				om < text[on].count and text[on].data[om] != 10 
+				or 
+				om >= text[on].count and on + 1 < n and text[on + 1].data[0] != 10
+			);
+					/////TODO:  BUG:   this code currently does not account for soft-wrapping lines. it needs to. so yeah. 
+
+					//// ie, we need to break out of the loop whenever the number of characters on a window_row seems to be 0 beacuse of softwrap too. so yeah. ie, we need a little bit of the display code lol.
+
+
+
+
+
+
+			cursor_row--;
+
+			//display(2);
+
+			// *scroll = true;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			//if (not on and not om) return;
+
+
+			
+
+
+			here, we need to move back    on,om     until we see that the screen_column becomes 0. 
+								
+
+				this will happen because the line previously is full in terms of screen width, 
+				or because we genuinely found a newline char. 
+
+
+			the first one is very computationally expensive lol. 
+
+			
+
+	
+			i think our best bet is just to try to move back a certain number of lines, actually. not just one. hm... 
+
+	
+			interestinggg.. 
+
+							wait no thats not how this works. 
+
+
+
+						there are two types of things happening:
+
+							1. moving the origin because we are moving up and the cursor is now technically out of veiw. 
+
+								--> here, we need to be moving the origin a large amount, to see more of the text. we need to do a full re print of the screen, basically. so yeah.
+
+
+							2. moving the origin because of scrolling. this is quite different. here, it is preferred to just move one line up only. not many lines. so yeah.
+
+
+
+
+		
+
+
+			//write(1, "\033M", 2); 
+
+			//display(1);
+
+			// *scroll = true;
+
+
+
+
+
+
+
+
+
 
 
 
 */
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -294,32 +459,6 @@ static void display_top_row(void) {
 [a] [b] [c] [d] {-}
 [-] [-] [-] [-] [-]
 
-
-
-
-
-
-static void debug_display(void) {
-	printf("\033[H\033[J");
-	printf("displaying the text { (m=%llu,n=%llu)(cm=%llu,cn=%llu) }: \n", m, n, cm, cn);
-	for (nat i = 0; i < n; i++) {
-		printf("%-3llu %c ", i, i == cn ? '*' : ':' );
-		printf("%-3llu", text[i].count);
-		if (i and not text[i].count) abort();
-		for (nat j = 0; j < m; j++) {
-			putchar(j == cm and i == cn ? '[' : ' ');
-			if (j < text[i].count) 
-				{ if (((unsigned char)text[i].data[j]) >> 7) 
-					printf("(%02hhx)", (unsigned char) text[i].data[j]); 
-				else printf("%c", text[i].data[j]);  }
-			else  printf("-");
-			putchar(j == cm and i == cn ? ']' : ' ');
-		}
-		puts(" | ");
-	}
-	puts(".");
-	printf("(cm=%llu,cn=%llu): ", cm, cn);
-}
 
 
 
@@ -1222,6 +1361,10 @@ static inline void display(void) {
 		cm = 1;
 	} else 
 */
+
+
+
+
 
 
 
