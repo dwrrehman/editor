@@ -1,11 +1,11 @@
-#include <iso646.h>     
+#include <iso646.h>       // simplified rewrite of the text editor by dwrr on 2304307.024007
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <time.h>
-#include <errno.h>      // simplified rewrite of the text editor by dwrr on 2304307.024007
+#include <errno.h>    
 #include <signal.h>
 #include <unistd.h>
 #include <termios.h>
@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/ioctl.h>
+
 typedef uint64_t nat;
 struct word { char* data; nat count; };
 static nat m = 0, n = 0, cm = 0, cn = 0, mode = 0;
@@ -29,8 +30,8 @@ static struct termios configure_terminal(void) {
 	struct termios save = {0};
 	tcgetattr(0, &save);
 	struct termios raw = save;
-	//raw.c_oflag &= ~((size_t)OPOST);
-	//raw.c_iflag &= ~((size_t)BRKINT | (size_t)ICRNL | (size_t)INPCK | (size_t)IXON);
+	raw.c_oflag &= ~((size_t)OPOST);
+	raw.c_iflag &= ~((size_t)BRKINT | (size_t)ICRNL | (size_t)INPCK | (size_t)IXON);
 	raw.c_lflag &= ~((size_t)ECHO | (size_t)ICANON | (size_t)IEXTEN);
 	tcsetattr(0, TCSAFLUSH, &raw);
 	return save;
@@ -72,8 +73,7 @@ static char delete(void) {
 		memmove(text + cn, text + cn + 1, (n - cn) * sizeof *text);
 		text = realloc(text, n * sizeof *text);
 		if (not n or not cn) goto r;
-		cn--;
-		cm = text[cn].count;
+		cn--; cm = text[cn].count;
 		r: return c;
 	} else if (cn < n and text[cn].count) {
 		if (not cn) return 0;
@@ -99,29 +99,10 @@ static void move_right(void) {
 	);
 }
 
-static char* screen = NULL;
-static nat screen_size = 0, window_rows = 0, window_columns = 0;
-static nat cursor_column = 0, cursor_row = 0;
-static nat om = 0, on = 0;
+static void display(nat display_mode) {
 
-static void move_origin_backwards(void) {
-	if (not n) return;            
-
-	
-		  /// ALSO make this code not buggy as heck. it doesnt print the top line until you are on it, and it doesnt move through softwrapped lines properly. we need to be keeping track of the cursor_column, cursor_row, and calculating the visual position based on the characters we move over.
-
-
-
-	do do if (om) om--; else if (on) { on--; om = text[on].count - 1; } else goto done;
-		while ( om  < text[on].count and zero_width(text[on].data[om]) or
-			om >= text[on].count and on + 1 < n and zero_width(text[on + 1].data[0])
-		);
-	while (   om  < text[on].count and text[on].data[om] != 10 or
-		  om >= text[on].count and on + 1 < n and text[on + 1].data[0] != 10
-	); done:;
-}
-
-static void display(nat first_row_only) {
+	static char* screen = NULL;
+	static nat screen_size = 0, window_rows = 0, window_columns = 0, cursor_column = 0, cursor_row = 0, om = 0, on = 0;
 	
 	static struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
@@ -135,55 +116,48 @@ static void display(nat first_row_only) {
 	nat screen_column = 0, screen_row = 0; bool should_move_origin_forwards = false;
 	int length = snprintf(screen, screen_size, "\033[?25l\033[H");
 	if (cursor_row == window_rows - 1) should_move_origin_forwards = true;
-	//if (not cursor_row) move_origin_backwards();
 
-	nat i = on, j = om;        
-	while (i <= n) {            
-
-
-
-
-				    ////THIS CODE SUCKS. make it more idiomatic. and simpler. and fix this bug where the veiw doesnt shift until theres a single character on that line. thats so dumb. yeah. fix that. 
-
-
-
-
-
+	if (cursor_row == 0) {}// move_origin_backwards();  // but we are checking for it to be zero here!!!!!        FUNDEMENTAL PROBLEM. YIKES. :/
+	
+	nat i = on, j = om;
+	while (i <= n) {
 		while (j <= m) {
-			if (i == cn and j == cm) { cursor_row = screen_row; cursor_column = screen_column; }
+			if (i == cn and j == cm) { cursor_row = screen_row; cursor_column = screen_column; }    // the fund prob is we are setting it to zero here
+
 			if (i >= n or j >= text[i].count) break;
 			const char c = text[i].data[j];
-			if (c == 10) {
-				if (first_row_only == 1) goto print_cursor; j++; goto print_newline; 
-			} else if (c == 9) {
+
+			if (c == 10) { next_char_newline: j++; goto print_newline; }
+			else if (c == 9) {
 				do {
-					if (screen_column < window_columns) screen_column++; else { j++; goto print_newline; }
+					if (screen_column < window_columns) screen_column++; else goto next_char_newline;
 					length += snprintf(screen + length, screen_size, " ");
 				} while (screen_column % 8);
 			} else {
-				if (not zero_width(c)) {
-					if (screen_column < window_columns) screen_column++; else goto print_newline;
-				}
-				length += snprintf(screen + length, screen_size, "%c", c);
+				if (zero_width(c)) goto print_char;
+				if (screen_column < window_columns) screen_column++; else goto print_newline;
+				print_char: length += snprintf(screen + length, screen_size, "%c", c);
 			}
+
 			j++; continue;
 			print_newline: length += snprintf(screen + length, screen_size, "\033[K");
-			if (screen_row >= window_rows - 1) goto print_cursor;
+			if (display_mode == 1 or screen_row >= window_rows - 1) goto print_cursor;
 			length += snprintf(screen + length, screen_size, "\r\n");
 			screen_row++; screen_column = 0;
+
+
 			if (should_move_origin_forwards and screen_row == 1) {
-				screen_row = 0; length = 9; should_move_origin_forwards = false;
-				on = i; om = j;
+				screen_row = 0; length = 9; should_move_origin_forwards = false; on = i; om = j;
 			}
 		}
-		i++; j = 0; 
+		i++; j = 0;
 	}
 	if (screen_row < window_rows) goto print_newline;
 	print_cursor: length += snprintf(screen + length, screen_size, "\033[%llu;%lluH\033[?25h", cursor_row + 1, cursor_column + 1);
 	write(1, screen, (size_t) length);
 }
 
-static void interpret_sequence(bool* scroll) {
+static void interpret_sequence(void) { 
 	char c = 0; read(0, &c, 1);  
 	if (c != '[') return; read(0, &c, 1);
 	if (c == 'D') move_left();
@@ -200,11 +174,11 @@ int main(void) {
 	m = 10; n = 0; mode = 1;
 	struct termios terminal = configure_terminal();
 	write(1, "\033[?1049h\033[?1000h\033[7l\033[r", 23);
-	char c = 0; bool scroll = false;
-loop:	if (not scroll) display(0);  else scroll = false;   //debug_display();
+	char c = 0; 
+loop:	display(0); 
 	read(0, &c, 1);
 	if (c == 27 and stdin_is_empty()) mode = 0;
-	else if (c == 27) interpret_sequence(&scroll);
+	else if (c == 27) interpret_sequence(); // &scroll
 	else if (c == 127) while (zero_width(delete()));
 	else if (c == 13) insert(10);
 	else insert(c);
@@ -219,11 +193,84 @@ loop:	if (not scroll) display(0);  else scroll = false;   //debug_display();
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//  bool* scroll
+
+//  bool scroll = false;
+
+//  if (not scroll)  else scroll = false;   //debug_display();
+
+
+
+
+
+
+
+
+
 /*
+
+static void move_origin_backwards(void) {
+	if (not n) return;
+
+	int i = 0; 
+
+	do {
+		do if (om) om--; else if (on) { on--; om = text[on].count - 1; } else goto done;
+		while ( om  < text[on].count and zero_width(text[on].data[om]) or
+			om >= text[on].count and on + 1 < n and zero_width(text[on + 1].data[0])
+		);
+
+		i++;
+
+	} while (i < 4);
+
+	done:;
+}
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+
 			although, i am still happy that this code is only 200ish lines long!!!
 
 
 				so amazing. i can't believe it still. so cool.  yayyyyy. alotta hard work and thought pays off!!!
+
+
+
 
 
 */
@@ -234,6 +281,68 @@ loop:	if (not scroll) display(0);  else scroll = false;   //debug_display();
 
 
 
+			/// THIS CODE SUCKS. make it more idiomatic. and simpler. 
+			/// and fix this bug where the veiw doesnt shift until 
+			/// theres a single character on that line. thats so dumb. yeah. fix that. 
+
+
+
+
+
+
+
+/*
+	do do if (om) om--; else if (on) { on--; om = text[on].count - 1; } else goto done;
+		while ( om  < text[on].count and zero_width(text[on].data[om]) or
+			om >= text[on].count and on + 1 < n and zero_width(text[on + 1].data[0])
+		);
+	while (   om  < text[on].count and text[on].data[om] != 10 or
+		  om >= text[on].count and on + 1 < n and text[on + 1].data[0] != 10
+	);
+
+
+
+
+
+
+
+	/// ALSO make this code not buggy as heck. 
+		/// it doesnt print the top line until you are on it, 
+		/// and it doesnt move through softwrapped lines properly. 
+		/// we need to be keeping track of the cursor_column, cursor_row, 
+		/// and calculating the visual position based on the characters we move over.
+
+
+
+
+
+
+
+	if (not shifted and cursor_row == window_rows - 1) {
+		int start = 9, end = start;
+		while (screen[end] != 10) end++; end++;
+		memmove(screen + start, screen + end, (size_t)(length - end));
+		length -= end - start;
+		cursor_row--; screen_row--; screen_column = 0; 
+		on = first_on; om = first_om; shifted = true;
+		goto fill_screen;
+	}
+
+
+
+
+
+
+
+ // move view down by deleting the first line, and finding the first newline in the screen. 
+
+nat start = 9, end = start;
+		while (screen[end] != 10) end++;
+		memmove(screen + start, screen + end, end - start;
+
+	}
+
+*/
 
 
 
