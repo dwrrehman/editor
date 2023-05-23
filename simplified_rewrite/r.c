@@ -83,52 +83,31 @@ static char delete(void) {
 	} else return 0;
 }
 
-static void origin_move_left(void) {
-	if (not n) return;
-	do 
-	if (om) om--; else if (on) { on--; om = text[on].count - 1; }
-	while ( om  < text[on].count and zero_width(text[on].data[om]) or
-		om >= text[on].count and on + 1 < n and zero_width(text[on + 1].data[0])
-	);
-}
 
-static void origin_move_right(void) {
-	if (not n) return;
-	do if (om < text[on].count) om++; else if (on < n - 1) { on++; om = 1; }
-	while ( om  < text[on].count and zero_width(text[on].data[om]) or
-		om >= text[on].count and on + 1 < n and zero_width(text[on + 1].data[0])
-	);
-}
+
 
 static void move_left(void) {
 	if (not n) return;
-	do if (cm) cm--; else if (cn) { cn--; cm = text[cn].count - 1; }
-	while ( cm  < text[cn].count and zero_width(text[cn].data[cm]) or
-		cm >= text[cn].count and cn + 1 < n and zero_width(text[cn + 1].data[0])
-	);
-	if (on == cn and om == cm) {
-		do origin_move_left();
-		while ((om or on) and  (  om < text[on].count and text[on].data[om] != 10 or 
-			 om >= text[on].count and on + 1 < n and text[on + 1].data[0] != 10)
-		);
-	}
+	do {	if (cm) cm--; else if (cn) { cn--; cm = text[cn].count - 1; }
+		if (cm < text[cn].count) { if (not zero_width(text[cn].data[cm])) break; }
+		else if (cn + 1 < n) { if (not zero_width(text[cn + 1].data[0])) break; }
+		else break;
+	} while (1);
 }
 
 static void move_right(void) {
 	if (not n) return;
-	do if (cm < text[cn].count) cm++; else if (cn < n - 1) { cn++; cm = 1; }
-	while ( cm  < text[cn].count and zero_width(text[cn].data[cm]) or
-		cm >= text[cn].count and cn + 1 < n and zero_width(text[cn + 1].data[0])
-	);
-/*
-	if (barely_in_view()) {
-		do origin_move_right();
-		while (  om < text[on].count and text[on].data[om] != 10 or 
-			 om >= text[on].count and on + 1 < n and text[on + 1].data[0] != 10
-		);
-	}
-*/
+	do {	if (cm < text[cn].count) cm++; else if (cn < n - 1) { cn++; cm = 1; }
+		if (cm < text[cn].count) { if (not zero_width(text[cn].data[cm])) break; }
+		else if (cn + 1 < n) { if (not zero_width(text[cn + 1].data[0])) break; }
+		else break;
+	} while (1);
 }
+
+
+
+
+
 
 static void display(void) {
 	static char* screen = NULL;
@@ -143,8 +122,8 @@ static void display(void) {
 	}
 	nat column = 0, row = 0, cursor_column = 0, cursor_row = 0, in = on, im = om; 
 	int length = snprintf(screen, screen_size, "\033[?25l\033[H");
-	while (in <= n) {
-		while (im <= m) {
+	while (in <= n) { 											// make these gotos, ie while(1) loops. 
+		while (im <= m) { 										// this one too.
 			if (in == cn and im == cm) { cursor_row = row; cursor_column = column; }
 			if (in >= n or im >= text[in].count) break;
 			const char c = text[in].data[im];
@@ -211,6 +190,245 @@ loop:	display(); read(0, &c, 1);
 	else if (c == 13) insert(10);
 	else if (c == ']') for (int i = 40; i--;) move_right();
 	else if (c == '[') for (int i = 40; i--;) move_left();
+
+	else insert(c);
+	if (mode) goto loop;
+	write(1, "\033[?1049l\033[?1000l\033[7h", 20);
+	tcsetattr(0, TCSAFLUSH, &terminal);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+		-------------- heres my solution, to solve this in general. -----------------
+
+
+
+
+
+
+	bool found = false;
+	nat in = on, im = om;
+
+	while (in <= n) {
+		while (im <= m) {
+			if (in == cn and im == cm) { cursor_row = row; cursor_column = column; goto found; }
+			if (in >= n or im >= text[in].count) break;
+			const char c = text[in].data[im];
+
+			if (c == 10) { next_char_newline: im++; goto print_newline; }
+			else if (c == 9) {
+				do {
+					if (column >= window_columns) goto next_char_newline; column++;
+				} while (column % 8);
+			} else {
+				if (zero_width(c)) goto print_char;
+				if (column >= window_columns) goto print_newline; column++; print_char:;
+			}
+			im++; continue; print_newline:  if (row >= window_rows - 1) goto not_found; row++; column = 0;
+		}
+		in++; im = 0;
+	}
+	found: return 1;
+	not_found: return 0;
+
+
+
+
+			
+
+				if (view_invalid and ) {
+					if (origin < cursor) while (not_in_view()) move_origin_left();
+					else if (origin > cursor) while (not_in_view()) move_origin_right();
+				}
+
+
+
+				// view_invalid is set to 1 when we scroll, ever. this will trigger the not_in_view() check to run,  (the above code)
+
+
+					and then we will move the origin, line by line, (in screen space, ie, accounting for soft lines too!!) until not_in_view returns true.
+
+							yes, its computationally expensive, 
+
+							but it doesnt matter, because only have to do this once in a while... basically.
+
+
+											cool huh!?
+
+
+
+
+
+
+					oh, and then, theres another pass, i think, that will try to move OH
+
+
+
+
+
+		OH MY GOSH
+
+
+
+	AHHH
+
+
+				THATS THE SOL TO THAT ONE PROBBBB
+
+
+
+
+
+						we move the origin rightttt (forwardsssss)       until the cursor has its original value again!!!
+
+
+
+
+							ie, the cursors position should be the same before and AFTER the origin move 
+
+
+
+
+									THATSSSS HOW WE KNOW HOW FAR TO MOVE
+
+
+
+
+
+
+				THATS HOW WE CORRECT FOR THE SMALL ERROR IN HOW MUCH TO MOVE THE ORIGIN BACKWARDS
+
+
+								GAHHHHHHH okay that would work yayy
+
+
+
+
+
+
+
+				yayyyyyyyyyy
+
+								happy i found that.   can't wait to code it up 
+
+
+
+
+
+
+
+			basically i just want to get this working now, 
+
+
+									and make it correct in general. for all possible origin and cursor manips. 
+			ill try to minimize the line count later lol. 
+
+
+
+
+										we have a good starting place, though,   prior to doing this,  the code was only 188
+
+
+
+
+												188 lines of code.
+
+
+
+
+
+													so crazy!!!!!!! wow!!
+
+
+
+
+
+												so incredible.  almost a fully working editor in only 188 lines lol.
+
+
+
+											so crazy 
+
+
+
+
+
+				anyways
+
+
+
+lets push this now
+
+
+
+
+
+
+
+
+
+
+
+								
+
+
+
+
+
+
+
+
+
+
+
+
+
+	if (on == cn and om == cm) {
+		do origin_move_left();
+		while ((om or on) and  (  om < text[on].count and text[on].data[om] != 10 or 
+			 om >= text[on].count and on + 1 < n and text[on + 1].data[0] != 10)
+		);
+	}
+*/
+
+
+
+
+
+
+
+
+/*
+	if (barely_in_view()) {
+		do origin_move_right();
+		while (  om < text[on].count and text[on].data[om] != 10 or 
+			 om >= text[on].count and on + 1 < n and text[on + 1].data[0] != 10
+		);
+	}
+*/
+
+
+
+
+
+
+
+/*
 	else if (c == '=') {
 		do origin_move_right();
 		while (  om < text[on].count and text[on].data[om] != 10 or 
@@ -225,14 +443,33 @@ loop:	display(); read(0, &c, 1);
 		);
 		//origin_move_left();
 	}
-	else insert(c);
-	if (mode) goto loop;
-	write(1, "\033[?1049l\033[?1000l\033[7h", 20);
-	tcsetattr(0, TCSAFLUSH, &terminal);
+*/
+
+
+
+
+
+
+
+
+/*
+static void origin_move_left(void) {
+	if (not n) return;
+	do 
+	if (om) om--; else if (on) { on--; om = text[on].count - 1; }
+	while ( om  < text[on].count and zero_width(text[on].data[om]) or
+		om >= text[on].count and on + 1 < n and zero_width(text[on + 1].data[0])
+	);
 }
 
-
-
+static void origin_move_right(void) {
+	if (not n) return;
+	do if (om < text[on].count) om++; else if (on < n - 1) { on++; om = 1; }
+	while ( om  < text[on].count and zero_width(text[on].data[om]) or
+		om >= text[on].count and on + 1 < n and zero_width(text[on + 1].data[0])
+	);
+}
+*/
 
 
 
