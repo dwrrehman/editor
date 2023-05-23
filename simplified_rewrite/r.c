@@ -120,17 +120,19 @@ static void move_right(void) {
 	while ( cm  < text[cn].count and zero_width(text[cn].data[cm]) or
 		cm >= text[cn].count and cn + 1 < n and zero_width(text[cn + 1].data[0])
 	);
+/*
 	if (barely_in_view()) {
 		do origin_move_right();
 		while (  om < text[on].count and text[on].data[om] != 10 or 
 			 om >= text[on].count and on + 1 < n and text[on + 1].data[0] != 10
 		);
 	}
+*/
 }
 
 static void display(void) {
 	static char* screen = NULL;
-	static nat screen_size = 0, window_rows = 0, window_columns = 0, 
+	static nat screen_size = 0, window_rows = 0, window_columns = 0;
 	struct winsize window = {0};
 	ioctl(1, TIOCGWINSZ, &window);
 	if (not window.ws_row or not window.ws_col) { window.ws_row = 24; window.ws_col = 60; }
@@ -139,10 +141,10 @@ static void display(void) {
 		screen_size = 32 + (window_rows + 2) * (window_columns * 4 + 5);
 		screen = realloc(screen, (size_t) screen_size);
 	}
-	nat column = 0, row = 0, cursor_column = 0, cursor_row = 0, in = on, j = om; 
+	nat column = 0, row = 0, cursor_column = 0, cursor_row = 0, in = on, im = om; 
 	int length = snprintf(screen, screen_size, "\033[?25l\033[H");
 	while (in <= n) {
-		while (j <= m) {
+		while (im <= m) {
 			if (in == cn and im == cm) { cursor_row = row; cursor_column = column; }
 			if (in >= n or im >= text[in].count) break;
 			const char c = text[in].data[im];
@@ -209,6 +211,20 @@ loop:	display(); read(0, &c, 1);
 	else if (c == 13) insert(10);
 	else if (c == ']') for (int i = 40; i--;) move_right();
 	else if (c == '[') for (int i = 40; i--;) move_left();
+	else if (c == '=') {
+		do origin_move_right();
+		while (  om < text[on].count and text[on].data[om] != 10 or 
+			 om >= text[on].count and on + 1 < n and text[on + 1].data[0] != 10
+		);
+		//origin_move_right();
+	}
+	else if (c == '-') {
+		do origin_move_left();
+		while ((om or on) and  (  om < text[on].count and text[on].data[om] != 10 or 
+			 om >= text[on].count and on + 1 < n and text[on + 1].data[0] != 10)
+		);
+		//origin_move_left();
+	}
 	else insert(c);
 	if (mode) goto loop;
 	write(1, "\033[?1049l\033[?1000l\033[7h", 20);
