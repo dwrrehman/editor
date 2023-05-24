@@ -13,7 +13,7 @@
 
 typedef uint64_t nat;
 struct word { char* data; nat count; };
-static nat m = 0, n = 0, cm = 0, cn = 0, om = 0, on = 0, mode = 0;
+static nat m = 0, n = 0, cm = 0, cn = 0, mode = 0;
 static struct word* text = NULL;
 
 static bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2; }
@@ -87,173 +87,89 @@ static void move_right(void) {
 	} while (1);
 }
 
+
+
+static nat om = 0, on = 0;
+static nat em = 0, en = 0;
+
+
+
+static char* screen = NULL;
+static nat screen_size = 0;
+
+static nat window_rows = 0, window_columns = 0;
+static nat origin_row = 0, origin_column = 0;
+static nat cursor_row = 0, cursor_column = 0;
+static nat boolean = 0;
+
+
+
 static void display(void) {
-	nat row = 0, column = 0, im = om, in = on, on1 = 0, om1 = 0;
 
-	static nat x = 0;
-	static nat origin_row = 0, origin_column = 0;
 
-	if (not x) {	
+	if (not boolean) {
 		printf("\033[6n"); fflush(stdout);
 		scanf("\033[%llu;%lluR", &origin_row, &origin_column);
-		x = 1;
+		boolean = true;
 	}
-	
-	printf("\033[%llu;%lluH", origin_row, origin_column);
-	printf("\033[?25l");
-	fflush(stdout);
-
-	while (in <= n) {
-		while (im <= m) {
-			if (in == cn and im == cm) printf("\0337");
-			if (in >= n or im >= text[in].count) break;
-			const char c = text[in].data[im];
-			if (c == 10) { im++; goto print_newline; }
-			else if (c == 9) { do { column++; printf(" "); } while (column % 8); } 
-			else { printf("%c", c); if (not zero_width(c)) column++; }
-			im++; continue;
-			print_newline: printf("\033[K\n");
-			row++; column = 0;
-
-			if (row == 1) {
-				on1 = in; om1 = im;
-			}
-		}
-		in++; im = 0;
-	}
-	printf("\033[K\n\033[K\0338\033[?25h");
-	fflush(stdout);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-static void display(nat display_mode) {
-	static char* screen = NULL;
-	static nat screen_size = 0, window_rows = 0, window_columns = 0, cursor_column = 0, cursor_row = 0, om = 0, on = 0;
 	
 	struct winsize window = {0};
-	ioctl(1, TIOCGWINSZ, &window);
+	ioctl(1, TIOCGWINSZ, &window); 
 	if (not window.ws_row or not window.ws_col) { window.ws_row = 24; window.ws_col = 60; }
 	if (window.ws_row != window_rows or window.ws_col != window_columns) {
 		window_rows = window.ws_row;
 		window_columns = window.ws_col - 1; 
-		screen_size = 32 + (window_rows + 2) * (window_columns * 4 + 5);
+		screen_size = 32 + (window_rows + 1) * (window_columns * 4 + 5);
 		screen = realloc(screen, (size_t) screen_size);
 	}
-	bool shifted = false;
-	nat screen_column = 0, screen_row = 0, start = window_columns * 4 + 5, on1 = 0, om1 = 0, i = on, j = om;
-	int length = snprintf(screen, screen_size, "\033[?25l\033[H");
 
-fill_screen: while (i <= n) {
-		while (j <= m) {
-			if (i == cn and j == cm) { cursor_row = screen_row; cursor_column = screen_column; }
-			if (i >= n or j >= text[i].count) break;
-			const char c = text[i].data[j];
+	bool shifted = false;
+	int length = snprintf(screen, screen_size, "\033[?25l\033[%llu;%lluH", origin_row, origin_column);
+
+	nat im = om, in = on, on1 = 0, om1 = 0, index = 0;
+	nat row = 0, column = 0;
+
+
+	while (in < n) {
+		while (im <= m) {
+			if (in == cn and im == cm) { cursor_row = row; cursor_column = column; }
+			if (in == en and im == em) goto print_cursor;
+			if (in >= n or im >= text[in].count) break;
+			const char c = text[in].data[im];
 
 			if (c == 10) { next_char_newline: j++; goto print_newline; }
 			else if (c == 9) {
 				do {
-					if (screen_column >= window_columns) goto next_char_newline; screen_column++;
+					if (column >= window_columns) goto next_char_newline; column++;
 					length += snprintf(screen + length, screen_size, " ");
-				} while (screen_column % 8);
+				} while (column % 8);
 			} else {
 				if (zero_width(c)) goto print_char;
-				if (screen_column >= window_columns) goto print_newline; screen_column++; 
+				if (column >= window_columns) goto print_newline; column++; 
 				print_char: length += snprintf(screen + length, screen_size, "%c", c);
 			}
 
 			j++; continue;
 			print_newline: length += snprintf(screen + length, screen_size, "\033[K");
-			if (display_mode == 1 or screen_row >= window_rows - 1) goto print_cursor;
-			length += snprintf(screen + length, screen_size, "\r\n");
-			screen_row++; screen_column = 0;
-			if (screen_row == 1) { on1 = i; om1 = j; }
+			if (row >= window_rows - 1) goto print_cursor;
+			length += snprintf(screen + length, screen_size, "\n");
+			row++; column = 0;
+			if (row == 1) { on1 = in; om1 = im; index = length - 1; }
 		}
-		i++; j = 0;
+		in++; im = 0;
 	}
 
 	if (not shifted and cursor_row == window_rows - 1) {
-		int t = 9; while (screen[t] != 10) t++; screen[t] = 13;
-
-		 // we can cache the position of the 10 when we save on1 and om1. yay! 
-
-		cursor_row--; screen_row--; screen_column = 0;
-		on = on1; om = om1; shifted = true; goto fill_screen;
-		
-	} else if (not cursor_row) {
-		
-		
-
+		screen[index] = 13;
+		on = on1; om = om1; origin_row++;
+		cursor_row--; row--; screen_column = 0;
+		shifted = true; goto print_new_line;
 	}
 
-	if (screen_row < window_rows) goto print_newline;
-	print_cursor: length += snprintf(screen + length, screen_size, "\033[%llu;%lluH\033[?25h", cursor_row + 1, cursor_column + 1);
-	write(1, screen, (size_t) length);
-}
-
-
-
-
-
-
-if (screen_row == 1) { on1 = i; om1 = j; newline_index1 = (nat) length - 1; }
-
-
-
-
-
-
-
-if (not shifted and cursor_row == window_rows - 1) {
-		shift_down: screen[newline_index1] = 13; cursor_row--; screen_row--; screen_column = 0; 
-		on = on1; om = om1; shifted = true; goto print_newline;
-	}
-
-
-
-
-
-
-
-
-if (should_move_origin_forwards and screen_row == 1) {
-				screen_row = 0; length = 9; should_move_origin_forwards = false; on = i; om = j;
-			}
-
-
-
-
-
-
-
-
-
-
-
-
-static void string_display(void) {
-	printf("\033[H\033[J");
-	printf("displaying the text { (m=%llu,n=%llu)(cm=%llu,cn=%llu) }: \n", m, n, cm, cn);
-	for (nat i = 0; i < n; i++) {
-		if (i and not text[i].count) abort();
-		for (nat j = 0; j < m; j++) 
-			if (j < text[i].count) printf("%c", text[i].data[j]); 
-	}
-	puts("");
+	print_cursor: 
+	if (rows < window_rows - 1) length += snprintf(screen + length, screen_size, "\033[K\n\033[K");
+	length += snprintf(screen + length, screen_size, "\033[%llu;%lluH\033[?25h", cursor_row + 1, cursor_column + 1);
+	write(1, screen, (size_t) length); 
 }
 
 static struct termios configure_terminal(void) {
@@ -282,40 +198,30 @@ int main(int argc, const char** argv) {
 	free(local_text);
 
 here:;	struct termios terminal = configure_terminal();
-	//printf("\033[?1049h"); fflush(stdout);
+	if (use_alternate_screen) { printf("\033[?1049h"); fflush(stdout); }
 	char c = 0;
-
-loop:	
+loop:
 	if (mode == 1) { 
 		display();
 		read(0, &c, 1);
 		if (c == 27 and stdin_is_empty()) mode = 0;
-
-		else if (c == 27) {
-			read(0, &c, 1);  
-			if (c == '[') {read(0, &c, 1);
-			if (c == 'D') move_left();
-			else if (c == 'C') move_right();}
-		}
+		else if (c == 27) { read(0, &c, 1); read(0, &c, 1); if (c == 'D') move_left(); else if (c == 'C') move_right(); }
 		else if (c == 127) while (zero_width(delete()));
 		else insert(c);
 		goto loop;
-
 	} else if (mode == 2) {
-
-		char string[1024] = {0};
-		printf("* ");
-		fgets(string, sizeof string, stdin);
-		if (*string == 'd') string_display();
-		else if (*string == 'a') mode = 1;
-		else if (*string == 'q') mode = 0;
+		read(0, &c, 1);
+		if (c == 'd') display();
+		else if (c == 'a') mode = 1;
+		else if (c == 'q') mode = 0;
 		goto loop;
 	}
-	
-	//printf("\033[?1049l");
+	if (use_alternate_screen) printf("\033[?1049l");
 	tcsetattr(0, TCSAFLUSH, &terminal);	
 }
 
+// 141 without the display function. 
+// hoping to be around 180 with the display function. 
 
 
 
@@ -332,8 +238,7 @@ loop:
 
 
 
-
-
+prb  dtct end    c r   at end          edit  o r   o c      and log o on om
 
 
 
