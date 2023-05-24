@@ -125,6 +125,126 @@ static void display(void) {
 	fflush(stdout);
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static void display(nat display_mode) {
+	static char* screen = NULL;
+	static nat screen_size = 0, window_rows = 0, window_columns = 0, cursor_column = 0, cursor_row = 0, om = 0, on = 0;
+	
+	struct winsize window = {0};
+	ioctl(1, TIOCGWINSZ, &window);
+	if (not window.ws_row or not window.ws_col) { window.ws_row = 24; window.ws_col = 60; }
+	if (window.ws_row != window_rows or window.ws_col != window_columns) {
+		window_rows = window.ws_row;
+		window_columns = window.ws_col - 1; 
+		screen_size = 32 + (window_rows + 2) * (window_columns * 4 + 5);
+		screen = realloc(screen, (size_t) screen_size);
+	}
+	bool shifted = false;
+	nat screen_column = 0, screen_row = 0, start = window_columns * 4 + 5, on1 = 0, om1 = 0, i = on, j = om;
+	int length = snprintf(screen, screen_size, "\033[?25l\033[H");
+
+fill_screen: while (i <= n) {
+		while (j <= m) {
+			if (i == cn and j == cm) { cursor_row = screen_row; cursor_column = screen_column; }
+			if (i >= n or j >= text[i].count) break;
+			const char c = text[i].data[j];
+
+			if (c == 10) { next_char_newline: j++; goto print_newline; }
+			else if (c == 9) {
+				do {
+					if (screen_column >= window_columns) goto next_char_newline; screen_column++;
+					length += snprintf(screen + length, screen_size, " ");
+				} while (screen_column % 8);
+			} else {
+				if (zero_width(c)) goto print_char;
+				if (screen_column >= window_columns) goto print_newline; screen_column++; 
+				print_char: length += snprintf(screen + length, screen_size, "%c", c);
+			}
+
+			j++; continue;
+			print_newline: length += snprintf(screen + length, screen_size, "\033[K");
+			if (display_mode == 1 or screen_row >= window_rows - 1) goto print_cursor;
+			length += snprintf(screen + length, screen_size, "\r\n");
+			screen_row++; screen_column = 0;
+			if (screen_row == 1) { on1 = i; om1 = j; }
+		}
+		i++; j = 0;
+	}
+
+	if (not shifted and cursor_row == window_rows - 1) {
+		int t = 9; while (screen[t] != 10) t++; screen[t] = 13;
+
+		 // we can cache the position of the 10 when we save on1 and om1. yay! 
+
+		cursor_row--; screen_row--; screen_column = 0;
+		on = on1; om = om1; shifted = true; goto fill_screen;
+		
+	} else if (not cursor_row) {
+		
+		
+
+	}
+
+	if (screen_row < window_rows) goto print_newline;
+	print_cursor: length += snprintf(screen + length, screen_size, "\033[%llu;%lluH\033[?25h", cursor_row + 1, cursor_column + 1);
+	write(1, screen, (size_t) length);
+}
+
+
+
+
+
+
+if (screen_row == 1) { on1 = i; om1 = j; newline_index1 = (nat) length - 1; }
+
+
+
+
+
+
+
+if (not shifted and cursor_row == window_rows - 1) {
+		shift_down: screen[newline_index1] = 13; cursor_row--; screen_row--; screen_column = 0; 
+		on = on1; om = om1; shifted = true; goto print_newline;
+	}
+
+
+
+
+
+
+
+
+if (should_move_origin_forwards and screen_row == 1) {
+				screen_row = 0; length = 9; should_move_origin_forwards = false; on = i; om = j;
+			}
+
+
+
+
+
+
+
+
+
+
+
+
 static void string_display(void) {
 	printf("\033[H\033[J");
 	printf("displaying the text { (m=%llu,n=%llu)(cm=%llu,cn=%llu) }: \n", m, n, cm, cn);
@@ -162,7 +282,7 @@ int main(int argc, const char** argv) {
 	free(local_text);
 
 here:;	struct termios terminal = configure_terminal();
-	printf("\033[?1049h"); fflush(stdout);
+	//printf("\033[?1049h"); fflush(stdout);
 	char c = 0;
 
 loop:	
@@ -192,7 +312,7 @@ loop:
 		goto loop;
 	}
 	
-	printf("\033[?1049l");
+	//printf("\033[?1049l");
 	tcsetattr(0, TCSAFLUSH, &terminal);	
 }
 
