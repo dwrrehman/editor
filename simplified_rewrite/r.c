@@ -17,6 +17,7 @@
 typedef uint64_t nat;
 struct word { char* data; nat count; };
 static nat m = 0, n = 0, cm = 0, cn = 0, om = 0, on = 0, mode = 0;
+static nat window_rows = 0, window_columns = 0, cursor_row = 0, cursor_column = 0, cursor_moved = 0; //desired_column = 0, vertical_movement = 0;
 static struct word* text = NULL;
 
 static bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2; }
@@ -30,14 +31,13 @@ static struct termios configure_terminal(void) {
 	struct termios save = {0};
 	tcgetattr(0, &save);
 	struct termios raw = save;
-	raw.c_oflag &= ~((size_t)OPOST);
-	raw.c_iflag &= ~((size_t)BRKINT | (size_t)ICRNL | (size_t)INPCK | (size_t)IXON);
-	raw.c_lflag &= ~((size_t)ECHO | (size_t)ICANON | (size_t)IEXTEN);
+	raw.c_lflag &= ~((size_t)ECHO | (size_t)ICANON);
 	tcsetattr(0, TCSAFLUSH, &raw);
 	return save;
 }
 
 static void insert(char c) {
+	cursor_moved = 1; //vertical_movement = 0;
 	 if (cm == m or cn == n) {
 		text = realloc(text, (n + 1) * sizeof *text);
 		memmove(text + cn + 1, text + cn, (n - cn) * sizeof *text);
@@ -63,6 +63,7 @@ static void insert(char c) {
 }
 
 static char delete(void) {
+	cursor_moved = 1; //vertical_movement = 0;
 	top: if (cm) {
 		cm--;
 		char c = text[cn].data[cm];
@@ -83,48 +84,84 @@ static char delete(void) {
 	} else return 0;
 }
 
-
-
-
 static void move_left(void) {
-	if (not n) return;
-	do {	if (cm) cm--; else if (cn) { cn--; cm = text[cn].count - 1; }
+	if (not n) return; cursor_moved = 1; //vertical_movement = 0;
+	do {	if (cm) cm--; else if (cn) { cn--; cm = text[cn].count - 1; } else break;
 		if (cm < text[cn].count) { if (not zero_width(text[cn].data[cm])) break; }
 		else if (cn + 1 < n) { if (not zero_width(text[cn + 1].data[0])) break; }
 		else break;
-	} while (1);
+	} while (1); 
 }
 
 static void move_right(void) {
-	if (not n) return;
-	do {	if (cm < text[cn].count) cm++; else if (cn < n - 1) { cn++; cm = 1; }
+	if (not n) return; cursor_moved = 1; //vertical_movement = 0;
+	do {	if (cm < text[cn].count) cm++; else if (cn + 1 < n) { cn++; cm = 1; }
 		if (cm < text[cn].count) { if (not zero_width(text[cn].data[cm])) break; }
 		else if (cn + 1 < n) { if (not zero_width(text[cn + 1].data[0])) break; }
 		else break;
 	} while (1);
 }
 
+static void origin_move_up(void) {
+	if (not n) return;
+	if (om) om--; else if (on) { on--; om = text[on].count - 1; }
+	do {	if (om) om--; else if (on) { on--; om = text[on].count - 1; } else break;
+		if (om < text[on].count) { if (text[on].data[om] == 10) break; }
+		else if (on + 1 < n) { if (text[on + 1].data[0] == 10) break; }
+		else break;
+	} while (1);
+ 	if (on or om) { if (om < text[on].count) om++; else if (on + 1 < n) { on++; om = 1; } }
+}
 
+static void origin_move_down(void) {
+	if (not n) return;
+	do {	if (om < text[on].count) om++; else if (on + 1 < n) { on++; om = 1; }
+		if (om < text[on].count) { if (text[on].data[om] == 10) break; }
+		else if (on + 1 < n) { if (text[on + 1].data[0] == 10) break; }
+		else break;
+	} while (1);
+	if (om < text[on].count) om++; else if (on + 1 < n) { on++; om = 1; }
+}
 
+static bool cursor_is_in_view(void) {
+	nat column = 0, row = 0, in = on, im = om; 
+	while (in <= n) {
+		while (im <= m) {
+			if (in == cn and im == cm) { cursor_row = row; cursor_column = column; return true; }
+			if (in >= n or im >= text[in].count) break;
+			const char c = text[in].data[im];
+			if (c == 10) { next_char_newline: im++; goto print_newline; }
+			else if (c == 9) {
+				do { if (column >= window_columns) goto next_char_newline; column++; } while (column % 8);
+			} else if (not zero_width(c)) { if (column >= window_columns) goto print_newline; column++; }
+			im++; continue; print_newline: if (row >= window_rows - 1) return false;
+			row++; column = 0;
+		} in++; im = 0;
+	} return false;
+}
 
-
+static void put_cursor_in_view(void) {
+	cursor_moved = 0;
+	if (on < cn) goto origin_first; if (cn < on) goto cursor_first;
+	if (om < cm) goto origin_first; if (cm < om) goto cursor_first;
+	cursor_first: on = cn; om = cm; origin_move_up(); return;
+	origin_first: while (not cursor_is_in_view()) origin_move_down(); return;
+}
 
 static void display(void) {
-	static char* screen = NULL;
-	static nat screen_size = 0, window_rows = 0, window_columns = 0;
-	struct winsize window = {0};
-	ioctl(1, TIOCGWINSZ, &window);
+	static char* screen = NULL; static nat screen_size = 0;
+	struct winsize window = {0}; ioctl(1, TIOCGWINSZ, &window);
 	if (not window.ws_row or not window.ws_col) { window.ws_row = 24; window.ws_col = 60; }
 	if (window.ws_row != window_rows or window.ws_col != window_columns) {
 		window_rows = window.ws_row; window_columns = window.ws_col - 1;
 		screen_size = 32 + (window_rows + 2) * (window_columns * 4 + 5);
 		screen = realloc(screen, (size_t) screen_size);
 	}
-	nat column = 0, row = 0, cursor_column = 0, cursor_row = 0, in = on, im = om; 
+	nat column = 0, row = 0, in = on, im = om, found = false;
 	int length = snprintf(screen, screen_size, "\033[?25l\033[H");
-	while (in <= n) { 											// make these gotos, ie while(1) loops. 
-		while (im <= m) { 										// this one too.
-			if (in == cn and im == cm) { cursor_row = row; cursor_column = column; }
+	while (in <= n) {
+		while (im <= m) {
+			if (in == cn and im == cm) { cursor_row = row; cursor_column = column; found = true; }
 			if (in >= n or im >= text[in].count) break;
 			const char c = text[in].data[im];
 			if (c == 10) { next_char_newline: im++; goto print_newline; }
@@ -141,32 +178,26 @@ static void display(void) {
 			im++; continue;
 			print_newline: length += snprintf(screen + length, screen_size, "\033[K");
 			if (row >= window_rows - 1) goto print_cursor;
-			length += snprintf(screen + length, screen_size, "\r\n");
+			length += snprintf(screen + length, screen_size, "\n");
 			row++; column = 0;
 		}
 		in++; im = 0;
 	}
 	if (row < window_rows) goto print_newline;
-	print_cursor: length += snprintf(screen + length, screen_size, "\033[%llu;%lluH\033[?25h", cursor_row + 1, cursor_column + 1);
+	print_cursor: if (found) length += snprintf(screen + length, screen_size, "\033[%llu;%lluH\033[?25h", cursor_row + 1, cursor_column + 1);
 	write(1, screen, (size_t) length);
 }
 
 static void interpret_sequence(void) { 
-	char c = 0; read(0, &c, 1);  
-	if (c != '[') return; read(0, &c, 1);
-	if (c == 'D') move_left();
-	else if (c == 'C') move_right();
-	else if (c == 'M') {
-		read(0, &c, 1);
-		if (c == 97) { read(0, &c, 1); read(0, &c, 1); 
-		} else if (c == 96) { read(0, &c, 1); read(0, &c, 1); 
-		} else { char str[3] = {0}; read(0, str + 0, 1); read(0, str + 1, 1); }
-	}
+	char c = 0; read(0, &c, 1); read(0, &c, 1);
+//	     if (c == 'A') move_up(); 
+//	else if (c == 'B') move_down();
+	     if (c == 'C') move_right();
+	else if (c == 'D') move_left(); 
 }
 
 int main(int argc, const char** argv) {
-	m = 10; n = 0; mode = 1;
-
+	m = 5; n = 0; // 5 debug   256 release.
 	if (argc < 2) goto here;
 	FILE* file = fopen(argv[1], "r");
 	if (not file) { printf("error: fopen: %s", strerror(errno)); return 0; }
@@ -177,25 +208,83 @@ int main(int argc, const char** argv) {
         fread(local_text, sizeof(char), length, file);
 	fclose(file);
 	for (size_t i = 0; i < length; i++) insert(local_text[i]);
-	cn = 0; cm = 0;
+	cn = 0; cm = 0; on = 0; om = 0; cursor_moved = 0; mode = 1;
 	free(local_text);
-
 here:;	struct termios terminal = configure_terminal();
-	write(1, "\033[?1049h\033[?1000h\033[7l\033[r", 23);
-	char c = 0; 
-loop:	display(); read(0, &c, 1);
+	write(1, "\033[?1049h\033[7l", 12);
+	char c = 0;
+loop:	if (cursor_moved) put_cursor_in_view();
+	display(); read(0, &c, 1);
 	if (c == 27 and stdin_is_empty()) mode = 0;
 	else if (c == 27) interpret_sequence();
 	else if (c == 127) while (zero_width(delete()));
-	else if (c == 13) insert(10);
-	else if (c == ']') for (int i = 40; i--;) move_right();
-	else if (c == '[') for (int i = 40; i--;) move_left();
-
+	else if (c == ']') for (int i = 100; i--;) move_right(); // debug
+	else if (c == '[') for (int i = 100; i--;) move_left(); // debug
+	else if (c == '-') origin_move_up(); // debug
+	else if (c == '=') origin_move_down(); // debug
 	else insert(c);
 	if (mode) goto loop;
-	write(1, "\033[?1049l\033[?1000l\033[7h", 20);
+	write(1, "\033[?1049l\033[7h\033[?25h", 18);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+// sitting at 240 lines 		without adding move_up and move_down, so far.       not good. we have to ge that down. by like alot. 
+
+
+/*
+
+else if (c == '\\') { // debug 
+		char string[1024] = {0};
+		snprintf(string, sizeof string, "\n%llu,%llu(%c):%llu,%llu(%c)\n", om, on, text[on].data[om], cm, cn,  text[cn].data[cm]);
+		nat string_length = strlen(string);
+		for (nat i = 0; i < string_length; i++) insert(string[i]);
+	}
+
+*/
+
+//// NOTE:  currently these move_up and move_down functions don't account for softwrapped lines at all. also they are HECKKAAAA SLOWWWWWWWW.
+
+//static void move_up(void) {
+//	if (not n) return;
+//	cursor_is_in_view();
+//	if (not vertical_movement) desired_column = cursor_column;
+//	const nat target_column = desired_column, target_row = cursor_row - 1;
+//	if (not cursor_row) { cn = 0; cm = 0; goto done; }
+//	do { move_left(); if (not cursor_is_in_view()) put_cursor_in_view(); }
+//	while ((cn or cm) and (cursor_row > target_row or cursor_row == target_row and cursor_column > target_column));
+//done:	vertical_movement = 1; cursor_moved = 1;
+//}
+
+//static void move_down(void) {
+//	if (not n) return;
+//	cursor_is_in_view();
+//	if (not vertical_movement) desired_column = cursor_column;
+//	const nat target_column = desired_column, target_row = cursor_row + 1;
+//	do { move_right(); if (not cursor_is_in_view()) put_cursor_in_view(); } 
+//	while ((cn < n - 1 or cm < text[cn].count) and 
+//	(cursor_row < target_row or cursor_row == target_row and cursor_column < target_column));
+//	if (cursor_row > target_row) move_left();
+//done:	vertical_movement = 1; cursor_moved = 1;
+//}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

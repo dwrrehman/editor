@@ -93,7 +93,6 @@ static nat om = 0, on = 0;
 static nat em = 0, en = 0;
 
 
-
 static char* screen = NULL;
 static nat screen_size = 0;
 
