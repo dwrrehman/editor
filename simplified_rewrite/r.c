@@ -16,9 +16,18 @@
 
 typedef uint64_t nat;
 struct word { char* data; nat count; };
-static nat m = 0, n = 0, cm = 0, cn = 0, om = 0, on = 0, mode = 0;
+struct state { nat saved, cm, cn; };
+struct action {
+	nat* children; 
+	char* text;
+	nat parent, type, choice, count, length;
+	struct state pre, post;
+};
+
+static nat m = 0, n = 0, cm = 0, cn = 0, om = 0, on = 0, mode = 0, head = 0, action_count = 0, saved = 0;
 static nat window_rows = 0, window_columns = 0, cursor_row = 0, cursor_column = 0, cursor_moved = 0; //desired_column = 0, vertical_movement = 0;
 static struct word* text = NULL;
+static struct action* actions = NULL;
 
 static bool zero_width(char c) { return (((unsigned char)c) >> 6) == 2; }
 static bool stdin_is_empty(void) {
@@ -36,7 +45,44 @@ static struct termios configure_terminal(void) {
 	return save;
 }
 
-static void insert(char c) {
+static inline void initialize_buffer(void) {
+	cn = 0; cm = 0; mode = 1;
+	action_count = 1;
+	actions = calloc(1, sizeof(struct action));
+	saved = 1;
+}
+
+static inline void record_logical_state(struct logical_state* out) {
+	out->saved = saved; out->cn = cn; out->cm = cm; 
+}
+
+static inline void require_logical_state(struct state* in) {  
+	saved = in->saved; cn = in->cn;  cm = in->cm;
+}
+
+static inline void create_action(struct action new) {
+	new.parent = head;
+	actions[head].children = realloc(actions[head].children, sizeof(nat) * (size_t) (actions[head].count + 1));
+	actions[head].choice = actions[head].count;
+	actions[head].children[actions[head].count++] = action_count;
+	
+	actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
+	head = action_count;
+	actions[action_count++] = new;
+}
+
+static void insert(char c, bool should_record) {
+	if (should_record and zero_width(c) 
+		and not (
+			actions[head].type == insert_action and 
+			actions[head].post.lcl == lcl and
+			actions[head].post.lcc == lcc and
+			actions[head].count == 0
+		)) return;
+
+	struct action new_action = {0};
+	if (should_record and not zero_width(c)) record_logical_state(&new_action.pre);
+
 	cursor_moved = 1; //vertical_movement = 0;
 	 if (cm == m or cn == n) {
 		text = realloc(text, (n + 1) * sizeof *text);
@@ -60,10 +106,32 @@ static void insert(char c) {
 		text[cn].data[cm++] = c;
 		text[cn].count = cm;
 	}
+	saved = 0;
+	if (not should_record) return;
+
+	if (zero_width(c)) {
+		actions[head].text = realloc(actions[head].text, (size_t) actions[head].length + 1);
+		actions[head].text[actions[head].length++] = c;
+		record_logical_state(&(actions[head].post));
+		return;
+	}
+
+	record_logical_state(&new_action.post);
+	new_action.type = insert_action;
+	new_action.text = malloc(1);
+	new_action.text[0] = c;
+	new_action.length = 1;
+	create_action(new_action);
 }
 
 static char delete(void) {
 	cursor_moved = 1; //vertical_movement = 0;
+
+	struct action new_action = {0};
+	if (should_record) record_logical_state(&new_action.pre);
+
+	char r = 0;
+
 	top: if (cm) {
 		cm--;
 		char c = text[cn].data[cm];
@@ -75,13 +143,30 @@ static char delete(void) {
 		text = realloc(text, n * sizeof *text);
 		if (not n or not cn) goto r;
 		cn--; cm = text[cn].count;
-		r: return c;
+		r: r = c;
 	} else if (cn < n and text[cn].count) {
-		if (not cn) return 0;
+		if (not cn) goto done;
 		cn--;
 		cm = text[cn].count;
 		goto top;
-	} else return 0;
+	}
+done:	saved = 0;
+	if (not should_record) return;
+
+	if (zero_width(r)) {
+		actions[head].text = realloc(actions[head].text, (size_t) actions[head].length + 1);
+		actions[head].text[actions[head].length++] = r;
+		record_logical_state(&(actions[head].post));
+		return r;
+	}
+
+	record_logical_state(&new_action.post);
+	new_action.type = delete_action;
+	new_action.text = malloc(1);
+	new_action.text[0] = r;
+	new_action.length = 1;
+	create_action(new_action);
+	return r;
 }
 
 static void move_left(void) {
@@ -188,6 +273,55 @@ static void display(void) {
 	write(1, screen, (size_t) length);
 }
 
+static inline void replay_action(struct action a) { 
+	require_logical_state(&a.pre);
+	if (a.type == no_action or a.type == anchor_action) {}
+	else if (a.type == insert_action or a.type == paste_action) {
+		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	} else if (a.type == delete_action) delete(0); 
+	else if (a.type == cut_action) cut_selection();
+	require_logical_state(&a.post); 
+}
+
+static inline void reverse_action(struct action a) {
+	require_logical_state(&a.post);
+	if (a.type == no_action or a.type == anchor_action) {}
+	else if (a.type == insert_action) delete(0);
+	else if (a.type == paste_action) {
+		while (lcc > a.pre.lcc or lcl > a.pre.lcl) delete(0);
+	} else if (a.type == delete_action or a.type == cut_action) {
+		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	} require_logical_state(&a.pre);
+}
+
+static inline void undo(void) {
+	if (not head) return;
+	reverse_action(actions[head]);
+	head = actions[head].parent;
+}
+
+static inline void redo(void) {
+	if (not actions[head].count) return;
+	head = actions[head].children[actions[head].choice];
+	replay_action(actions[head]);
+}
+
+static inline void alternate_incr(void) {
+	if (actions[head].choice + 1 < actions[head].count) actions[head].choice++;
+	// sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
+}
+
+static inline void alternate_decr(void) {
+	if (actions[head].choice) actions[head].choice--;
+	// sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
+}
+
+
+
+
+
+
+
 static void interpret_sequence(void) { 
 	char c = 0; read(0, &c, 1); read(0, &c, 1);
 //	     if (c == 'A') move_up(); 
@@ -201,7 +335,7 @@ int main(int argc, const char** argv) {
 	if (argc < 2) goto here;
 	FILE* file = fopen(argv[1], "r");
 	if (not file) { printf("error: fopen: %s", strerror(errno)); return 0; }
-	fseek(file, 0, SEEK_END);        
+	fseek(file, 0, SEEK_END);
         size_t length = (size_t) ftell(file);
 	char* local_text = malloc(sizeof(char) * length);
         fseek(file, 0, SEEK_SET);
@@ -229,7 +363,12 @@ loop:	if (cursor_moved) put_cursor_in_view();
 }
 
 
-// sitting at 240 lines 		without adding move_up and move_down, so far.       not good. we have to ge that down. by like alot. 
+
+
+
+
+
+// sitting at 230 lines 		without adding move_up and move_down, so far.       not good. we have to ge that down. by like alot. 
 
 
 /*
