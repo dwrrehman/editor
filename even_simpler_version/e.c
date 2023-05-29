@@ -7,6 +7,47 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <unistd.h>
+
+
+
+
+/*
+
+
+
+	todo:
+
+		we need to add a suplementary way of submitting a command, where we type the text in the document, and "cut_execute", which deletes it from the document (appending a new action node to the undo tree of course)  and then saves the text it cut to then immediately treat it like a command string that was passed from getline().  it executes it as a command. 
+
+		this is useful for like, including commands with newlines, or ones that are more complex to type out, that you would want better whitespace formatting, and stuff like that. generally whenever you want to make a large command, use this feature. yay!!
+
+
+
+
+
+
+
+*/
+
+static char* find(char* text, char* tofind, int count, int length, int cursor) {
+	int i = cursor, t = 0;
+loop:	if (t == length) return text + i - length;
+	if (i >= count) return NULL;
+	if (text[i] == tofind[t]) t++; else t = 0;
+	i++; goto loop;
+}
+
+static char* find_reverse(char* text, char* tofind, int count, int length, int cursor) {
+	int i = cursor, t = length;
+loop:	if (not t) return text + i;
+	if (not i) return NULL;
+	i--; t--; if (text[i] != tofind[t]) t = length;
+	goto loop;
+}
+
+
+
+
 static void handler(int __attribute__((unused))_) {}
 int main(int argc, const char** argv) {
 	char* text = NULL, * input = NULL;
@@ -81,9 +122,9 @@ loop:;	ssize_t r = getline(&input, &capacity, stdin);
 		}
 
 		else if (input[0] == '/') {
-			if (cursor >= count) { puts("/ error"); goto loop; }
-
-			const char* offset = strstr(text + cursor + 1, input + 1);
+			if (cursor + 1 >= count) { puts("/ error"); goto loop; }
+			
+			const char* offset = find(text + cursor + 1, input + 1, count, length - 1);
 			if (not offset) printf("absent %s\n", input + 1);
 			else {
 				cursor += (size_t) (offset - (text + cursor));

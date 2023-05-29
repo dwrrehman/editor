@@ -1,0 +1,1 @@
+clang -Weverything -Wno-declaration-after-statement c.c -o out
