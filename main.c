@@ -1037,7 +1037,7 @@ static inline void undo(void) {
 	head = actions[head].parent;
 }
 
-static inline void redo(void) {                      how do we make an undo/redo tell you iff there is a tree node in the undo tree?...
+static inline void redo(void) {                   ////   how do we make an undo/redo tell you iff there is a tree node in the undo tree?...
 	if (not actions[head].count) return;
 	head = actions[head].children[actions[head].choice];
 	replay_action(actions[head]);
@@ -1087,15 +1087,13 @@ static inline void execute(char c, char p) {
 		else if (c == 'a' and p == 'h') {}      // swap anchors?...
 		else if (c == 'd' and p == 'h') {}
 
-
-
 		else if (c == 'a') { selecting = not selecting; lal = al; lac = ac; }		
 		else if (c == 's') save();
 		else if (c == 'd') delete(1);
 		else if (c == 'r') cut(0);
 		else if (c == 't') mode = 1;
 		else if (c == 'c') undo();
-		else if (c == 'm') cut(1) 
+		else if (c == 'm') cut(1);
 
 		else if (c == 'k') redo();
 		else if (c == 'o') { move_word_right(); a }
@@ -1104,7 +1102,6 @@ static inline void execute(char c, char p) {
 		else if (c == 'u') { move_down(); a }
 		else if (c == 'i') { move_right(); vdc = vcc; a }
 		else if (c == 'n') { move_left(); vdc = vcc; a }
-		
 		
 		else if (c == '#') fixed_wrap = not fixed_wrap;   // rebind this one.
  
