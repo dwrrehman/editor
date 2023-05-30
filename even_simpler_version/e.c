@@ -7,11 +7,352 @@
 #include <fcntl.h>
 #include <signal.h>
 #include <unistd.h>
+struct action { 
+	size_t* children; char* text;
+	size_t parent, type, choice, count, length, pre, post;
+};
+static struct action* actions = 0;
+static size_t action_count = 0, head = 0;
+static inline void create_action(struct action new) {      // inline this. 
+	new.parent = head;
+	actions[head].children = realloc(actions[head].children, sizeof(size_t) * (actions[head].count + 1));
+	actions[head].choice = actions[head].count;
+	actions[head].children[actions[head].count++] = action_count;
+	actions = realloc(actions, sizeof(struct action) * (action_count + 1));
+	head = action_count; actions[action_count++] = new;
+}
+
+static void handler(int __attribute__((unused))_) {}
+int main(int argc, const char** argv) {
+	char* text = NULL, * input = NULL;
+	size_t capacity = 0, count = 0, cursor = 0, anchor = 0, saved = 1, mode = 1, max = 128;
+	char filename[4096] = {0};
+	struct sigaction action = {.sa_handler = handler};
+	sigaction(SIGINT, &action, NULL);
+	if (argc < 2) goto loop; 
+read_file:; FILE* file = fopen(argv[1], "r");
+	if (not file) { perror("fopen"); goto done; }
+	fseek(file, 0, SEEK_END);
+        count = (size_t) ftell(file); text = malloc(count);
+        fseek(file, 0, SEEK_SET); fread(text, 1, count, file);
+	fclose(file); mode = 2; 
+	strlcpy(filename, argv[1], sizeof filename);
+	printf("%lu\n", count); cursor = 0;
+loop:;	ssize_t r = getline(&input, &capacity, stdin);
+	if (r <= 0) { mode = 0; goto sv; }
+	size_t length = (size_t) r;
+	if (mode == 1) {
+		if (length >= 2 and input[length - 2] == '`') { length -= 2; mode = 2; puts("."); }
+		text = realloc(text, count + length);
+		memmove(text + cursor + length, text + cursor, count - cursor);
+		for (size_t i = 0; i < length; i++) text[cursor + i] = input[i];
+		count += length; cursor += length; saved = 0;
+	} else if (mode == 2) {
+		input[--length] = 0;
+		if (not strcmp(input, "")) {}
+		else if (not strcmp(input, "clear")) printf("\033[2J\033[H");
+		else if (not strcmp(input, "quit")) { if (saved) mode = 0; else puts("modified"); }
+		else if (not strcmp(input, "discard_and_quit")) mode = 0;
+		else if (not strcmp(input, "insert")) mode = 1;
+		else if (not strcmp(input, "anchor")) anchor = cursor;
+		else if (not strcmp(input, "print")) { 
+			fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); puts("");
+		}
+		else if (not strcmp(input, "delete")) {
+			if (cursor < anchor) { size_t temp = cursor; cursor = anchor; anchor = temp; }
+			memmove(text + anchor, text + cursor, count - cursor);
+			count -= cursor - anchor;
+			text = realloc(text, count);
+			cursor = anchor;
+		}
+		else if (input[0] == '/') {
+			const char* tofind = input + 1; length--;
+			size_t i = cursor, t = 0;
+		L:	if (t == length) { cursor = i - length; goto loop; }
+			if (i >= count) { printf("absent %s\n", tofind); goto loop; }
+			if (text[i] == tofind[t]) t++; else t = 0; i++; goto L;
+		}
+		else if (input[0] == '\\') {
+			const char* tofind = input + 1; length--;
+			size_t i = cursor, t = length;
+		G:	if (not t) { cursor = i; goto loop; }
+			if (not i) { printf("absent %s\n", tofind); goto loop; }
+			i--; t--; if (text[i] != tofind[t]) t = length; goto G;
+		}
+		else if (not strncmp(input, "read ", 5)) { 
+			if (not saved) { puts("modified"); goto loop; }
+			argv[1] = input + 5; goto read_file;
+		}
+		else if (not strncmp(input, "write", 5)) {
+		sv:	if (not *filename) { 
+				if (access(input + 6, F_OK) != -1) { puts("file exists"); goto loop; }
+				else strlcpy(filename, input + 6, sizeof filename);
+			}
+			FILE* output_file = fopen(filename, "w");
+			if (not output_file) { perror("fopen"); goto loop; }
+			fwrite(text, count, 1, output_file);
+			fclose(output_file); saved = 1;
+		}
+		else printf("unintelligible %s\n", input);
+	}
+	if (mode) goto loop;
+	done: return 0;
+}
+
+
+
+
+
+//// YAYYYY we got it down to 100 lines!!!! AMAZINGGGGG
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
 
 /*
+	ripped out:
+
+
+
+//static char* find(char* text, char* tofind, size_t count, size_t length, size_t cursor) {      // inline this.
+	inlined
+//}
+
+//static char* find_reverse(char* text, char* tofind, size_t length, size_t cursor) {        // inline this.
+	inlined
+//}
+
+
+
+
+
+
+		else if (not strcmp(input, "back")) cursor = anchor;						 /// DELETE ME
+		else if (not strcmp(input, "top")) cursor = 0;							 /// DELETE ME
+		else if (not strcmp(input, "bottom")) cursor = count - 1;					 /// DELETE ME
+		else if (not strcmp(input, "right")) cursor++;							 /// DELETE ME
+		else if (not strcmp(input, "left")) cursor--;							 /// DELETE ME
+		else if (not strcmp(input, "filename")) puts(filename);						 /// DELETE ME
+		else if (input[0] == '.') max = (size_t) atoi(input + 1);					 /// DELETE ME
+		else if (not strcmp(input, "count")) printf("%lu %lu %lu\n", count, anchor, cursor);			 /// DELETE ME
+		else if (not strcmp(input, "print_contents")) fwrite(text, count, 1, stdout);				 /// DELETE ME
+		else if (not strcmp(input, "print_after")) fwrite(text + cursor, count - cursor, 1, stdout); 		 /// DELETE ME
+
+
+
+
+		else if (not strcmp(input, "print_anchor")) {  								/// DELETE ME
+			fwrite(text + anchor, count - anchor < max ? count - anchor : max, 1, stdout); puts("");
+		}
+
+
+
+
+		printf("%lu\n", cursor);					 /// DELETE ME
+
+
+
+
+
+
+		else if (not strcmp(input, "up")) { 								 /// DELETE ME
+			size_t save = cursor;
+			if (cursor > max) cursor -= max; else cursor = 0;
+			fwrite(text + cursor, save - cursor, 1, stdout); 
+			puts("");
+		}
+		else if (not strcmp(input, "down")) {  								 /// DELETE ME
+			size_t total = count - cursor < max ? count - cursor : max;
+			fwrite(text + cursor, total, 1, stdout); 
+			puts("");
+			cursor += total;
+		}
+
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+/*
+    146 lines of code, without the undo tree implemented. 
+
+    i feel like we can get this down to 100 if we just start removing some features..... i mean...
+
+     what do we REALLYYYYYY need,       like seriously...
+
+
+
+
+
+
+
+
+
+so i think if we get rid of all the features with the DELETE ME listed on them, 
+
+	then we actually get the editor down to only    120   lines of code. 
+
+			which is starting to become acceptable. 
+
+
+				now, note, we still have yet to inline the 
+
+
+						find_reverse/find functions         and create_action functions,        all those will be inlined.
+
+
+
+
+	
+					so thats like another 10 lines that we can assume wont be there, if they are implemented.  i think. 
+
+
+
+			so that makes it downt to only 110 now 
+
+								which is ALMOSTTTT there.
+									i want it to be sub 100 lines.       thats my goal, now, because i know its possible. 
+
+
+												yay 
+
+
+
+
+
+			okay, lets delete them then! 
+
+					yay 
+
+					
+						
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+
+
+
+
+	if (zero_width(c)) {
+				actions[head].text = realloc(actions[head].text, (size_t) actions[head].length + 1);
+				actions[head].text[actions[head].length++] = c;
+				record_logical_state(&(actions[head].post));
+			}
+
+			new_action.post->saved = saved;
+			new_action.post->cursor = cursor;
+			new_action.type = insert_action;
+			new_action.text = malloc(1);
+			new_action.text[0] = c;
+			new_action.length = 1;
+			create_action(new_action);
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -25,199 +366,20 @@
 
 
 
+	2305291.163419
+
+		TODO:
+			- currently we are in the process of simplifying the undo-tree system, to make it on par in simplicity with the rest of the editor. because it kinda sticks out like a sore thumb right now. 
+
+	
+			- we still have to implement copy/paste'ing to the global clipboard. thats important. 
+
+
+			- 
+
 
 
 */
-
-static char* find(char* text, char* tofind, int count, int length, int cursor) {
-	int i = cursor, t = 0;
-loop:	if (t == length) return text + i - length;
-	if (i >= count) return NULL;
-	if (text[i] == tofind[t]) t++; else t = 0;
-	i++; goto loop;
-}
-
-static char* find_reverse(char* text, char* tofind, int count, int length, int cursor) {
-	int i = cursor, t = length;
-loop:	if (not t) return text + i;
-	if (not i) return NULL;
-	i--; t--; if (text[i] != tofind[t]) t = length;
-	goto loop;
-}
-
-
-
-
-static void handler(int __attribute__((unused))_) {}
-int main(int argc, const char** argv) {
-	char* text = NULL, * input = NULL;
-	size_t capacity = 0, count = 0, cursor = 0, anchor = 0, saved = 1, mode = 1, max = 128;
-	char filename[4096] = {0};
-	struct sigaction action = {.sa_handler = handler};
-	sigaction(SIGINT, &action, NULL);
-
-	if (argc < 2) goto loop;
-
-	FILE* file = fopen(argv[1], "r");
-	if (not file) { perror("fopen"); goto done; }
-	fseek(file, 0, SEEK_END);
-        count = (size_t) ftell(file); text = malloc(count);
-        fseek(file, 0, SEEK_SET); fread(text, 1, count, file);
-	fclose(file); mode = 2; 
-	strlcpy(filename, argv[1], sizeof filename);
-	printf("%lu\n", count);
-	cursor = 0;
-
-loop:;	ssize_t r = getline(&input, &capacity, stdin);
-	if (r <= 0) goto save_exit;
-	size_t length = (size_t) r;
-	if (mode == 1) {
-		if (length >= 2 and input[length - 2] == '`') { 
-			length -= 2; mode = 2; puts("."); 
-		}
-		text = realloc(text, count + length);
-		memmove(text + cursor + length, text + cursor, count - cursor);
-		for (size_t i = 0; i < length; i++) text[cursor + i] = input[i];
-		count += length; cursor += length; saved = 0;
-		
-	} else if (mode == 2) {
-		input[--length] = 0;
-		if (not strcmp(input, "")) puts("[empty]");
-		else if (not strcmp(input, "clear")) printf("\033[2J\033[H");
-		else if (not strcmp(input, "quit")) { if (saved) mode = 0; else puts("modified"); }
-
-		else if (not strcmp(input, "discard_and_quit")) mode = 0;
-		else if (not strcmp(input, "insert")) mode = 1;
-		else if (not strcmp(input, "drop")) anchor = cursor;
-		else if (not strcmp(input, "back")) cursor = anchor;
-		else if (not strcmp(input, "top")) cursor = 0;
-		else if (not strcmp(input, "bottom")) cursor = count - 1;
-		else if (not strcmp(input, "right")) cursor++;
-		else if (not strcmp(input, "left")) cursor--;
-		else if (not strcmp(input, "filename")) puts(filename);
-		else if (input[0] == '.') max = (size_t) atoi(input + 1);
-
-		else if (not strcmp(input, "count")) printf("%lu %lu %lu\n", count, anchor, cursor);
-		else if (not strcmp(input, "print_contents")) { fwrite(text, count, 1, stdout); }
-		else if (not strcmp(input, "print_after")) { fwrite(text + cursor, count - cursor, 1, stdout);  }
-
-		else if (not strcmp(input, "print")) { 
-			fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); 
-			puts("");
-		}
-
-		else if (not strcmp(input, "print_anchor")) { 
-			fwrite(text + anchor, count - anchor < max ? count - anchor : max, 1, stdout); 
-			puts("");
-		}
-
-
-
-		else if (not strcmp(input, "cut")) {
-			if (cursor < anchor) { size_t temp = cursor; cursor = anchor; anchor = temp; }
-			memmove(text + anchor, text + cursor, count - cursor);
-			count -= cursor - anchor;
-			text = realloc(text, count);
-			cursor = anchor;
-		}
-
-		else if (input[0] == '/') {
-			if (cursor + 1 >= count) { puts("/ error"); goto loop; }
-			
-			const char* offset = find(text + cursor + 1, input + 1, count, length - 1);
-			if (not offset) printf("absent %s\n", input + 1);
-			else {
-				cursor += (size_t) (offset - (text + cursor));
-				printf("%lu\n", cursor);
-			}
-		}
-
-		else if (input[0] == '\\') {
-			puts("backwards is currently unimplemented");
-		}
-
-		else if (not strcmp(input, "up")) { 
-			size_t save = cursor;
-			if (cursor > max) cursor -= max; else cursor = 0;
-			fwrite(text + cursor, save - cursor, 1, stdout); 
-			puts("");
-		} 
-
-		else if (not strcmp(input, "down")) { 
-			size_t total = count - cursor < max ? count - cursor : max;
-			fwrite(text + cursor, total, 1, stdout); 
-			puts("");
-			cursor += total;
-		}
-
-		else if (not strncmp(input, "read ", 5)) { 
-			if (not saved) { puts("modified"); goto loop; }
-			FILE* infile = fopen(input + 5, "r");
-			if (not infile) { perror("fopen"); goto loop; }
-
-			fseek(infile, 0, SEEK_END); free(text); 
-			count = (size_t) ftell(infile); text = malloc(count);
-			fseek(infile, 0, SEEK_SET); fread(text, 1, count, infile);
-			fclose(infile); mode = 2; 
-			strlcpy(filename, input + 5, sizeof filename);
-			printf("%s: %lu\n", filename, count);
-		} 
-
-		else if (not strncmp(input, "name ", 7)) {
-			if (access(input + 7, F_OK) != -1) puts("file exists");
-			else strlcpy(filename, input + 7, sizeof filename);
-		}
-
-		else if (not strcmp(input, "write")) {
-			if (not *filename) { puts("unnamed"); goto loop; }
-			FILE* output_file = fopen(filename, "w");
-			if (not output_file) { perror("fopen"); goto loop; }
-			fwrite(text, count, 1, output_file);
-			fclose(output_file);
-			saved = 1;
-		}
-
-		else printf("unintelligible %s\n", input);
-	}
-	if (mode) goto loop;
-	save_exit:; done: printf("exiting...\n");
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
