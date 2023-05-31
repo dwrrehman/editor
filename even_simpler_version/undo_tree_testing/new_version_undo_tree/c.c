@@ -10,20 +10,32 @@
 #include <iso646.h>
 #include <stdint.h>
 #include <stdbool.h>
-
 struct action {
 	size_t* children;
-	char* text;
-	size_t parent, type, choice, count, length, pre_cursor, post_cursor;
+	char* deleted, * inserted;
+	size_t parent, choice, count, ilength, dlength, pre, post;
 };
-
 static char* text = NULL;
 static struct action* actions = NULL;
 static size_t action_count = 0, head = 0, count = 0, cursor = 0;
 static char message[4096] = {0};
 static struct termios terminal = {0};
 
-static inline void create_action(struct action new) {
+static void sub(size_t dlength, char* inserted, size_t ilength) {
+	if (cursor < dlength) dlength = cursor;
+	if (not (ilength + dlength)) return;
+	struct action new = {0};
+	new.pre = cursor;
+	char* deleted = malloc(dlength);
+	memcpy(deleted, text + cursor - dlength, dlength);
+	memmove(text + cursor + ilength - dlength, text + cursor, count - cursor);
+	memcpy(text + cursor, inserted, ilength);
+	count  += ilength - dlength;  cursor += ilength - dlength;
+	new.post = cursor;
+	new.inserted = strndup(inserted, ilength);
+	new.ilength = ilength;
+	new.deleted = deleted;
+	new.dlength = dlength;
 	new.parent = head;
 	actions[head].children = realloc(actions[head].children, sizeof(size_t) * (size_t) (actions[head].count + 1));
 	actions[head].choice = actions[head].count;
@@ -32,89 +44,6 @@ static inline void create_action(struct action new) {
 	head = action_count;
 	actions[action_count++] = new;
 }
-
-static void insert_char(char c) {
-	memmove(text + cursor + 1, text + cursor, count - cursor);
-	text[cursor++] = c;
-	count++;
-}
-
-static void insert(char* string, size_t length) {
-	struct action new_action = {0};
-	new_action.pre_cursor = cursor;
-	for (size_t i = 0; i < length; i++) insert_char(string[i]);
-	new_action.post_cursor = cursor;
-	new_action.type = 0;
-	new_action.text = strndup(string, length);
-	new_action.length = length;
-	create_action(new_action);
-}
-
-static char delete_char(void) {
-	if (not cursor) return 0;
-	count--;
-	const char c = text[--cursor];
-	memmove(text + cursor, text + cursor + 1, count - cursor);
-	return c;
-}
-
-static void delete(size_t total) {
-	if (not cursor) return;
-	struct action new_action = {0};
-	new_action.pre_cursor = cursor;
-	size_t deleted_count = 0;
-	char* deleted_string = malloc(total);
-	for (size_t i = 0; i < total; i++) {
-		deleted_string[deleted_count++] = delete_char();
-		if (deleted_string[deleted_count - 1]) { deleted_count--; break; }
-	}
-	new_action.post_cursor = cursor;
-	new_action.type = 1;
-	new_action.text = deleted_string;
-	new_action.length = deleted_count;
-	create_action(new_action);
-}
-
-static void undo(void) {
-	if (not head) return;
-	snprintf(message, sizeof message, "undoing %lu %lu %lu %lu %lu...", actions[head].type, actions[head].count, actions[head].parent, actions[head].choice, actions[head].length);
-	const struct action a = actions[head];
-	cursor = a.post_cursor;
-	if (a.type == 0) {}
-	else if (a.type == 0) { for (size_t i = 0; i < a.length; i++) delete_char(); }
-	else if (a.type == 1) { for (size_t i = 0; i < a.length; i++) insert_char(a.text[i]); }
-	cursor = a.pre_cursor;
-	head = actions[head].parent;
-}
-
-static void redo(void) {
-	if (not actions[head].count) return;
-	snprintf(message, sizeof message, "redoing %lu %lu %lu %lu %lu...", actions[head].type, actions[head].count, actions[head].parent, actions[head].choice, actions[head].length);
-	head = actions[head].children[actions[head].choice];
-	const struct action a = actions[head];
-	cursor = a.pre_cursor;
-	     if (a.type == 1) { for (size_t i = 0; i < a.length; i++) delete_char(); } 
-	else if (a.type == 0) { for (size_t i = 0; i < a.length; i++) insert_char(a.text[i]); } 
-	cursor = a.post_cursor;
-}
-
-static void alternate(void) {
-	if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0;
-	snprintf(message, sizeof message, "switched %ld %ld", actions[head].choice, actions[head].count);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -151,29 +80,50 @@ static void display_string(char* string, size_t length) {
 int main(void) {
 	configure_terminal();
 	text = malloc(4096);
-	action_count = 1;
+	action_count = 1; head = 0;
 	actions = calloc(1, sizeof(struct action));
-	head = 0;
 	char string[4096] = {0};
 	size_t length = 0;
+	loop: clear_screen();
+	display_string(string, length);
+	char c = read_from_stdin();
+	if (c == 27) goto done;
 
-	while (1) {
-		clear_screen();
-		display_string(string, length);
-		char c = read_from_stdin();
-		if (c == 27) break;
-		else if (c == '0') memset(message, 0, sizeof message);
-		else if (c == '1') undo();
-		else if (c == '2') alternate();
-		else if (c == '3') redo();
-		else if (c == 10) { insert(string, length); length = 0; }
-		else if (c == '\\') { delete(10); }
-		else if (c == '[') { if (cursor) cursor--; }
-		else if (c == ']') { if (cursor < count) cursor++; }
-		else if (c == 127) length--;
-		else string[length++] = c;
+	else if (c == '0') { memset(message, 0, sizeof message); }
+	else if (c == '1') { 
+		if (not head) goto loop;
+		snprintf(message, sizeof message, "undoing %lu %lu %lu...", actions[head].count, actions[head].parent, actions[head].choice);
+		const struct action a = actions[head];
+		cursor = a.post;
+		memmove(text + cursor + a.dlength - a.ilength, text + cursor, count - cursor);
+		memcpy(text + cursor, a.deleted, a.dlength);
+		count += a.dlength - a.ilength; cursor += a.dlength - a.ilength;
+		cursor = a.pre;
+		head = actions[head].parent;
 	}
-	restore_terminal();
+	else if (c == '2') { 
+		if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0;
+		snprintf(message, sizeof message, "switched %ld %ld", actions[head].choice, actions[head].count);
+	}
+	else if (c == '3') { 
+		if (not actions[head].count) goto loop;
+		snprintf(message, sizeof message, "redoing %lu %lu %lu...", actions[head].count, actions[head].parent, actions[head].choice);
+		head = actions[head].children[actions[head].choice];
+		const struct action a = actions[head];
+		cursor = a.pre;
+		memmove(text + cursor + a.ilength - a.dlength, text + cursor, count - cursor);
+		memcpy(text + cursor, a.inserted, a.ilength);
+		count += a.ilength - a.dlength; cursor += a.ilength - a.dlength;
+		cursor = a.post;
+	 }
+	else if (c == 10) { sub(0, string, length); length = 0; }
+	else if (c == '\\') { sub(10, 0, 0); }
+	else if (c == '[') { if (cursor) cursor--; }
+	else if (c == ']') { if (cursor < count) cursor++; }
+	else if (c == 127) { if (length) length--; }
+	else { string[length++] = c; }
+	goto loop;
+	done: restore_terminal();
 }
 
 
@@ -184,7 +134,38 @@ int main(void) {
 
 
 
+//   19 + 16  is what we would add to the editor if we added this.       which is really not that bad, i think. yay. 
 
+// 
+
+
+
+
+
+
+//// OH MY GOSH
+
+	////     INSERT MODE IS THE REPLACE COMMAND
+
+
+		/// WE DONT NEED TO ADD 
+
+			OH MY GOD
+
+
+		we need to have the comand system buffer on `      i think 
+
+		right!?!?!
+
+
+
+		wait...   uhh..... crappp is this is a good idea....
+
+
+				uhhh
+
+
+		
 
 
 

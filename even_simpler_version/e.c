@@ -21,7 +21,7 @@ static inline void create_action(struct action new) {      // inline this.
 static void handler(int __attribute__((unused))_) {}
 int main(int argc, const char** argv) {
 	char* text = NULL, * input = NULL;
-	size_t capacity = 0, count = 0, cursor = 0, anchor = 0, saved = 1, mode = 1, max = 128;
+	size_t capacity = 0, count = 0, cursor = 0, anchor1 = 0, anchor2 = 0, saved = 1, mode = 1, max = 128;
 	char filename[4096] = {0};
 	struct sigaction action = {.sa_handler = handler}; sigaction(SIGINT, &action, NULL);
 	if (argc < 2) goto loop;
@@ -34,57 +34,62 @@ read_file:; FILE* file = fopen(argv[1], "r");
 	printf("%lu\n", count); cursor = 0;
 loop:;	ssize_t r = getline(&input, &capacity, stdin);
 	if (r <= 0) { mode = 0; goto save; }
-	size_t length = (size_t) r;
+	size_t input_length = (size_t) r;
 	if (mode == 1) {
-		if (length >= 2 and input[length - 2] == '`') { length -= 2; mode = 2; puts("."); }
-		text = realloc(text, count + length);
-		memmove(text + cursor + length, text + cursor, count - cursor);
-		for (size_t i = 0; i < length; i++) text[cursor + i] = input[i];
-		count += length; cursor += length; saved = 0;
+		if (input_length >= 2 and input[input_length - 2] == '`') { input_length -= 2; mode = 2; }
+		text = realloc(text, count + input_length);
+		memmove(text + cursor + input_length, text + cursor, count - cursor);
+		memcpy(text + cursor, input, input_length);
+		count += input_length; cursor += input_length; saved = 0;
 	} else if (mode == 2) {
-		input[--length] = 0;
+		input[--input_length] = 0;
 		if (not strcmp(input, "")) {}
 		else if (not strcmp(input, "clear")) printf("\033[2J\033[H");
 		else if (not strcmp(input, "quit")) { if (saved) mode = 0; else puts("modified"); }
 		else if (not strcmp(input, "discard_and_quit")) mode = 0;
 		else if (not strcmp(input, "insert")) mode = 1;
-		else if (not strcmp(input, "anchor")) anchor = cursor;
-		else if (input[0] == '.') max = (size_t) atoi(input + 1);	/// TODO: how do we get rid of this...??!?!?!
-		else if (not strcmp(input, "print")) { 
-			fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); puts("");
-		}
+		else if (not strcmp(input, "a2c")) anchor2 = cursor;
+		else if (not strcmp(input, "a2a1")) anchor2 = anchor1;
+		else if (not strcmp(input, "a1c")) anchor1 = cursor;
+		else if (not strcmp(input, "a1a2")) anchor1 = anchor2;
+		else if (not strcmp(input, "ca1")) cursor = anchor1;
+		else if (not strcmp(input, "ca2")) cursor = anchor2;
+		else if (not strcmp(input, "debug")) printf("%lu %lu %lu %lu\n", count, cursor, anchor1, anchor2);
+		else if (*input == '.') max = (size_t) atoi(input + 1);
+		else if (not strcmp(input, "print")) { fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); puts(""); }
+		else if (not strcmp(input, "print0")) { fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); puts(""); }
+		else if (not strcmp(input, "print1")) { fwrite(text + anchor1, count - anchor1 < max ? count - anchor1 : max, 1, stdout); puts(""); }
+		else if (not strcmp(input, "print2")) { fwrite(text + anchor2, count - anchor2 < max ? count - anchor2 : max, 1, stdout); puts(""); }
 		else if (not strcmp(input, "delete")) {
-			if (cursor < anchor) { size_t temp = cursor; cursor = anchor; anchor = temp; }
-			memmove(text + anchor, text + cursor, count - cursor);
-			count -= cursor - anchor;
-			text = realloc(text, count); cursor = anchor;
-		}
-		else if (input[0] == '/') {
-			const char* tofind = input + 1; length--;
+			if (cursor < anchor2) { size_t temp = cursor; cursor = anchor2; anchor2 = temp; }
+			memmove(text + anchor2, text + cursor, count - cursor);
+			count -= cursor - anchor2; cursor = anchor2; mode = 1;
+		} else if (*input == '/') {
+			const char* tofind = input_length > 1 ? input + 1 : text + anchor1;
+			const size_t length = input_length > 1 ? input_length - 1 : cursor - anchor1;	
 			size_t i = cursor, t = 0;
-		L:	if (t == length) { cursor = i - length; goto loop; }
-			if (i >= count) { printf("absent %s\n", tofind); goto loop; }
+		L:	if (t == length) { cursor = i; anchor1 = cursor - length; goto loop; }
+			if (i >= count) { puts("absent"); cursor = i; goto loop; }
 			if (text[i] == tofind[t]) t++; else t = 0; i++; goto L;
-		}
-		else if (input[0] == '\\') {
-			const char* tofind = input + 1; length--;
+		} else if (*input == '\\') { 
+			const char* tofind = input_length > 1 ? input + 1 : text + anchor1;
+			const size_t length = input_length > 1 ? input_length - 1 : cursor - anchor1;
 			size_t i = cursor, t = length;
-		G:	if (not t) { cursor = i; goto loop; }
-			if (not i) { printf("absent %s\n", tofind); goto loop; }
+		G:	if (not t) { cursor = i; anchor1 = cursor + length; goto loop; }
+			if (not i) { puts("absent"); cursor = i; goto loop; }
 			i--; t--; if (text[i] != tofind[t]) t = length; goto G;
-		}
-		else if (not strncmp(input, "read ", 5)) { 
+		} else if (*input == 'e') { 
 			if (not saved) { puts("modified"); goto loop; }
-			argv[1] = input + 5; goto read_file;
-		}
-		else if (not strncmp(input, "write", 5)) {
+			argv[1] = input + 1; goto read_file;
+		} else if (*input == 'w') {
 			if (*filename) goto save;
-			if (access(input + 6, F_OK) != -1 or length < 6 or not strlen(input + 6)) { puts("file exists"); goto loop; }
-			else strlcpy(filename, input + 6, sizeof filename);
+			if (access(input + 1, F_OK) != -1 or input_length < 1 or not strlen(input + 1)) { puts("file exists"); goto loop; }
+			else strlcpy(filename, input + 1, sizeof filename);
 		save:;	FILE* output_file = fopen(filename, "w");
 			if (not output_file) { perror("fopen"); goto loop; }
 			fwrite(text, count, 1, output_file);
 			fclose(output_file); saved = 1;
+			printf("%lu\n", count); 
 		} else printf("unintelligible %s\n", input);
 	} if (mode) goto loop; done:;
 }
@@ -103,14 +108,6 @@ loop:;	ssize_t r = getline(&input, &capacity, stdin);
 
 
 
-// we are going to rip out the forwards/backwards searching, in favor of        forwards and backwards      find and replace 
-
-//                                          which will look like:      `find_this`replace_with_that                i think. 
-
-
-// furthermore, we need to implement the feature where we use a selection in the file as a command!!! we NEEEEDDD that feature. absolutely required.
-
-// although, we also need standalone commands too of course, buffered on newlines. so yeah. very cool.
 
 
 
@@ -124,6 +121,33 @@ loop:;	ssize_t r = getline(&input, &capacity, stdin);
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+// rename to find_forwards    // make this use    anchor1-cursor, always,      if argument is empty.     YAY!
+
+
+// rename to find_backwards            same semantics as forwards, exactly. 
+
+
+
+
+
+
+
+
+		// also, as seperate commmands, allow the user to  do       drop_anchor1   drop_anchor2      
+		//  as well as   back_anchor1 and back_anchor2, i think...? maybe. we'll see. looks like replace kinda does a back, kindaaaa. idk.
 
 
 
