@@ -141,7 +141,7 @@ int main(void) {
 
 
 
-
+/*
 
 //// OH MY GOSH
 
@@ -165,7 +165,21 @@ int main(void) {
 				uhhh
 
 
-		
+
+
+
+
+
+
+
+
+				i think we are just about ready to add in the undotree system into the editor. 
+
+					and then i think we will be done...? technically?... because we can copy paste from outside the editor, technically!! lol. so we don't need to implement that feature if we don't want to technicallyyyyyyy lol. very cool benefit of print'ing the text to stdout lol, as a display function. YAY. 
+
+
+		*/
+
 
 
 

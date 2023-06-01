@@ -23,14 +23,18 @@ int main(int argc, const char** argv) {
 	char* text = NULL, * input = NULL;
 	size_t capacity = 0, count = 0, cursor = 0, anchor1 = 0, anchor2 = 0, saved = 1, mode = 1, max = 128;
 	char filename[4096] = {0};
-	struct sigaction action = {.sa_handler = handler}; sigaction(SIGINT, &action, NULL);
+	struct sigaction action = {.sa_handler = handler}; 
+	sigaction(SIGINT, &action, NULL);
 	if (argc < 2) goto loop;
-read_file:; FILE* file = fopen(argv[1], "r");
+	read_file:; FILE* file = fopen(argv[1], "r");
 	if (not file) { perror("fopen"); goto done; }
 	fseek(file, 0, SEEK_END);
-        count = (size_t) ftell(file); text = malloc(count);
-        fseek(file, 0, SEEK_SET); fread(text, 1, count, file);
-	fclose(file); mode = 2; strlcpy(filename, argv[1], sizeof filename);
+        count = (size_t) ftell(file); 
+	text = malloc(count);
+        fseek(file, 0, SEEK_SET); 
+	fread(text, 1, count, file);
+	fclose(file); mode = 2; 
+	strlcpy(filename, argv[1], sizeof filename);
 	printf("%lu\n", count); cursor = 0;
 loop:;	ssize_t r = getline(&input, &capacity, stdin);
 	if (r <= 0) { mode = 0; goto save; }
@@ -44,10 +48,10 @@ loop:;	ssize_t r = getline(&input, &capacity, stdin);
 	} else if (mode == 2) {
 		input[--input_length] = 0;
 		if (not strcmp(input, "")) {}
-		else if (not strcmp(input, "clear")) printf("\033[2J\033[H");
-		else if (not strcmp(input, "quit")) { if (saved) mode = 0; else puts("modified"); }
+		else if (*input == 'o') printf("\033[2J\033[H");
+		else if (*input == 'q') { if (saved) mode = 0; else puts("modified"); }
 		else if (not strcmp(input, "discard_and_quit")) mode = 0;
-		else if (not strcmp(input, "insert")) mode = 1;
+		else if (*input == 't') mode = 1;
 		else if (not strcmp(input, "a2c")) anchor2 = cursor;
 		else if (not strcmp(input, "a2a1")) anchor2 = anchor1;
 		else if (not strcmp(input, "a1c")) anchor1 = cursor;
@@ -56,32 +60,30 @@ loop:;	ssize_t r = getline(&input, &capacity, stdin);
 		else if (not strcmp(input, "ca2")) cursor = anchor2;
 		else if (not strcmp(input, "debug")) printf("%lu %lu %lu %lu\n", count, cursor, anchor1, anchor2);
 		else if (*input == '.') max = (size_t) atoi(input + 1);
-		else if (not strcmp(input, "print")) { fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); puts(""); }
-		else if (not strcmp(input, "print0")) { fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); puts(""); }
-		else if (not strcmp(input, "print1")) { fwrite(text + anchor1, count - anchor1 < max ? count - anchor1 : max, 1, stdout); puts(""); }
-		else if (not strcmp(input, "print2")) { fwrite(text + anchor2, count - anchor2 < max ? count - anchor2 : max, 1, stdout); puts(""); }
-		else if (not strcmp(input, "delete")) {
+		else if (*input == 'n') { fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); puts(""); }
+		else if (not strcmp(input, "print_back")) { fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); puts(""); }
+		else if (not strcmp(input, "r")) {
 			if (cursor < anchor2) { size_t temp = cursor; cursor = anchor2; anchor2 = temp; }
 			memmove(text + anchor2, text + cursor, count - cursor);
-			count -= cursor - anchor2; cursor = anchor2; mode = 1;
-		} else if (*input == '/') {
-			const char* tofind = input_length > 1 ? input + 1 : text + anchor1;
-			const size_t length = input_length > 1 ? input_length - 1 : cursor - anchor1;	
+			count -= cursor - anchor2; cursor = anchor2;
+		} else if (*input == 'u') {
+			const char* tofind = input + 1; size_t length = input_length - 1;
+			if (input_length < 2) { tofind = text + anchor1; length = cursor - anchor1; }
 			size_t i = cursor, t = 0;
-		L:	if (t == length) { cursor = i; anchor1 = cursor - length; goto loop; }
+		f:	if (t == length) { cursor = i; anchor1 = cursor - length; goto loop; }
 			if (i >= count) { puts("absent"); cursor = i; goto loop; }
-			if (text[i] == tofind[t]) t++; else t = 0; i++; goto L;
-		} else if (*input == '\\') { 
-			const char* tofind = input_length > 1 ? input + 1 : text + anchor1;
-			const size_t length = input_length > 1 ? input_length - 1 : cursor - anchor1;
+			if (text[i] == tofind[t]) t++; else t = 0; i++; goto f;
+		} else if (*input == 'e') {
+			const char* tofind = input + 1; size_t length = input_length - 1;
+			if (input_length < 2) { tofind = text + anchor1; length = cursor - anchor1; }
 			size_t i = cursor, t = length;
-		G:	if (not t) { cursor = i; anchor1 = cursor + length; goto loop; }
+		b:	if (not t) { cursor = i; anchor1 = cursor + length; goto loop; }
 			if (not i) { puts("absent"); cursor = i; goto loop; }
-			i--; t--; if (text[i] != tofind[t]) t = length; goto G;
-		} else if (*input == 'e') { 
+			i--; t--; if (text[i] != tofind[t]) t = length; goto b;
+		} else if (*input == 'h') {
 			if (not saved) { puts("modified"); goto loop; }
 			argv[1] = input + 1; goto read_file;
-		} else if (*input == 'w') {
+		} else if (*input == 's') {
 			if (*filename) goto save;
 			if (access(input + 1, F_OK) != -1 or input_length < 1 or not strlen(input + 1)) { puts("file exists"); goto loop; }
 			else strlcpy(filename, input + 1, sizeof filename);
@@ -89,11 +91,15 @@ loop:;	ssize_t r = getline(&input, &capacity, stdin);
 			if (not output_file) { perror("fopen"); goto loop; }
 			fwrite(text, count, 1, output_file);
 			fclose(output_file); saved = 1;
-			printf("%lu\n", count); 
-		} else printf("unintelligible %s\n", input);
+			printf("%lu\n", count);
+		} else printf("unintelligible %.*s\n", (int) input_length, input);
 	} if (mode) goto loop; done:;
 }
 
+/*
+e.c:82:29: runtime error: addition of unsigned offset to 0x0001039003f2 overflowed to 0x0001039003ed
+SUMMARY: UndefinedBehaviorSanitizer: undefined-behavior e.c:82:29 in 
+*/
 
 
 

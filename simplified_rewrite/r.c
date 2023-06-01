@@ -24,7 +24,7 @@ struct action {
 	struct state pre, post;
 };
 
-static nat m = 0, n = 0, cm = 0, cn = 0, om = 0, on = 0, mode = 0, head = 0, action_count = 0, saved = 0;
+static nat m = 0, n = 0, cm = 0, cn = 0, om = 0, on = 0, mode = 1, head = 0, action_count = 0, saved = 0;
 static nat window_rows = 0, window_columns = 0, cursor_row = 0, cursor_column = 0, cursor_moved = 0; //desired_column = 0, vertical_movement = 0;
 static struct word* text = NULL;
 static struct action* actions = NULL;
@@ -52,6 +52,7 @@ static inline void initialize_buffer(void) {
 	saved = 1;
 }
 
+/*
 static inline void record_logical_state(struct logical_state* out) {
 	out->saved = saved; out->cn = cn; out->cm = cm; 
 }
@@ -69,9 +70,11 @@ static inline void create_action(struct action new) {
 	actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
 	head = action_count;
 	actions[action_count++] = new;
-}
+}*/
 
 static void insert(char c, bool should_record) {
+
+/*
 	if (should_record and zero_width(c) 
 		and not (
 			actions[head].type == insert_action and 
@@ -82,7 +85,7 @@ static void insert(char c, bool should_record) {
 
 	struct action new_action = {0};
 	if (should_record and not zero_width(c)) record_logical_state(&new_action.pre);
-
+*/
 	cursor_moved = 1; //vertical_movement = 0;
 	 if (cm == m or cn == n) {
 		text = realloc(text, (n + 1) * sizeof *text);
@@ -108,7 +111,7 @@ static void insert(char c, bool should_record) {
 	}
 	saved = 0;
 	if (not should_record) return;
-
+/*
 	if (zero_width(c)) {
 		actions[head].text = realloc(actions[head].text, (size_t) actions[head].length + 1);
 		actions[head].text[actions[head].length++] = c;
@@ -122,13 +125,15 @@ static void insert(char c, bool should_record) {
 	new_action.text[0] = c;
 	new_action.length = 1;
 	create_action(new_action);
+
+*/
 }
 
 static char delete(void) {
 	cursor_moved = 1; //vertical_movement = 0;
 
-	struct action new_action = {0};
-	if (should_record) record_logical_state(&new_action.pre);
+	//struct action new_action = {0};
+	//if (should_record) record_logical_state(&new_action.pre);
 
 	char r = 0;
 
@@ -151,8 +156,8 @@ static char delete(void) {
 		goto top;
 	}
 done:	saved = 0;
-	if (not should_record) return;
-
+	// if (not should_record) return;
+/*
 	if (zero_width(r)) {
 		actions[head].text = realloc(actions[head].text, (size_t) actions[head].length + 1);
 		actions[head].text[actions[head].length++] = r;
@@ -166,6 +171,7 @@ done:	saved = 0;
 	new_action.text[0] = r;
 	new_action.length = 1;
 	create_action(new_action);
+*/
 	return r;
 }
 
@@ -272,7 +278,7 @@ static void display(void) {
 	print_cursor: if (found) length += snprintf(screen + length, screen_size, "\033[%llu;%lluH\033[?25h", cursor_row + 1, cursor_column + 1);
 	write(1, screen, (size_t) length);
 }
-
+/*
 static inline void replay_action(struct action a) { 
 	require_logical_state(&a.pre);
 	if (a.type == no_action or a.type == anchor_action) {}
@@ -315,12 +321,7 @@ static inline void alternate_decr(void) {
 	if (actions[head].choice) actions[head].choice--;
 	// sprintf(message, "switched %ld %ld", actions[head].choice, actions[head].count);
 }
-
-
-
-
-
-
+*/
 
 static void interpret_sequence(void) { 
 	char c = 0; read(0, &c, 1); read(0, &c, 1);
@@ -341,7 +342,7 @@ int main(int argc, const char** argv) {
         fseek(file, 0, SEEK_SET);
         fread(local_text, sizeof(char), length, file);
 	fclose(file);
-	for (size_t i = 0; i < length; i++) insert(local_text[i]);
+	for (size_t i = 0; i < length; i++) insert(local_text[i], 0);
 	cn = 0; cm = 0; on = 0; om = 0; cursor_moved = 0; mode = 1;
 	free(local_text);
 here:;	struct termios terminal = configure_terminal();
@@ -356,11 +357,51 @@ loop:	if (cursor_moved) put_cursor_in_view();
 	else if (c == '[') for (int i = 100; i--;) move_left(); // debug
 	else if (c == '-') origin_move_up(); // debug
 	else if (c == '=') origin_move_down(); // debug
-	else insert(c);
+	else insert(c, 0);
 	if (mode) goto loop;
 	write(1, "\033[?1049l\033[7h\033[?25h", 18);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

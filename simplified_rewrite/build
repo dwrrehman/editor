@@ -10,7 +10,7 @@ elif [ "clean" = "$1" ]; then
 	rm -rf run.dSYM
 
 elif [ "" = "$1" ]; then 
-	clang -g -O0 -Weverything -Wno-declaration-after-statement -Wno-deprecated-declarations -fsanitize=address,undefined r.c -o run -ferror-limit=4
+	clang -g -O0 -Weverything -Wno-declaration-after-statement -Wno-deprecated-declarations -fsanitize=address,undefined r.c -o run 
 
 
 elif [ "fuzz" = "$1" ]; then 
