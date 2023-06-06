@@ -1,0 +1,1 @@
+clang -g -O0 -Weverything -Wno-declaration-after-statement c.c -o out -ferror-limit=5 -fsanitize=address,undefined
