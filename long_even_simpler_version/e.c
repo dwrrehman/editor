@@ -16,6 +16,406 @@ struct action {
 
 //  static void handler(int __attribute__((unused))_) {}
 
+int main(int argc, const char** argv) {
+
+	// struct sigaction action = {.sa_handler = handler}; 
+	// sigaction(SIGINT, &action, NULL);
+
+	char filename[2048] = {0};
+	char input[512] = {0};
+	char* text = NULL, * insert = NULL;
+	struct action* actions = calloc(1, sizeof(struct action));
+	size_t action_count = 1, head = 0;
+	size_t cursor = 0, anchor1 = 0, anchor2 = 0, count = 0;
+	size_t saved = 1, mode = 1;
+	size_t max = 1024;
+	size_t insert_length = 0;
+
+	if (argc < 2) goto loop;
+
+	read_file:; FILE* file = fopen(argv[1], "r");
+	if (not file) { perror("fopen"); goto done; }
+
+	fseek(file, 0, SEEK_END);
+        count = (size_t) ftell(file); 
+	text = malloc(count);
+        fseek(file, 0, SEEK_SET); 
+	fread(text, 1, count, file);
+	fclose(file); 
+	strlcpy(filename, argv[1], sizeof filename);
+
+	mode = 2; 
+	saved = 1;
+	printf("read in %lu bytes\n", count); 
+
+	
+loop: 	fflush(stdout);
+	fgets(input, sizeof input, stdin);
+	size_t length = strlen(input);
+
+	if (mode == 1) {
+
+		if (strcmp(input, ".\n")) {
+			insert = realloc(insert, insert_length + length);
+			memcpy(insert + insert_length, input, length);
+			insert_length += length;
+			goto loop;
+		} else if (insert_length) insert_length--; 
+
+		if (anchor2 > cursor) { 
+			size_t temp = cursor;
+			cursor = anchor2; 
+			anchor2 = temp; 
+		}
+	
+		struct action new = {0};
+		new.pre = cursor;
+
+		const size_t deleted_length = cursor - anchor2;
+		char* deleted = text ? strndup(text + anchor2, deleted_length) : NULL;
+		
+	
+		if (insert_length > deleted_length)   
+			 text = realloc(text, count + insert_length - deleted_length);
+
+		if (insert_length != deleted_length) 
+			memmove(text + cursor + insert_length - deleted_length, text + cursor, count - cursor);
+
+		if (insert_length) memcpy(text + anchor2, insert, insert_length);
+
+		if (insert_length < deleted_length)
+			 text = realloc(text, count + insert_length - deleted_length);
+
+		count  += insert_length - deleted_length;
+		cursor += insert_length - deleted_length;
+
+		saved = 0;
+		mode = 2;
+		anchor2 = cursor;
+
+		printf("inserted %lu deleted %lu at cursor %lu\n", insert_length, deleted_length, cursor);
+
+		new.post = cursor;
+		new.inserted = strndup(insert, insert_length);
+		new.ilength = insert_length;
+		new.deleted = deleted;
+		new.dlength = deleted_length;
+		new.parent = head;
+
+
+		actions[head].children = realloc(actions[head].children, sizeof(size_t) * (size_t) (actions[head].count + 1));
+		actions[head].choice = actions[head].count;
+		actions[head].children[actions[head].count++] = action_count;
+
+		head = action_count;
+
+		actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
+		actions[action_count++] = new;
+
+
+	} else if (mode == 2) {
+		if (not length) goto loop;
+		if (input[length - 1] == 10) input[--length] = 0;
+		size_t remaining = length - 1;
+		char c = *input;
+
+		if (not strcmp(input, "discard_and_quit")) mode = 0;
+
+		else if (length != 1) goto unknown;
+
+		if (c == 10) {}
+		else if (c == ';') printf("\033[2J\033[H");
+
+		else if (c == 'q') { if (saved) mode = 0; else puts("modified"); }  
+
+		else if (c == 't') mode = 1; 
+
+		else if (c == 'i') max = (size_t) atoi(input + 1); 
+
+		else if (c == 'a') {
+			if (count) fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); 
+			putchar(10);
+		}
+
+		else if (c == 'd') { 
+			size_t save = cursor;
+			if (cursor > max) cursor -= max; else cursor = 0;
+			if (count) fwrite(text + cursor, save - cursor, 1, stdout); 
+			putchar(10);
+			cursor = save;
+		}
+
+		else if (c == 'e') {
+			size_t save = cursor;
+			if (cursor > max) cursor -= max; else cursor = 0;
+			if (count) fwrite(text + cursor, save - cursor, 1, stdout); 
+			putchar(10);
+		}
+
+		else if (c == 'o') {
+			size_t total = count - cursor < max ? count - cursor : max;
+			if (count) fwrite(text + cursor, total, 1, stdout); 
+			putchar(10);
+			cursor += total;
+		}
+
+		else if (c == 'f') anchor2 = cursor;
+		else if (c == 'g') anchor2 = anchor1;
+		else if (c == 'h') anchor1 = cursor;
+
+		else if (c == 'F') anchor1 = anchor2;
+		else if (c == 'G') cursor = anchor1;
+		else if (c == 'H') cursor = anchor2;
+
+	
+		else if (c == '0') printf("count: %lu, cursor: %lu, anchor1: %lu, anchor2: %lu.\n", 
+						count, cursor, anchor1, anchor2);
+
+
+		else if (c == 'u') { 
+
+			const char* tofind = input + 1; 
+			size_t tofind_count = remaining;
+
+			if (not tofind_count) { 
+				tofind = text + anchor1; 
+				tofind_count = cursor - anchor1; 
+			}
+
+
+			size_t i = cursor, t = 0;
+
+		f:	if (t == tofind_count) { 
+				cursor = i;
+				anchor1 = i - tofind_count;
+				printf("found: cursor %lu anchor1 %lu\n", cursor, anchor1); 
+				goto loop; 
+			}
+			if (i >= count) { 
+				cursor = i; 
+				puts("absent"); 
+				printf("not found: cursor %lu anchor1 %lu\n", cursor, anchor1); 
+				goto loop;
+			}
+			if (text[i] == tofind[t]) t++; else t = 0; 
+			i++; 
+			goto f;
+
+
+		} else if (c == 'n') { 
+
+			const char* tofind = input + 1; 
+			size_t tofind_count = remaining;
+			if (not tofind_count) { 
+				tofind = text + anchor1; 
+				tofind_count = cursor - anchor1; 
+			}
+
+			size_t i = cursor, t = tofind_count;
+		b:	if (not t) { 
+				cursor = i;
+				anchor1 = i + tofind_count; 
+				
+				printf("bound: cursor %lu anchor1 %lu\n", cursor, anchor1); 
+				goto loop; 
+			}
+			if (not i) { 
+				cursor = i;
+				puts("absent"); 
+				printf("not bound: cursor %lu anchor1 %lu\n", cursor, anchor1); 
+				goto loop;
+			}
+			i--; t--;
+			if (text[i] != tofind[t]) t = tofind_count; 
+			goto b;
+
+
+		} else if (c == 'm') { 
+			printf("we were going to execute the command: \"");
+			fwrite(input + 1, remaining, 1, stdout);
+			printf("\", but its unimpl.\n");
+
+
+		} else if (c == 'e') { 
+			if (not saved) { puts("cannot read, modified."); goto loop; }
+			argv[1] = input + 1; 
+			goto read_file;
+
+
+		} else if (c == 's') { 
+			if (*filename and not remaining) goto save;
+			if (not remaining) { puts("cannot save, no filename given"); goto loop; }
+			else if (not access(input + 1, F_OK)) { puts("cannot save, file exists"); goto loop; }
+			else strlcpy(filename, input + 1, sizeof filename);
+		save:;	FILE* output_file = fopen(filename, "w");
+			if (not output_file) { perror("fopen"); goto loop; }
+			fwrite(text, count, 1, output_file);
+			fclose(output_file); 
+			printf("wrote %lu bytes to %s\n", count, filename); 
+			saved = 1; 
+
+
+		} else if (c == 'y') { 
+
+			if (actions[head].choice + 1 < actions[head].count)
+				actions[head].choice++; 
+			else 
+				actions[head].choice = 0;
+
+			printf("switched %ld %ld", 
+				actions[head].choice, 
+				actions[head].count
+			);
+
+
+		} else if (c == 'c') { 
+
+			if (not head) goto loop;
+
+			printf("undoing uninserted %lu undeleted %lu count %lu parent %lu choice %lu...\n", 
+					actions[head].ilength,
+					actions[head].dlength,
+					actions[head].count, 
+					actions[head].parent, 
+					actions[head].choice
+			);
+
+			const struct action a = actions[head];
+
+			cursor = a.post;
+		
+
+			if (a.dlength > a.ilength)    
+				text = realloc(text, count + a.dlength - a.ilength);
+
+			if (a.dlength != a.ilength)
+				memmove(text + cursor + a.dlength - a.ilength, text + cursor, count - cursor);
+
+			memcpy(text + cursor - a.ilength, a.deleted, a.dlength);
+
+			if (a.dlength < a.ilength)
+				text = realloc(text, count + a.dlength - a.ilength);
+
+			count += a.dlength - a.ilength;
+			cursor = a.pre;
+
+			head = actions[head].parent;
+
+
+		} else if (c == 'k') { 
+			if (not actions[head].count) goto loop;
+			printf("redoing reinserted %lu redeleted %lu count %lu parent %lu choice %lu...\n", 
+					actions[head].ilength,
+					actions[head].dlength,
+					actions[head].count, 
+					actions[head].parent, 
+					actions[head].choice
+			);
+
+			head = actions[head].children[actions[head].choice];
+
+			const struct action a = actions[head];
+
+			cursor = a.pre;
+
+			if (a.ilength > a.dlength)    
+				text = realloc(text, count + a.ilength - a.dlength);
+
+			if (a.ilength != a.dlength)    
+				memmove(text + cursor + a.ilength - a.dlength, text + cursor, count - cursor);
+
+			memcpy(text + cursor - a.dlength, a.inserted, a.ilength);
+
+			if (a.ilength < a.dlength)
+				text = realloc(text, count + a.ilength - a.dlength);
+
+			count += a.ilength - a.dlength;
+			cursor = a.post;
+
+		} else { 
+			unknown: printf("unintelligible %s\n", input); 
+		}
+	}
+	if (mode) goto loop; 
+done: 	return 0;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//printf("appending... (%lu)\n", insert_length);
+
+
+
+
+
+
+
+
+
+//	printf("\n\trecieved input(%lu): \n\n\t\t\"", input_length);
+//	fwrite(input, input_length, 1, stdout); 
+//	printf("\"\n\n\n\n");
 
 
 
@@ -63,49 +463,30 @@ done:
 
 
 
-int main(int argc, const char** argv) {
-
-
-	// struct sigaction action = {.sa_handler = handler}; 
-	// sigaction(SIGINT, &action, NULL);
-
-
-	char filename[2048] = {0};
-	char input[512] = {0};
-
-	char* text = NULL, * insert = NULL;
-	
-	struct action* actions = calloc(1, sizeof(struct action));
-	size_t action_count = 1, head = 0;
-
-
-	size_t cursor = 0, anchor1 = 0, anchor2 = 0;
-	size_t saved = 1, mode = 1;
-	size_t max = 1024;
 
 
 
-	if (argc < 2) goto loop;
 
-	read_file:; FILE* file = fopen(argv[1], "r");
-	if (not file) { perror("fopen"); goto done; }
 
-	fseek(file, 0, SEEK_END);
-        count = (size_t) ftell(file); 
-	text = malloc(count);
-        fseek(file, 0, SEEK_SET); 
-	fread(text, 1, count, file);
-	fclose(file); 
-	strlcpy(filename, argv[1], sizeof filename);
 
-	mode = 2; 
-	saved = 1;
-	printf("read in %lu bytes\n", count); 
+/*
 
-	size_t input_length = 0;
 
-loop: 
-	input_length = 0;
+
+
+
+
+	//printf("given: cursor %lu anchor2 %lu\n", cursor, anchor2);
+		//printf("actually using: cursor %lu anchor2 %lu\n", cursor, anchor2);
+
+
+
+
+
+
+
+
+input_length = 0;
 	char w = 0;
 	d = 0;
 	p = 0;
@@ -139,339 +520,22 @@ push:
 	goto read_char; 
 
 
-process: 
 
-//	printf("\n\trecieved input(%lu): \n\n\t\t\"", input_length);
-//	fwrite(input, input_length, 1, stdout); 
-//	printf("\"\n\n\n\n");
 
-	if (mode == 1) {   
 
-		//printf("given: cursor %lu anchor2 %lu\n", cursor, anchor2);
 
-		if (anchor2 > cursor) { size_t temp = cursor; cursor = anchor2; anchor2 = temp; }
 
-		//printf("actually using: cursor %lu anchor2 %lu\n", cursor, anchor2);
 
 
-		struct action new = {0};
-		new.pre = cursor;
 
 
 
-		const size_t deleted_length = cursor - anchor2;
-		char* deleted = strndup(text + anchor2, deleted_length);
-		
-	
-		if (input_length > deleted_length)   
-			 text = realloc(text, count + input_length - deleted_length);
 
-		if (input_length != deleted_length) 
-			memmove(text + cursor + input_length - deleted_length, text + cursor, count - cursor);
 
-		memcpy(text + anchor2, input, input_length);
 
-		if (input_length < deleted_length)   
-			 text = realloc(text, count + input_length - deleted_length);
 
-		count  += input_length - deleted_length;
-		cursor += input_length - deleted_length;
 
 
-
-
-
-		saved = 0;
-		mode = 2;
-		anchor2 = cursor;
-
-		printf("inserted %lu deleted %lu at cursor %lu\n", input_length, deleted_length, cursor);
-
-		new.post = cursor;
-		new.inserted = strndup(input, input_length);
-		new.ilength = input_length;
-		new.deleted = deleted;
-		new.dlength = deleted_length;
-		new.parent = head;
-
-
-		actions[head].children = realloc(actions[head].children, sizeof(size_t) * (size_t) (actions[head].count + 1));
-		actions[head].choice = actions[head].count;
-		actions[head].children[actions[head].count++] = action_count;
-
-		head = action_count;
-
-		actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
-		actions[action_count++] = new;
-
-
-
-
-
-	} else if (mode == 2) {
-		if (not input_length) goto loop;
-
-		size_t remaining = input_length - 1;
-		char c = *input;
-
-		if (input_length == 16 and not strncmp(input, "discard_and_quit", 16)) mode = 0;
-
-		else if (input_length == 1 and c == 10) {}
-		else if (input_length == 1 and c == ';') printf("\033[2J\033[H");
-
-		else if (input_length == 1 and c == 'q') { if (saved) mode = 0; else puts("modified"); }  
-
-		else if (input_length == 1 and c == 'r') mode = 1; 
-
-		else if (c == 'i') max = (size_t) atoi(input + 1); 
-
-		else if (input_length == 1 and c == 'a') {
-			fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); 
-			puts(""); 
-		}
-
-		else if (input_length == 1 and c == 'd') { 
-			size_t save = cursor;
-			if (cursor > max) cursor -= max; else cursor = 0;
-			fwrite(text + cursor, save - cursor, 1, stdout); 
-			puts("");
-			cursor = save;
-		}
-
-		else if (input_length == 1 and c == 'e') {
-			size_t save = cursor;
-			if (cursor > max) cursor -= max; else cursor = 0;
-			fwrite(text + cursor, save - cursor, 1, stdout); 
-			puts("");
-		}
-
-		else if (input_length == 1 and c == 'o') {
-			size_t total = count - cursor < max ? count - cursor : max;
-			fwrite(text + cursor, total, 1, stdout); 
-			puts("");
-			cursor += total;
-		}
-
-		else if (input_length == 1 and c == 'f') anchor2 = cursor;
-		else if (input_length == 1 and c == 'g') anchor2 = anchor1;
-		else if (input_length == 1 and c == 'h') anchor1 = cursor;
-
-		else if (input_length == 1 and c == 'F') anchor1 = anchor2;
-		else if (input_length == 1 and c == 'G') cursor = anchor1;
-		else if (input_length == 1 and c == 'H') cursor = anchor2;
-
-	
-		else if (input_length == 1 and c == '0') printf("count: %lu, cursor: %lu, anchor1: %lu, anchor2: %lu.\n", 
-						count, cursor, anchor1, anchor2);
-
-
-
-
-		else if (c == 'u') { 
-
-			const char* tofind = input + 1; size_t tofind_count = remaining;
-			if (not tofind_count) { tofind = text + anchor1; tofind_count = cursor - anchor1; }
-
-			size_t i = cursor, t = 0;
-
-		f:	if (t == tofind_count) { 
-				cursor = i;
-				anchor1 = i - tofind_count;
-				printf("found: cursor %lu anchor1 %lu\n", cursor, anchor1); 
-				goto loop; 
-			}
-			if (i >= count) { 
-				cursor = i; 
-				puts("absent"); 
-				printf("not found: cursor %lu anchor1 %lu\n", cursor, anchor1); 
-				goto loop;
-			}
-			if (text[i] == tofind[t]) t++; else t = 0; 
-			i++; 
-			goto f;
-
-
-
-
-		} else if (c == 'n') { 
-
-			const char* tofind = input + 1; size_t tofind_count = remaining;
-			if (not tofind_count) { tofind = text + anchor1; tofind_count = cursor - anchor1; }
-
-			size_t i = cursor, t = tofind_count;
-		b:	if (not t) { 
-				cursor = i;
-				anchor1 = i + tofind_count; 
-				
-				printf("bound: cursor %lu anchor1 %lu\n", cursor, anchor1); 
-				goto loop; 
-			}
-			if (not i) { 
-				cursor = i;
-				puts("absent"); 
-				printf("not bound: cursor %lu anchor1 %lu\n", cursor, anchor1); 
-				goto loop;
-			}
-			i--; t--;
-			if (text[i] != tofind[t]) t = tofind_count; 
-			goto b;
-
-
-
-		} else if (c == 'm') { 
-			input[input_length] = 0;
-			printf("we were going to execute the command: \"");
-			fwrite(input + 1, remaining, 1, stdout);
-			printf("\", but its unimpl.\n");
-
-
-		} else if (c == 'e') { 
-			if (not saved) { puts("cannot read, modified."); goto loop; }
-			input[input_length] = 0;
-			argv[1] = input + 1; 
-			goto read_file;
-
-
-
-
-		} else if (c == 's') { 
-			input[input_length] = 0;
-			if (*filename and not remaining) goto save;
-			if (not remaining) { puts("cannot save, no filename given"); goto loop; }
-			else if (not access(input + 1, F_OK)) { puts("cannot save, file exists"); goto loop; }
-			else strlcpy(filename, input + 1, sizeof filename);
-		save:;	FILE* output_file = fopen(filename, "w");
-			if (not output_file) { perror("fopen"); goto loop; }
-			fwrite(text, count, 1, output_file);
-			fclose(output_file); 
-			printf("wrote %lu bytes to %s\n", count, filename); 
-			saved = 1; 
-
-
-
-
-
-		} else if (input_length == 1 and c == '-') { 
-			if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; 
-			else actions[head].choice = 0;
-			printf("switched %ld %ld", actions[head].choice, actions[head].count);
-	
-
-
-
-
-
-
-
-
-
-
-
-		} else if (input_length == 1 and c == 'c') { 
-			if (not head) goto loop;
-			printf("undoing count %lu parent %lu choice %lu...\n", 
-					actions[head].count, 
-					actions[head].parent, 
-					actions[head].choice
-			);
-
-			const struct action a = actions[head];
-
-			cursor = a.post;
-
-		
-
-			if (a.dlength > a.ilength)    
-				text = realloc(text, count + a.dlength - a.ilength);
-
-			if (a.dlength != a.ilength)
-				memmove(text + cursor + a.dlength - a.ilength, text + cursor, count - cursor);
-
-			memcpy(text + cursor - a.ilength, a.deleted, a.dlength);
-
-			if (a.dlength < a.ilength)
-				text = realloc(text, count + a.dlength - a.ilength);
-
-			count += a.dlength - a.ilength;
-			//cursor += a.dlength - a.ilength;
-
-			cursor = a.pre;
-
-			head = actions[head].parent;
-
-
-
-
-
-		} else if (input_length == 1 and c == 'k') { 
-			if (not actions[head].count) goto loop;
-			printf("redoing count %lu parent %lu choice %lu...\n", 
-					actions[head].count, 
-					actions[head].parent, 
-					actions[head].choice
-			);
-
-			head = actions[head].children[actions[head].choice];
-
-			const struct action a = actions[head];
-
-
-
-
-		
-
-			cursor = a.pre;
-
-
-			if (a.ilength > a.dlength)    
-				text = realloc(text, count + a.ilength - a.dlength);
-
-			if (a.ilength != a.dlength)    
-				memmove(text + cursor + a.ilength - a.dlength, text + cursor, count - cursor);
-
-			memcpy(text + cursor - a.dlength, a.inserted, a.ilength);
-
-			if (a.ilength < a.dlength)
-				text = realloc(text, count + a.ilength - a.dlength);
-
-
-			count += a.ilength - a.dlength;
-			//cursor += a.ilength - a.dlength;
-
-
-			cursor = a.post;
-
-
-
-
-
-		} else { 
-			printf("unintelligible %c\n", c); 
-		}
-	}
-	if (mode) goto loop; 
-done: 	return 0;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
 		const size_t deleted_length = cursor - anchor2;
 		const size_t diff = input_length - deleted_length;
 		char* deleted = strndup(text + anchor2, deleted_length);
