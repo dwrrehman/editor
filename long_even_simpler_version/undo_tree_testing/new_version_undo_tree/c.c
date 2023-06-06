@@ -10,6 +10,7 @@
 #include <iso646.h>
 #include <stdint.h>
 #include <stdbool.h>
+
 struct action {
 	size_t* children;
 	char* deleted, * inserted;

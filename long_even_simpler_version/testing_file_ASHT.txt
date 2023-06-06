@@ -1,0 +1,35 @@
+int argc, const char** argv) {
+
+
+	// struct sigaction action = {.sa_handler = handler}; 
+	// sigaction(SIGINT, &action, NULL);
+
+
+
+	char filename[4096] = {0};
+	char* text = malloc(1), * input = NULL;
+	char p = 0, d = 0;
+
+	struct action* actions = calloc(1, sizeof(struct action));
+	size_t action_count = 1, head = 0;
+
+	size_t capacity = 0, count = 0,
+		cursor = 0, anchor1 = 0, anchor2 = 0, 
+		saved = 1, mode = 1, 
+		max = 1024, input_length = 0;
+
+	
+
+	if (argc < 2) goto loop;
+
+	read_file:; FILE* file = fopen(argv[1], "r");
+	if (not file) { perror("fopen"); goto done; }
+
+	fseek(file, 0, SEEK_END);
+        count = (size_t) ftell(file); 
+	text = malloc(count);
+        fseek(file, 0, SEEK_SET); 
+	fread(text, 1, count, file);
+	fclose(file); 
+	strlcpy(filename, argv[1], sizeof filename);
+}
