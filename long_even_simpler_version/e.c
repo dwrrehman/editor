@@ -46,7 +46,7 @@ int main(int argc, const char** argv) {
 	fclose(file); 
 	strlcpy(filename, argv[1], sizeof filename);
 	mode = 2; 
-r:	printf("%s read %lu\n", filename, count); 
+r:	printf("%s read %lu\n", filename, count);
 
 loop: 	fflush(stdout);
 	fgets(input, sizeof input, stdin);
@@ -58,7 +58,7 @@ loop: 	fflush(stdout);
 			memcpy(insert + insert_length, input, length);
 			insert_length += length;
 			goto loop;
-		} else if (insert_length) insert_length--; 
+		} else if (insert_length) insert_length--;
 
 		if (anchor2 > cursor) {
 			size_t temp = cursor;
@@ -85,8 +85,6 @@ loop: 	fflush(stdout);
 		anchor2 = cursor;
 		anchor1 = cursor;
 
-		
-
 		new.post = cursor;
 		new.inserted = strndup(insert, insert_length);
 		new.ilength = insert_length;
@@ -106,6 +104,7 @@ loop: 	fflush(stdout);
 	} else if (mode == 2) {
 		if (not length) goto loop;
 		if (input[length - 1] == 10) input[--length] = 0;
+		if (not length) goto loop;
 		const size_t remaining = length - 1;
 		char c = *input;
 
@@ -117,27 +116,22 @@ loop: 	fflush(stdout);
 		else if (c == 'l') max = (size_t) atoi(input + 1); 
 		else if (c == 'd') {
 			if (count) fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); 
-			putchar(10);
 
 		} else if (c == 'a') {
 			size_t save = cursor;
 			if (cursor > max) cursor -= max; else cursor = 0;
 			if (count) fwrite(text + cursor, save - cursor, 1, stdout); 
-			putchar(10);
 			cursor = save;
 
 		} else if (c == 'p') {
 			size_t save = cursor;
 			if (cursor > max) cursor -= max; else cursor = 0;
 			if (count) fwrite(text + cursor, save - cursor, 1, stdout); 
-			putchar(10);
 
 		} else if (c == 'o') {
 			size_t total = count - cursor < max ? count - cursor : max;
 			if (count) fwrite(text + cursor, total, 1, stdout); 
-			putchar(10);
 			cursor += total;
-
 		} 
 		else if (c == 'r') anchor2 = cursor;
 		else if (c == 'h') anchor2 = anchor1;
@@ -151,20 +145,20 @@ loop: 	fflush(stdout);
 		else if (c == '0') printf("count: %lu, cursor: %lu, anchor1: %lu, anchor2: %lu.\n", 
 						count, cursor, anchor1, anchor2);
 
-		else if (c == 'u') { 
+		else if (c == 'u') {
 			const char* tofind = input + 1; 
 			size_t tofind_count = remaining;
 
-			if (not tofind_count) { 
+			if (not tofind_count) {
 				tofind = text + anchor1; 
 				tofind_count = cursor - anchor1; 
 			}
 			size_t i = cursor, t = 0;
-		f:	if (t == tofind_count or i >= count) { 
+		f:	if (t == tofind_count or i >= count) {
 				cursor = i;
 				if (t == tofind_count) anchor1 = i - tofind_count;
-				print_all: printf("%lu %lu %lu\n", count, cursor, anchor1); 
-				goto loop; 
+				print_all: printf("%lu %lu %lu\n", count, cursor, anchor1);
+				goto loop;
 			}
 			if (text[i] == tofind[t]) t++; else t = 0;      //  or (text[i] == 10 and tofind[t] == '`')
 			i++;
@@ -174,18 +168,18 @@ loop: 	fflush(stdout);
 			const char* tofind = input + 1; 
 			size_t tofind_count = remaining;
 
-			if (not tofind_count) { 
-				tofind = text + anchor1; 
-				tofind_count = cursor - anchor1; 
+			if (not tofind_count) {
+				tofind = text + anchor1;
+				tofind_count = cursor - anchor1;
 			}
 			size_t i = cursor, t = tofind_count;
-		b:	if (not t or not i) { 
+		b:	if (not t or not i) {
 				cursor = i;
-				if (not t) anchor1 = i + tofind_count; 
+				if (not t) anchor1 = i + tofind_count;
 				goto print_all;
 			}
 			i--; t--;
-			if (text[i] != tofind[t]) t = tofind_count; 
+			if (text[i] != tofind[t]) t = tofind_count;
 			goto b;
 
 		} else if (c == 'm') { 
@@ -261,6 +255,64 @@ loop: 	fflush(stdout);
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+	features to implement:
+
+		- add the         insert mode textbox functionality 	to the editor, so we can give commands with newlines.... literally. 
+
+
+		- add the      shell command functionality to the text editor. 
+
+
+
+		- rename max to be   number 
+		- allow     max   to be negative.
+
+
+
+
+		- simplify    o   p    a    and   d       to just be           d         for print,       and based on what     number is pos or neg,
+									we will print either forwards or backwards. cool!
+
+									then, add a command which always adds (up to)    number     to the cursor, to move it. 
+									
+													cursor += number;          ie. 
+
+
+
+
+
+
+
+			- also make these changes with the editor itself! lol. 
+
+
+
+
+
+
+*/
 
 
 
@@ -1245,3 +1297,4 @@ done: 	printf("exiting...\n");
 
 
 // printf("inserted \"%.*s\", deleted \"%.*s\".\n", (int) insert_length, insert, (int) deleted_length, deleted);
+
