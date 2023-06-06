@@ -13,7 +13,6 @@ struct action {
 	size_t parent, choice, count, ilength, dlength, pre, post;
 };
 
-
 //  static void handler(int __attribute__((unused))_) {}
 
 int main(int argc, const char** argv) {
@@ -34,7 +33,10 @@ int main(int argc, const char** argv) {
 	if (argc < 2) goto loop;
 
 	read_file:; FILE* file = fopen(argv[1], "r");
-	if (not file) { perror("fopen"); goto done; }
+	if (not file) { 
+		perror("fopen"); 
+		goto done; 
+	}
 
 	fseek(file, 0, SEEK_END);
         count = (size_t) ftell(file); 
@@ -43,12 +45,10 @@ int main(int argc, const char** argv) {
 	fread(text, 1, count, file);
 	fclose(file); 
 	strlcpy(filename, argv[1], sizeof filename);
-
 	mode = 2; 
 	saved = 1;
-	printf("read in %lu bytes\n", count); 
+	printf("read %s %lu\n", filename, count); 
 
-	
 loop: 	fflush(stdout);
 	fgets(input, sizeof input, stdin);
 	size_t length = strlen(input);
@@ -67,13 +67,12 @@ loop: 	fflush(stdout);
 			cursor = anchor2; 
 			anchor2 = temp; 
 		}
-	
+
 		struct action new = {0};
 		new.pre = cursor;
 
 		const size_t deleted_length = cursor - anchor2;
 		char* deleted = text ? strndup(text + anchor2, deleted_length) : NULL;
-		
 	
 		if (insert_length > deleted_length)   
 			 text = realloc(text, count + insert_length - deleted_length);
@@ -93,7 +92,7 @@ loop: 	fflush(stdout);
 		mode = 2;
 		anchor2 = cursor;
 
-		printf("inserted %lu deleted %lu at cursor %lu\n", insert_length, deleted_length, cursor);
+		printf("+%lu -%lu\n", insert_length, deleted_length);
 
 		new.post = cursor;
 		new.inserted = strndup(insert, insert_length);
@@ -101,7 +100,6 @@ loop: 	fflush(stdout);
 		new.deleted = deleted;
 		new.dlength = deleted_length;
 		new.parent = head;
-
 
 		actions[head].children = realloc(actions[head].children, sizeof(size_t) * (size_t) (actions[head].count + 1));
 		actions[head].choice = actions[head].count;
@@ -126,7 +124,7 @@ loop: 	fflush(stdout);
 		if (c == 10) {}
 		else if (c == ';') printf("\033[2J\033[H");
 
-		else if (c == 'q') { if (saved) mode = 0; else puts("modified"); }  
+		else if (c == 'q') { if (saved) mode = 0; else puts("q:modified"); }  
 
 		else if (c == 't') mode = 1; 
 
@@ -167,13 +165,10 @@ loop: 	fflush(stdout);
 		else if (c == 'G') cursor = anchor1;
 		else if (c == 'H') cursor = anchor2;
 
-	
 		else if (c == '0') printf("count: %lu, cursor: %lu, anchor1: %lu, anchor2: %lu.\n", 
 						count, cursor, anchor1, anchor2);
 
-
 		else if (c == 'u') { 
-
 			const char* tofind = input + 1; 
 			size_t tofind_count = remaining;
 
@@ -182,19 +177,18 @@ loop: 	fflush(stdout);
 				tofind_count = cursor - anchor1; 
 			}
 
-
 			size_t i = cursor, t = 0;
 
 		f:	if (t == tofind_count) { 
 				cursor = i;
 				anchor1 = i - tofind_count;
-				printf("found: cursor %lu anchor1 %lu\n", cursor, anchor1); 
+				//printf("found: cursor %lu anchor1 %lu\n", cursor, anchor1); 
 				goto loop; 
 			}
 			if (i >= count) { 
 				cursor = i; 
-				puts("absent"); 
-				printf("not found: cursor %lu anchor1 %lu\n", cursor, anchor1); 
+				//puts("absent"); 
+				//printf("not found: cursor %lu anchor1 %lu\n", cursor, anchor1); 
 				goto loop;
 			}
 			if (text[i] == tofind[t]) t++; else t = 0; 
@@ -203,9 +197,9 @@ loop: 	fflush(stdout);
 
 
 		} else if (c == 'n') { 
-
 			const char* tofind = input + 1; 
 			size_t tofind_count = remaining;
+
 			if (not tofind_count) { 
 				tofind = text + anchor1; 
 				tofind_count = cursor - anchor1; 
@@ -216,13 +210,13 @@ loop: 	fflush(stdout);
 				cursor = i;
 				anchor1 = i + tofind_count; 
 				
-				printf("bound: cursor %lu anchor1 %lu\n", cursor, anchor1); 
+				//printf("bound: cursor %lu anchor1 %lu\n", cursor, anchor1); 
 				goto loop; 
 			}
 			if (not i) { 
 				cursor = i;
-				puts("absent"); 
-				printf("not bound: cursor %lu anchor1 %lu\n", cursor, anchor1); 
+				//puts("absent"); 
+				//printf("not bound: cursor %lu anchor1 %lu\n", cursor, anchor1); 
 				goto loop;
 			}
 			i--; t--;
@@ -231,27 +225,27 @@ loop: 	fflush(stdout);
 
 
 		} else if (c == 'm') { 
-			printf("we were going to execute the command: \"");
-			fwrite(input + 1, remaining, 1, stdout);
-			printf("\", but its unimpl.\n");
+			//printf("we were going to execute the command: \"");
+			//fwrite(input + 1, remaining, 1, stdout);
+			//printf("\", but its unimpl.\n");
 
 
 		} else if (c == 'e') { 
-			if (not saved) { puts("cannot read, modified."); goto loop; }
+			if (not saved) { puts("r:modified."); goto loop; }
 			argv[1] = input + 1; 
 			goto read_file;
 
 
 		} else if (c == 's') { 
 			if (*filename and not remaining) goto save;
-			if (not remaining) { puts("cannot save, no filename given"); goto loop; }
-			else if (not access(input + 1, F_OK)) { puts("cannot save, file exists"); goto loop; }
+			if (not remaining) { puts("s:no filename given"); goto loop; }
+			else if (not access(input + 1, F_OK)) { puts("s:file exists"); goto loop; }
 			else strlcpy(filename, input + 1, sizeof filename);
 		save:;	FILE* output_file = fopen(filename, "w");
 			if (not output_file) { perror("fopen"); goto loop; }
 			fwrite(text, count, 1, output_file);
 			fclose(output_file); 
-			printf("wrote %lu bytes to %s\n", count, filename); 
+			printf("wrote %s %lu\n", filename, count); 
 			saved = 1; 
 
 
@@ -272,7 +266,7 @@ loop: 	fflush(stdout);
 
 			if (not head) goto loop;
 
-			printf("undoing uninserted %lu undeleted %lu count %lu parent %lu choice %lu...\n", 
+			printf("undoing +%lu -%lu, %lu %lu %lu...\n", 
 					actions[head].ilength,
 					actions[head].dlength,
 					actions[head].count, 
@@ -304,7 +298,7 @@ loop: 	fflush(stdout);
 
 		} else if (c == 'k') { 
 			if (not actions[head].count) goto loop;
-			printf("redoing reinserted %lu redeleted %lu count %lu parent %lu choice %lu...\n", 
+			printf("redoing +%lu -%lu, %lu %lu %lu...\n", 
 					actions[head].ilength,
 					actions[head].dlength,
 					actions[head].count, 
