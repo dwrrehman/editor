@@ -1,10 +1,8 @@
 int argc, const char** argv) {
 
 
-	// struct sigaction action = {.sa_handler = handler}; 
-	// sigaction(SIGINT, &action, NULL);
-
-
+	struct sigaction action = {.sa_handler = handler}; 
+	sigaction(SIGINT, &action, NULL);
 
 	char filename[4096] = {0};
 	char* text = malloc(1), * input = NULL;

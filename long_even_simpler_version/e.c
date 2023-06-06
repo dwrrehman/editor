@@ -4,7 +4,7 @@
 #include <iso646.h>
 #include <unistd.h>
 #include <signal.h>
-#include <stdint.h>
+// #include <stdint.h>
 #include <stdbool.h>
 
 struct action {
@@ -46,7 +46,7 @@ int main(int argc, const char** argv) {
 	fclose(file); 
 	strlcpy(filename, argv[1], sizeof filename);
 	mode = 2; 
-r:	printf("read %s %lu\n", filename, count); 
+r:	printf("%s read %lu\n", filename, count); 
 
 loop: 	fflush(stdout);
 	fgets(input, sizeof input, stdin);
@@ -71,17 +71,21 @@ loop: 	fflush(stdout);
 
 		const size_t deleted_length = cursor - anchor2;
 		char* deleted = text ? strndup(text + anchor2, deleted_length) : 0;
-		const size_t new = count + insert_length - deleted_length;
-		if (insert_length > deleted_length) text = realloc(text, new);
+		const size_t new_count = count + insert_length - deleted_length;
+		if (insert_length > deleted_length) text = realloc(text, new_count);
 		if (insert_length != deleted_length) memmove(text + cursor + insert_length - deleted_length, text + cursor, count - cursor);
 		if (insert_length) memcpy(text + anchor2, insert, insert_length);
-		if (insert_length < deleted_length) text = realloc(text, new);
+		if (insert_length < deleted_length) text = realloc(text, new_count);
 
-		count = new;
+		count = new_count;
 		saved = 0;
 		mode = 2;
+
 		cursor += insert_length - deleted_length;
 		anchor2 = cursor;
+		anchor1 = cursor;
+
+		
 
 		new.post = cursor;
 		new.inserted = strndup(insert, insert_length);
@@ -97,6 +101,7 @@ loop: 	fflush(stdout);
 		actions[action_count++] = new;
 
 		printf("+%lu -%lu\n", insert_length, deleted_length);
+		insert_length = 0;
 
 	} else if (mode == 2) {
 		if (not length) goto loop;
@@ -105,24 +110,23 @@ loop: 	fflush(stdout);
 		char c = *input;
 
 		if (not strcmp(input, "discard_and_quit")) exit(0);
-		else if (length != 1) goto unknown;
-
-		if (c == ';') printf("\033[2J\033[H");
+		
+		else if (c == ';') printf("\033[2J\033[H");
 		else if (c == 'q') { if (saved) exit(0); else puts("q:modified"); }  
 		else if (c == 't') mode = 1;
-		else if (c == 'i') max = (size_t) atoi(input + 1); 
-		else if (c == 'a') {
+		else if (c == 'l') max = (size_t) atoi(input + 1); 
+		else if (c == 'd') {
 			if (count) fwrite(text + cursor, count - cursor < max ? count - cursor : max, 1, stdout); 
 			putchar(10);
 
-		} else if (c == 'd') {
+		} else if (c == 'a') {
 			size_t save = cursor;
 			if (cursor > max) cursor -= max; else cursor = 0;
 			if (count) fwrite(text + cursor, save - cursor, 1, stdout); 
 			putchar(10);
 			cursor = save;
 
-		} else if (c == 'e') {
+		} else if (c == 'p') {
 			size_t save = cursor;
 			if (cursor > max) cursor -= max; else cursor = 0;
 			if (count) fwrite(text + cursor, save - cursor, 1, stdout); 
@@ -134,13 +138,15 @@ loop: 	fflush(stdout);
 			putchar(10);
 			cursor += total;
 
-		} else if (c == 'f') anchor2 = cursor;
-		else if (c == 'g') anchor2 = anchor1;
-		else if (c == 'h') anchor1 = cursor;
+		} 
+		else if (c == 'r') anchor2 = cursor;
+		else if (c == 'h') anchor2 = anchor1;
 
-		else if (c == 'F') anchor1 = anchor2;
-		else if (c == 'G') cursor = anchor1;
-		else if (c == 'H') cursor = anchor2;
+		else if (c == 'f') anchor1 = cursor;
+		else if (c == 'w') anchor1 = anchor2;
+
+		else if (c == 'x') cursor = anchor1;
+		else if (c == 'z') cursor = anchor2;
 
 		else if (c == '0') printf("count: %lu, cursor: %lu, anchor1: %lu, anchor2: %lu.\n", 
 						count, cursor, anchor1, anchor2);
@@ -160,8 +166,8 @@ loop: 	fflush(stdout);
 				print_all: printf("%lu %lu %lu\n", count, cursor, anchor1); 
 				goto loop; 
 			}
-			if (text[i] == tofind[t]) t++; else t = 0; 
-			i++; 
+			if (text[i] == tofind[t]) t++; else t = 0;      //  or (text[i] == 10 and tofind[t] == '`')
+			i++;
 			goto f;
 
 		} else if (c == 'n') { 
@@ -187,7 +193,7 @@ loop: 	fflush(stdout);
 
 		} else if (c == 'e') { 
 			if (not saved) { puts("r:modified."); goto loop; }
-			argv[1] = input + 1; 
+			argv[1] = input + 1;
 			goto read_file;
 
 		} else if (c == 's') { 
@@ -199,8 +205,8 @@ loop: 	fflush(stdout);
 			if (not output_file) { perror("fopen"); goto loop; }
 			fwrite(text, count, 1, output_file);
 			fclose(output_file);
-			printf("wrote %s %lu\n", filename, count); 
-			saved = 1; 
+			printf("%s wrote %lu\n", filename, count);
+			saved = 1;
 
 		} else if (c == 'y') { 
 			if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0;
@@ -210,10 +216,10 @@ loop: 	fflush(stdout);
 				actions[head].count, actions[head].parent, actions[head].choice
 			);
 
-		} else if (c == 'c') { 
+		} else if (c == 'c') {
 			if (not head) goto loop;
 
-			printf("undoing +%lu -%lu, %lu %lu %lu...\n", 
+			printf("undoing +%lu -%lu, %lu %lu %lu...\n",
 				actions[head].ilength, actions[head].dlength,
 				actions[head].count, actions[head].parent, actions[head].choice
 			);
@@ -230,7 +236,7 @@ loop: 	fflush(stdout);
 			saved = 0;
 			head = a.parent;
 
-		} else if (c == 'k') { 
+		} else if (c == 'k') {
 			if (not actions[head].count) goto loop;
 			printf("redoing +%lu -%lu, %lu %lu %lu...\n", 
 				actions[head].ilength, actions[head].dlength,
@@ -249,7 +255,7 @@ loop: 	fflush(stdout);
 			cursor = a.post;
 			saved = 0;
 
-		} else { unknown: printf("unintelligible %s\n", input); }
+		} else printf("unintelligible %s\n", input);
 	} goto loop;
 }
 
@@ -1235,3 +1241,7 @@ done: 	printf("exiting...\n");
 
 
 // #include <unistd.h>
+
+
+
+// printf("inserted \"%.*s\", deleted \"%.*s\".\n", (int) insert_length, insert, (int) deleted_length, deleted);
