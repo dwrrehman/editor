@@ -6,35 +6,10 @@
 #include <iso646.h>
 #include <stdbool.h>
 
-static int get(char** buffer, size_t* count) {
-	char c = 0, p = 0;
-	*count = 0;
-	while (1) {
-		ssize_t n = read(0, &c, 1);
-		if (n <= 0) goto error;
-		if (c == '\n' and p == '`') { (*count)--; break; }
-		*buffer = realloc(*buffer, *count + 1);
-		(*buffer)[(*count)++] = c;
-		p = c;
-	}
-	return 0;
-error:
-	printf("encountered error: ");
-	perror("read");
-	return 1;
-}
 
+// approach:  implementing our own getline utility.   terminal in canonical mode. 
+//            uses   "hc\n"   for the terminator. 
 
-static size_t input(char** buffer, size_t* capacity) {
-	char c = 0, p = 0;
-	size_t count = 0;
-loop: 	if (read(0, &c, 1) <= 0) return count;
-	if (c != 'c' or p != 'h') goto resize;
-	if (read(0, &c, 1) == 10) return --count;
-resize: if (count + 1 <= *capacity) goto push;
-	*buffer = realloc(*buffer, ++*capacity);
-push: 	(*buffer)[count++] = c; p = c; goto loop;
-}
 
 int main(void) {
 	char* buffer = NULL; char c = 0, p = 0;
@@ -86,6 +61,49 @@ int main(void) {
 
 
 /*
+
+
+static int get(char** buffer, size_t* count) {
+	char c = 0, p = 0;
+	*count = 0;
+	while (1) {
+		ssize_t n = read(0, &c, 1);
+		if (n <= 0) goto error;
+		if (c == '\n' and p == '`') { (*count)--; break; }
+		*buffer = realloc(*buffer, *count + 1);
+		(*buffer)[(*count)++] = c;
+		p = c;
+	}
+	return 0;
+error:
+	printf("encountered error: ");
+	perror("read");
+	return 1;
+}
+
+
+static size_t input(char** buffer, size_t* capacity) {
+	char c = 0, p = 0;
+	size_t count = 0;
+loop: 	if (read(0, &c, 1) <= 0) return count;
+	if (c != 'c' or p != 'h') goto resize;
+	if (read(0, &c, 1) == 10) return --count;
+resize: if (count + 1 <= *capacity) goto push;
+	*buffer = realloc(*buffer, ++*capacity);
+push: 	(*buffer)[count++] = c; p = c; goto loop;
+}
+
+
+
+
+
+
+
+
+
+
+
+
 char* get(char str[], size_t len, int fileno) {
     size_t count;
     for (count = 0; count < len; ++count) {

@@ -1,20 +1,14 @@
 #!/bin/zsh
 
-
 if [ "release" = "$1" ]; then
-	clang -Ofast e.c -o run
-
+	clang -Ofast e.c -o editor
 
 elif [ "clean" = "$1" ]; then
-	rm -rf run
-	rm -rf run.dSYM
+	rm -rf editor
+	rm -rf editor.dSYM
 
 elif [ "" = "$1" ]; then 
-	clang -g -O0 -Weverything -Wno-declaration-after-statement -Wno-deprecated-declarations -fsanitize=address,undefined e.c -o run -ferror-limit=4
-
-
-elif [ "fuzz" = "$1" ]; then 
-	clang -g -O0 -Weverything -Wno-declaration-after-statement -fsanitize=fuzzer,address,undefined,leak e.c -o run
+	clang -g -O0 -Weverything -Wno-poison-system-directories -Wno-declaration-after-statement -fsanitize=address,undefined e.c -o editor -ferror-limit=5
 
 else 
 	echo "build: unknown target: $1"
