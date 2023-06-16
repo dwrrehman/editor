@@ -41,6 +41,32 @@ current dilemma:
 
 yay we are so close to being done! the solutions is so effective too! and efficient!! but not exactly shortttt lol. but yeah.its good. 
 
+
+
+
+			wait no,
+
+
+
+
+					these two solutions arent totatlly orthogonal!
+
+
+							we can do the wrap width  newline insertion    for tabs  only 
+
+
+							because like,      how often do we care about it being copyable text for tabs on wrapwidth lol
+
+
+						but then, we just need to keep track of it internally for the wrapping for both tabs and general characters!
+
+
+							ie, reflect the tereminal driver code's functionlity. cool. yay. 
+
+
+
+
+
 */
 
 #include <stdio.h>
@@ -71,64 +97,59 @@ yay we are so close to being done! the solutions is so effective too! and effici
 static struct winsize window = {0}; 
 static void handler(int __attribute__((unused))_) {
 	ioctl(0, TIOCGWINSZ, &window);
-	// printf("SIGWINCH event: window: %d rows, %d columns\n", window.ws_row, window.ws_col);
+	//printf("\0337\033[6B\033[600D\033[K len=%lu cap=%lu tc=%lu nc=%lu c%lu w%lu\0338", len, capacity, tab_count, newline_count, column, (size_t) window.ws_col);
+	//fflush(stdout);
 }
 
 int main(void) {
-
+	handler(0);
 	//sigaction(SIGINT, (struct sigaction[]) {{.sa_handler = handler}}, NULL);
-
 	sigaction(SIGWINCH, (struct sigaction[]) {{.sa_handler = handler}}, NULL);
 
 	struct termios terminal; tcgetattr(0, &terminal);
 	struct termios copy = terminal; copy.c_lflag &= ~((size_t)ICANON); 
 	tcsetattr(0, TCSAFLUSH, &copy);
 	
-
-loop:;	size_t tab_count = 0, newline_count = 0, len = 0, capacity = 0, column = 0;
-	uint8_t* tabs = NULL;
-	size_t* newlines = NULL;
+loop:;	size_t change_count = 0, len = 0, capacity = 0, column = 0;
+	ssize_t* changes = NULL;
 	char* input = NULL, w = 0, p = 0, d = 0;
 
-rc: 	
-	//printf("\0337\033[60B\033[60D\033[K len=%lu cap=%lu tc=%lu nc=%lu l%lu c%lu\0338", len, capacity, tab_count, newline_count, column);
-	//fflush(stdout);
-
-	if (read(0, &w, 1) <= 0) goto process;
+rc: 	if (read(0, &w, 1) <= 0) goto process;
 
 	if (w == 127) goto delete;
 	if (w != 't' or p != 'r' or d != 'd') goto push;
-	if (len >= 2) len -= 2; 
+	if (len >= 2) len -= 2;
 	goto process;
 
 push:
 	if (w == 10) {
-		newlines = realloc(newlines, (newline_count + 1) * sizeof(size_t));
-		newlines[newline_count++] = column;
+		const size_t save = column;
 		column = 0;
+		changes = realloc(changes, (change_count + 1) * sizeof(ssize_t));
+		changes[change_count++] = (ssize_t) (column - save);
 
 	} else if (w == 9) {
-		const uint8_t amount = 8 - (column % 8);
-		column += amoun t;
-		tabs = realloc(tabs, tab_count + 1);
-		tabs[tab_count++] = amount;
-		if (column + 8 >= win.col) {
-
-			 newline_code;
-
+		const size_t amount = 8 - (column % 8);
+		
+		const size_t save = column;
+		if (column + amount >= window.ws_col) {
+			putchar(10);
+			column = 0;
 		}
+		column += (size_t) amount;
 
+		changes = realloc(changes, (change_count + 1) * sizeof(ssize_t));
+		changes[change_count++] = (ssize_t) (column - save);
 
-	} else{
-
-		if (column + 1 >= win.col) {
-
-			 newline_code;
-
+	} else {
+		const size_t save = column;
+		if (column >= window.ws_col) {
+			column = 0;
 		}
-		 column++;
+		column++;
 
-
+		changes = realloc(changes, (change_count + 1) * sizeof(ssize_t));
+		changes[change_count++] = (ssize_t) (column - save);
 	}
 
 	if (len + 1 >= capacity) {
@@ -138,10 +159,7 @@ push:
 	input[len++] = w;
 	goto next;
 
-
 delete: 
-	
-
 	if (not len) {
 		printf("\033[D\033[K\033[D\033[K"); 
 		fflush(stdout);
@@ -149,9 +167,10 @@ delete:
 	}
 
 	if (input[len - 1] == 10) {
-		
+
+		const ssize_t amount = changes[--change_count];
 		len--;
-		column = newlines[--newline_count];
+		column -= (size_t) amount;
 
 		printf("\033[D\033[K\033[D\033[K"); 
 		printf("\033[A");
@@ -160,20 +179,39 @@ delete:
 		
 	} else if (input[len - 1] == 9) {
 		
-		const uint8_t amount = tabs[--tab_count];
-		len--; column -= amount;
+		const ssize_t amount = changes[--change_count];
+		
+		len--; 
+		column -= (size_t) amount;
 
-		printf("\033[D\033[K\033[D\033[K"); 
-		printf("\033[%hhuD\033[K", amount);
-		fflush(stdout);
+		if (amount > 0) {
+			printf("\033[D\033[K\033[D\033[K"); 
+			printf("\033[%luD\033[K", amount);
+			fflush(stdout);
+		} else {
+			printf("\033[D\033[K\033[D\033[K"); 
+			printf("\033[A");
+			if (column) printf("\033[%luC", column);
+			fflush(stdout);
+		}
 
 	} else {
+		const ssize_t amount = changes[--change_count];
 		
-		column--;
 		do len--; while ((unsigned char) input[len] >> 6 == 2);
-		printf("\033[D\033[K\033[D\033[K"); 
-		printf("\033[D\033[K");
-		fflush(stdout);
+
+		column -= (size_t) amount;
+
+		if (amount > 0) {
+			printf("\033[D\033[K\033[D\033[K");
+			printf("\033[D\033[K");
+			fflush(stdout);
+		} else {
+			printf("\033[D\033[K\033[D\033[K"); 
+			printf("\033[A");
+			if (column) printf("\033[%luC", column);
+			fflush(stdout);
+		}
 	}
 
 next:	d = p; p = w; w = 0;
@@ -181,21 +219,10 @@ next:	d = p; p = w; w = 0;
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 process: 
-	printf("\n\trecieved input(%lu): \n\t\"", len);
+	printf("\n\trecieved input(%lu): \n\n\t\t\"", len);
 	fwrite(input, len, 1, stdout); 
-	printf("\"\n\n");
+	printf("\"\n\n\n");
 	fflush(stdout);
 
 
@@ -214,7 +241,13 @@ done:	tcsetattr(0, TCSAFLUSH, &terminal);
 
 
 
+/*
+		if (column + 1 >= win.col) {
 
+			 newline_code;
+
+		}
+		*/
 
 
 
@@ -234,7 +267,7 @@ done:	tcsetattr(0, TCSAFLUSH, &terminal);
 /*
 
 
-
+// printf("SIGWINCH event: window: %d rows, %d columns\n", window.ws_row, window.ws_col);
 
 
 
