@@ -1,0 +1,44 @@
+#!/bin/zsh
+
+if [ "release" = "$1" ]; then
+	clang -Ofast e.c -o editor
+
+elif [ "clean" = "$1" ]; then
+	rm -rf editor
+	rm -rf editor.dSYM
+
+elif [ "" = "$1" ]; then 
+	clang -g -O0 -Weverything -Wno-poison-system-directories -Wno-declaration-after-statement -fsanitize=address,undefined e.c -o editor -ferror-limit=5
+
+else 
+	echo "build: unknown target: $1"
+fi
+hi there!
+	this is my cool editor lol. 
+
+
+i think its actually really cool. i am quite happy with it. 
+
+i think its like basically optimal. pretty much. lol.
+funny, i feel like we changed the input mechanism to make the editor shorter, but it totally ended up being wayyyy longer lol.  i mean, thats okay, but like... i wished it was smaller lol.
+
+
+	but yeah, i mean, i definitely wished it was smaller lol. its okay though. 
+
+
+
+yayy
+
+
+okay, lets try writing this file now lol. 
+
+cool beans.a file using the new input mechanism.txt
+build
+e.c
+editor
+editor.dSYM
+experiments
+random_file_for_testing.txt
+save_of_e_c.txt
+testing_file3.txt
+testing_files

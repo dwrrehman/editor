@@ -3,12 +3,6 @@
 #include <string.h>
 #include <iso646.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <termios.h>
-#include <sys/types.h>
-#include <sys/ioctl.h>
 //#include <signal.h>
 struct action {
 	size_t* children;
@@ -19,81 +13,27 @@ struct action {
 int main(int argc, const char** argv) {
 	//struct sigaction action = {.sa_handler = handler}; 
 	//sigaction(SIGINT, &action, NULL);
-	struct termios terminal; 
-	tcgetattr(0, &terminal);
-	terminal.c_lflag &= ~((size_t) ICANON | ECHO);
-	tcsetattr(0, TCSAFLUSH, &terminal);
-	struct winsize window;
-	char* input = NULL;
-	uint8_t* tabs = NULL;
-	uint16_t* newlines = NULL;
-	size_t capacity = 0, tab_count = 0, newline_count = 0;
-	uint16_t column = 0;
-	char w = 0, p = 0, d = 0;
-	char filename[2048] = {0}, * text = NULL;
+	char filename[2048] = {0}, line[512] = {0}, * text = NULL, * input = NULL;
 	struct action* actions = calloc(1, sizeof(struct action));
 	size_t action_count = 1, head = 0;
 	size_t cursor = 0, anchor1 = 0, anchor2 = 0, count = 0;
 	size_t saved = 1, mode = 1, length = 0, number = 128;	
 	if (argc < 2) goto loop;
 	read_file:; FILE* file = fopen(argv[1], "r");
-	if (not file) { perror("fopen"); goto loop; }
+	if (not file) { perror("fopen"); goto r; }
 	fseek(file, 0, SEEK_END);
         count = (size_t) ftell(file); text = malloc(count);
         fseek(file, 0, SEEK_SET); 
 	fread(text, 1, count, file); fclose(file); 
 	strlcpy(filename, argv[1], sizeof filename); mode = 2;
-	printf("%s read %lu\n", filename, count);
-loop: 	ioctl(0, TIOCGWINSZ, &window);
-	fflush(stdout);
-	write(1, "\r", 1);
-	column = 0; w = 0; p = 0; d = 0; length = 0;
-	tab_count = 0; newline_count = 0;
-read:	if (read(0, &w, 1) <= 0) goto process;
-	if (w == 127) goto delete;
-	if (w != 't' or p != 'r' or d != 'd') goto push;
-	if (length >= 2) length -= 2;
-	goto process;
-push:	if (w == 10) {
-		newlines = realloc(newlines, sizeof(uint16_t) * (newline_count + 1));
-		newlines[newline_count++] = column;
-		column = 0;
-		write(1, &w, 1);
-	} else if (w == 9) {
-		const uint8_t amount = 8 - column % 8;
-		column += amount; column %= window.ws_col;
-		write(1, "        ", amount);
-		tabs = realloc(tabs, tab_count + 1);
-		tabs[tab_count++] = amount;
-	} else {
-		if (column >= window.ws_col) column = 0;
-		if((unsigned char) w >> 6 != 2) column++;
-		write(1, &w, 1);
-	}
-	if (length + 1 >= capacity) input = realloc(input, capacity = 4 * (capacity + 1));
-	input[length++] = w; goto next;
-delete: if (not length) goto next; length--;
-	if (input[length] == 10) {
-		column = newlines[--newline_count];
-		printf("\033[A");
-		if (column) printf("\033[%huC", column);
-		fflush(stdout);
-	} else if (input[length] == 9) {
-		uint8_t amount = tabs[--tab_count];
-		column -= amount;
-		write(1, "\b\b\b\b\b\b\b\b", amount);
-	} else {
-		while ((unsigned char) input[length] >> 6 == 2) length--;
-		if (not column) {
-			column = window.ws_col - 1;
-			write(1, "\b", 1);
-		} else {
-			column--;
-			write(1, "\b \b", 3);
-		}
-	}
-next:	d = p; p = w; goto read;
-process: putchar(10);
+r:	printf("%s read %lu\n", filename, count);
+loop: 	fflush(stdout); fgets(line, sizeof line, stdin);
+	if (strcmp(line, "'\n")) {
+		size_t l = strlen(line);
+		input = realloc(input, length + l);
+		memcpy(input + length, line, l);
+		length += l; goto loop;
+	} else if (length) length--;
 	if (mode == 1) {
 	insert:	if (anchor2 > cursor) { size_t temp = cursor; cursor = anchor2; anchor2 = temp; }
 		struct action new = {0};
@@ -117,12 +57,13 @@ process: putchar(10);
 		head = action_count;
 		actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
 		actions[action_count++] = new;
-		printf("+%lu -%lu \n", length, dlength);
+		printf("+%lu -%lu\n", length, dlength); length = 0;
 	} else if (mode == 2) {
 		if (not length)	goto loop;
+		input = realloc(input, length + 1);
 		input[length] = 0;
 		const size_t remaining = length - 1;
-		char c = *input;
+		char c = *input; length = 0;
 		if (not strcmp(input, "discard_and_quit")) exit(0);
 		if (c == '\n') {}
 		else if (c == ' ') printf("\033[2J\033[H");
@@ -130,14 +71,14 @@ process: putchar(10);
 		else if (c == 'r') mode = 1;
 		else if (c == 't') { anchor2 = cursor; mode = 1; }
 		else if (c == 'm') {
-			if (remaining) number = (size_t) (ssize_t) atoi(input + 1);
+			if (remaining) number = (size_t) atoi(input + 1);
 			cursor += number;
 			if (cursor > count) cursor = count;
 			else if ((ssize_t) cursor < 0) cursor = 0;
-		} else if (c == 'h') {
-			if (remaining) number = (size_t) (ssize_t) atoi(input + 1);
-			const size_t total = count - cursor < number ? count - cursor : number;
-			if (text) fwrite(text + cursor, total, 1, stdout); 
+		} else if (c == 'd') {
+			if (remaining) number = (size_t) atoi(input + 1);	
+			{ const size_t total = count - cursor < number ? count - cursor : number;
+			fwrite(text + cursor, total, 1, stdout); }
 		} else if (c == '1') anchor1 = cursor;
 		else if (c == '2') anchor1 = anchor2;
 		else if (c == '3') cursor = anchor1;
@@ -173,15 +114,15 @@ process: putchar(10);
 			printf("running: %s\n", command, command);
 			FILE* f = popen(command, "r");
 			if (not f) { printf("error: could not run command \"%s\"\n", command); perror("popen"); goto loop; }
-			length = 0;
-			char line[2048] = {0};
+			length = 0; input = NULL;
 			while (fgets(line, sizeof line, f)) {
 				size_t l = strlen(line);
-				if (length + l >= capacity) input = realloc(input, capacity = 4 * (capacity + l));
-				
+				input = realloc(input, length + l);
 				memcpy(input + length, line, l);
 				length += l;
-			} pclose(f); anchor2 = cursor; goto insert;
+			} pclose(f);
+			input = realloc(input, length + 1); 
+			input[length] = 0; anchor2 = cursor; goto insert;
 		} else if (c == 'o') { 
 			if (not remaining) { anchor2 = anchor1; goto loop; }
 			if (not saved) { puts("r:modified."); goto loop; }
@@ -240,59 +181,6 @@ process: putchar(10);
 
 
 
-
-
-
-
-
-
-
-
-	/*
-	fflush(stdout); fgets(line, sizeof line, stdin);
-	if (strcmp(line, "'\n")) {
-		size_t l = strlen(line);
-		input = realloc(input, length + l);
-		memcpy(input + length, line, l);
-		length += l; goto loop;
-	} else if (length) length--;
-	*/
-
-	
-	
-
-
-
-
-	
-//	if (length == 4 and not strncmp(input, "quit", 4)) goto done;
-//	if (length == 5 and not strncmp(input, "clear", 5)) { printf("\033[H\033[2J"); fflush(stdout); } 
-//	goto loop;
-
-//done:	
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-
-printf("\n\trecieved input(%lu): \n\n\t\t\"", length);
-	fwrite(input, length, 1, stdout);
-	printf("\"\n");
-	fflush(stdout);
-
-
-*/
 
 
 
