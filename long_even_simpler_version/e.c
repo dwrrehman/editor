@@ -24,17 +24,12 @@ int main(int argc, const char** argv) {
 	terminal.c_lflag &= ~((size_t) ICANON | ECHO);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 	struct winsize window;
-	char* input = NULL;
 	uint8_t* tabs = NULL;
-	uint16_t* newlines = NULL;
-	size_t capacity = 0, tab_count = 0, newline_count = 0;
-	uint16_t column = 0;
-	char w = 0, p = 0, d = 0;
-	char filename[2048] = {0}, * text = NULL;
+	uint16_t* newlines = NULL, column = 0;
+	char filename[2048] = {0}, * text = NULL, * input = NULL, w = 0, p = 0, d = 0;
+	size_t capacity = 0, tab_count = 0, newline_count = 0, action_count = 1, head = 0, 
+	cursor = 0, anchor1 = 0, anchor2 = 0, count = 0, saved = 1, mode = 1, length = 0, number = 128;	
 	struct action* actions = calloc(1, sizeof(struct action));
-	size_t action_count = 1, head = 0;
-	size_t cursor = 0, anchor1 = 0, anchor2 = 0, count = 0;
-	size_t saved = 1, mode = 1, length = 0, number = 128;	
 	if (argc < 2) goto loop;
 	read_file:; FILE* file = fopen(argv[1], "r");
 	if (not file) { perror("fopen"); goto loop; }
@@ -165,12 +160,12 @@ process: putchar(10);
 			} size_t i = cursor, t = tofind_count;
 		b:	if (not t or not i) { cursor = i; if (not t) anchor1 = i + tofind_count; goto print_all; }
 			i--; t--; if (text[i] != tofind[t]) t = tofind_count; goto b;
-		} else if (c == 'e') {
-			if (not remaining) { anchor2 = cursor; goto loop; }
+		} else if (c == 'e' or c == 'o') {
+			if (not remaining) { anchor2 = c == 'e' ? cursor : anchor1; goto loop; }
 			char command[4096] = {0};
 			strlcpy(command, input + 1, sizeof command);
 			strlcat(command, " 2>&1", sizeof command);
-			printf("running: %s\n", command, command);
+			printf("running: %s\n", command, command); 										// debug
 			FILE* f = popen(command, "r");
 			if (not f) { printf("error: could not run command \"%s\"\n", command); perror("popen"); goto loop; }
 			length = 0;
@@ -178,12 +173,13 @@ process: putchar(10);
 			while (fgets(line, sizeof line, f)) {
 				size_t l = strlen(line);
 				if (length + l >= capacity) input = realloc(input, capacity = 4 * (capacity + l));
-				
 				memcpy(input + length, line, l);
 				length += l;
-			} pclose(f); anchor2 = cursor; goto insert;
-		} else if (c == 'o') { 
-			if (not remaining) { anchor2 = anchor1; goto loop; }
+			} pclose(f);
+			if (c == 'o') { anchor2 = cursor; goto insert; }
+			fwrite(input, length, 1, stdout);
+		} else if (c == 'd') { 
+			if (not remaining) { puts("unimplemented: d<empty>"); goto loop; }
 			if (not saved) { puts("r:modified."); goto loop; }
 			argv[1] = input + 1;
 			goto read_file;
@@ -203,7 +199,7 @@ process: putchar(10);
 		} else if (c == 'c') {
 			if (not head) goto loop;
 			const struct action a = actions[head];
-			printf("u +%lu -%lu, %lu %lu %lu\n", a.ilength, a.dlength, a.count, a.parent, a.choice);
+			printf("u +%lu -%lu, %lu:%lu\n", a.ilength, a.dlength, a.count, a.choice);
 			cursor = a.post;
 			const size_t new = count + a.dlength - a.ilength;
 			if (a.dlength > a.ilength) text = realloc(text, new);
@@ -215,7 +211,7 @@ process: putchar(10);
 			if (not actions[head].count) goto loop;
 			head = actions[head].children[actions[head].choice];
 			const struct action a = actions[head];
-			printf("r +%lu -%lu, %lu %lu %lu\n", a.ilength, a.dlength, a.count, a.parent, a.choice);
+			printf("r +%lu -%lu, %lu:%lu\n", a.ilength, a.dlength, a.count, a.choice);
 			cursor = a.pre;
 			const size_t new = count + a.ilength - a.dlength;
 			if (a.ilength > a.dlength) text = realloc(text, new);
