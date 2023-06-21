@@ -13,7 +13,6 @@
 struct action {
 	size_t* children, parent, choice, count, ilength, dlength, pre, post;
 	char* deleted, * inserted;
-	
 };
 //static void handler(int __attribute__((unused))_) {}
 int main(int argc, const char** argv) {
@@ -29,10 +28,10 @@ int main(int argc, const char** argv) {
 	char filename[2048] = {0}, * text = NULL, * input = NULL, w = 0, p = 0, d = 0;
 	const size_t cursor_count = 5;
 	size_t cursor[cursor_count] = {0}, capacity = 0, tab_count = 0, 
-	newline_count = 0, action_count = 1, head = 0, insert = 1,
+	newline_count = 0, action_count = 1, head = 0, insert = 0,
 	count = 0, saved = 1, length = 0, number = 128;	
 	struct action* actions = calloc(1, sizeof(struct action));
-	if (argc < 2) goto loop;
+	if (argc < 2) { insert = 1; goto loop; }
 	read_file:; FILE* file = fopen(argv[1], "r");
 	if (not file) { perror("fopen"); goto loop; }
 	fseek(file, 0, SEEK_END);
@@ -50,7 +49,8 @@ read:	if (read(0, &w, 1) <= 0) goto process;
 	if (w != 't' or p != 'r' or d != 'd') goto push;
 	if (length >= 2) length -= 2;
 	goto process;
-push:	if (w == 10) {
+push:	if (w == 27) goto next;
+	if (w == 10) {
 		newlines = realloc(newlines, sizeof(uint16_t) * (newline_count + 1));
 		newlines[newline_count++] = column;
 		column = 0; write(1, &w, 1);
@@ -155,7 +155,7 @@ process: putchar(10);
 		FILE* f = popen(command, "r");
 		if (not f) { printf("error: could not run command \"%s\"\n", command); perror("popen"); goto loop; }
 		length = 0;
-		char line[2048] = {0};
+		char line[2048] = {0}]]]]
 		while (fgets(line, sizeof line, f)) {
 			size_t l = strlen(line);
 			if (length + l >= capacity) input = realloc(input, capacity = 4 * (capacity + l));

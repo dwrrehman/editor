@@ -1,0 +1,34 @@
+okay, lets try doing stuff, now, i think this couldddd work better. not sure though. 
+
+
+i definitely want to allow the user to relocate the file, and rename it.. those are pretty important to be able to do eventually. but yeah, for now... i don't think we needddd to actually support those lol. we just have to make sure that the filename is always supplied lol. yayyy. 
+
+
+
+	okay, cool this actually seems to work well so far!!?
+
+
+		cool beans lol.
+
+
+i am happy with this. 
+
+
+cool pasta. 
+
+
+
+lets try writing the file, i guess?
+
+
+i think its name will default to Untitled.txt   so yeahhh  just like text edit lol.  
+
+	yay
+
+
+				lets try to do this. 
+
+
+
+hopefully it works. 
+
