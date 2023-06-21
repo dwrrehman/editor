@@ -1,0 +1,16 @@
+#!/bin/zsh
+
+if [ "release" = "$1" ]; then
+	clang -Ofast f.c -o editor
+
+
+elif [ "clean" = "$1" ]; then
+	rm -rf editor
+	rm -rf editor.dSYM
+
+elif [ "" = "$1" ]; then 
+	clang -g -O0 -Weverything -Wno-poison-system-directories -Wno-declaration-after-statement -fsanitize=address,undefined c.c -o editor -ferror-limit=5
+
+else 
+	echo "build: unknown target: $1"
+fi
