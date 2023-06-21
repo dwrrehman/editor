@@ -155,7 +155,7 @@ process: putchar(10);
 		FILE* f = popen(command, "r");
 		if (not f) { printf("error: could not run command \"%s\"\n", command); perror("popen"); goto loop; }
 		length = 0;
-		char line[2048] = {0}]]]]
+		char line[2048] = {0};
 		while (fgets(line, sizeof line, f)) {
 			size_t l = strlen(line);
 			if (length + l >= capacity) input = realloc(input, capacity = 4 * (capacity + l));

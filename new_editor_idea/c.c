@@ -1,6 +1,6 @@
-#include <stdio.h>  // 2306202.165852:   a screen based simpler editor based on the ed-like one, uses a string ds, and is not modal. uses capital letters for commands! 
-#include <stdlib.h>
-#include <string.h>
+#include <stdio.h>  // 2306202.165852:  
+#include <stdlib.h> // a screen based simpler editor based on the ed-like one, 
+#include <string.h> // uses a string ds, and is not modal. uses capital letters for commands! 
 #include <fcntl.h>
 #include <unistd.h>
 #include <iso646.h>
@@ -8,34 +8,161 @@
 #include <termios.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
-int main(int argc, const char** argv) {
-	char filename[2048] = {0};
-	strlcpy(filename, argc >= 2 ? argv[1] : "Untitled.txt", sizeof filename);
+typedef size_t nat;
 
-	typedef size_t nat;
-	struct termios terminal; 
-	tcgetattr(0, &terminal);
-	struct termios copy = terminal; 
-	copy.c_lflag &= ~((size_t) ECHO | ICANON | IEXTEN); 			//   | ISIG
-	copy.c_iflag &= ~((size_t) IXON); 					// BRKINT | ICRNL  | 
-	tcsetattr(0, TCSAFLUSH, &copy);
+struct action {
+	char* text;
+	nat* children;
+	nat parent, choice, count, length, insert, pre_cursor, post_cursor, pre_origin, post_origin, pre_saved, post_saved;
+};
 
-	struct winsize window;
+static struct winsize window;
+static char filename[2048] = {0};
+static char* text = NULL;
+static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, count = 0, saved = 1;
+
+static nat action_count = 0, head = 0;
+static struct action* actions = NULL;
+
+static void move_left(void) {
+	if (origin < cursor or not origin) goto decr; 
+	origin--; 
+	e: if (not origin) goto decr; 
+	origin--; 
+	if (text[origin] != 10) goto e; 
+	origin++;
+	decr: if (cursor) cursor--;
+}
+
+static void move_right(void) {
+	if (cursor < count) cursor++; 
+	if (cursor_row != window.ws_row - 1) return;
+	l: origin++; 
+	if (origin >= count) return;
+	if (text[origin] != 10) goto l; 
+	origin++;
+}
+
+static void create_action(struct action new) {
+	new.parent = head;
+	actions[head].children = realloc(actions[head].children, sizeof(size_t) * (size_t) (actions[head].count + 1));
+	actions[head].choice = actions[head].count;
+	actions[head].children[actions[head].count++] = action_count;
+	head = action_count;
+	actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
+	actions[action_count++] = new;
+}
+
+static void delete(bool should_record) {
+	if (not cursor) return;
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
+	const char c = text[cursor - 1];
+	memmove(text + cursor - 1, text + cursor, count - cursor);
+	count--;
+	text = realloc(text, count); 
+	saved = 0; 
+	move_left();
+	if (not should_record) return;
+	new.post_cursor = cursor; 
+	new.post_origin = origin; 
+	new.post_saved = saved;
+	new.insert = 0;
+	new.text = malloc(1);
+	new.text[0] = c;
+	new.length = 1;
+	create_action(new);
+}
+
+static void insert(char c, bool should_record) {
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
+	text = realloc(text, count + 1);
+	memmove(text + cursor + 1, text + cursor, count - cursor);
+	text[cursor] = c;
+	count++;
+	saved = 0;
+	move_right();
+	if (not should_record) return;
+	new.post_cursor = cursor;
+	new.post_origin = origin;
+	new.post_saved = saved;
+	new.insert = 1;
+	new.text = malloc(1);
+	new.text[0] = c;
+	new.length = 1;
+	create_action(new);
+}
+
+static void insert_string(char* string, nat length) {
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
+	for (nat i = 0; i < length; i++) insert(string[i], 0);
+	new.post_cursor = cursor; 
+	new.post_origin = origin; 
+	new.post_saved = saved;
+	new.insert = 1;
+	new.text = strndup(string, length); 
+	new.length = length;
+	create_action(new);
+}
+
+static void paste(void) {
+	FILE* file = popen("pbpaste", "r");
+	if (not file) { 
+		perror("paste popen"); 
+		getchar(); 
+		return; 
+	}
+	char* string = NULL;
+	nat length = 0;
+	int c = 0;
+	while ((c = fgetc(file)) != EOF) {
+		string = realloc(string, length + 1);
+		string[length++] = (char) c;
+	}
+	pclose(file);
+	insert_string(string, length);
+}
+
+static inline void copy(void) {
+	FILE* file = popen("pbcopy", "w");
+	if (not file) {
+		perror("copy popen");
+		getchar();
+		return;
+	}
+	if (anchor < cursor) fwrite(text + anchor, 1, cursor - anchor, file);
+	else fwrite(text + cursor, 1, anchor - cursor, file);
+	pclose(file);
+}
+
+static inline void cut(void) {
+	
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
+
+		char* deleted = text + cursor;
+		nat length = anchor - cursor;
+	if (anchor < cursor) {
+
+		deleted = text + anchor;
+		length = cursor - anchor;
+
+	}
+	new.post_cursor = cursor; 
+	new.post_origin = origin; 
+	new.post_saved = saved;
+	new.insert = 0;
+	new.text = deleted;
+	new.length = length;
+	create_action(new);
+}
+
+static void display(bool output) {
+
 	ioctl(0, TIOCGWINSZ, &window);
 	const nat screen_size = window.ws_row * window.ws_col * 4;
 	char* screen = calloc(screen_size, 1);
 
-	char* text = NULL, c = 0;
-	nat cursor = 0, origin = 0, cursor_row = 0, cursor_column = 0, length = 0, count = 0, saved = 1;
-
-	FILE* file = fopen(filename, "r");	
-	if (not file) { perror("fopen"); getchar(); goto loop; }
-	fseek(file, 0, SEEK_END); count = (size_t) ftell(file); 
-	text = malloc(count); fseek(file, 0, SEEK_SET); 
-	fread(text, 1, count, file); fclose(file); 
-loop:	
 	memcpy(screen, "\033[H\033[2J", 7);
-	length = 7;
+	nat length = 7;
 	nat row = 0, column = 0;
 	nat i = origin;
 	for (; i < count; i++) {
@@ -51,48 +178,302 @@ loop:
 			memcpy(screen + length, "        ", amount);
 			length += amount;
 		} else {
-			if (column >= window.ws_col) { column = 0; row++; }			//  or column == window.ws_col
+			if (column >= window.ws_col) { column = 0; row++; }
 			if ((unsigned char) k >> 6 != 2) column++;
 			screen[length++] = k;
 		}
 	}
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
 	length += (nat) snprintf(screen + length, 16, "\033[%lu;%luH", cursor_row + 1, cursor_column + 1);
-	write(1, screen, length);
+	if (output) write(1, screen, length);
+	free(screen);
+}
+
+static void move_left_chunk(void) {
+	for (nat i = 0; i < 100; i++) {
+		display(0);
+		move_left();
+	}
+}
+
+static void move_right_chunk(void) {
+	for (nat i = 0; i < 100; i++) {
+		display(0);
+		move_right();
+	}
+}
+
+static struct termios configure_terminal(void) {
+	struct termios terminal;
+	tcgetattr(0, &terminal);
+	struct termios copy = terminal; 
+	copy.c_lflag &= ~((size_t) ECHO | ICANON | IEXTEN); 			//   | ISIG
+	copy.c_iflag &= ~((size_t) IXON); 					// BRKINT  | 
+	tcsetattr(0, TCSAFLUSH, &copy);
+	return terminal;
+}
+
+static void load(void) {
+	if (not saved) return;
+	FILE* file = fopen(filename, "r");	
+	if (not file) {
+		perror("load fopen"); 
+		getchar();
+		return; 
+	}
+	fseek(file, 0, SEEK_END); 
+	count = (size_t) ftell(file); 
+	text = malloc(count); 
+	fseek(file, 0, SEEK_SET); 
+	fread(text, 1, count, file); 
+	fclose(file);
+}
+
+static void save(void) {
+	if (not *filename) {
+		puts("save: error: empty filename"); 
+		getchar();
+		return;
+	}
+	FILE* output_file = fopen(filename, "w");
+	if (not output_file) { 
+		perror("save fopen");
+		getchar(); 
+		return;
+	}
+	fwrite(text, 1, count, output_file); 
+	fclose(output_file); 
+	saved = 1;
+}
+
+static void execute(void) {
+	char command[4096] = {0};
+	strlcpy(command, "input_string", sizeof command);
+	strlcat(command, " 2>&1", sizeof command);
+	printf("executing: %s\n", command);
+	FILE* f = popen(command, "r");
+	if (not f) {
+		printf("error: could not run command \"%s\"\n", command);
+		perror("execute popen");
+		getchar();
+		return;
+	}
+	char* string = NULL;
+	nat length = 0;
+	char line[2048] = {0};
+	while (fgets(line, sizeof line, f)) {
+		size_t l = strlen(line);
+		string = realloc(string, length + l);
+		memcpy(string + length, line, l);
+		length += l;
+	}
+	pclose(f);
+	insert_string(string, length);
+}
+
+static void alternate(void) {
+	if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0;
+}
+
+static void undo(void) {
+	if (not head) return;
+	const struct action a = actions[head];
+	/// printf("u +%lu -%lu, %lu:%lu\n", a.ilength, a.dlength, a.count, a.choice);
+	cursor = a.post_cursor;
+	origin = a.post_origin;
+	saved = a.post_saved;
+	if (not a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	else for (nat i = 0; i < a.length; i++) delete(0);	
+	cursor = a.pre_cursor;
+	origin = a.pre_origin;
+	saved = a.pre_saved;
+	head = a.parent;
+}
+
+static void redo(void) {
+	if (not actions[head].count) return;
+	head = actions[head].children[actions[head].choice];
+	const struct action a = actions[head];
+	///  printf("r +%lu -%lu, %lu:%lu\n", a.ilength, a.dlength, a.count, a.choice);
+	cursor = a.pre_cursor;
+	origin = a.pre_origin;
+	saved = a.pre_saved;
+	if (a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	else for (nat i = 0; i < a.length; i++) delete(0);
+	cursor = a.post_cursor;
+	origin = a.post_origin;
+	saved = a.post_saved;
+}
+
+int main(int argc, const char** argv) {
+	strlcpy(filename, argc >= 2 ? argv[1] : "Untitled.txt", sizeof filename);
+	struct termios terminal = configure_terminal();
+	actions = calloc(1, sizeof(struct action));
+	action_count = 1;
+	char c = 0;
+	load();
+loop:	display(1);
 	read(0, &c, 1);
 	if (c == 27) goto loop;
-	else if (c == 'Q' and saved) goto done;
-	else if (c == 'S') {
-		if (*filename) goto save;
-		puts("s:no filename given"); goto loop;
-	save:;	FILE* output_file = fopen(filename, "w");
-		if (not output_file) { perror("fopen"); getchar(); goto loop; }
-		fwrite(text, count, 1, output_file); fclose(output_file); 
-		printf("%s %s %lu\n", filename, saved ? "s" : "w", count); saved = 1;
-	} else if (c == 'N') { 
-		move_left: if (origin < cursor or not origin) goto decr; origin--; 
-		e: if (not origin) goto decr; origin--; 
-		if (text[origin] != 10) goto e; origin++;
-		decr: if (cursor) cursor--;
-	} else if (c == 'E') { 
-		move_right: if (cursor < count) cursor++; 
-		if (cursor_row != window.ws_row - 1) goto loop;
-		l: origin++; if (origin >= count) goto loop;
-		if (text[origin] != 10) goto l; origin++;
-	} else if (c == 127) {
-		if (not cursor) goto loop; 
-		memmove(text + cursor - 1, text + cursor, count - cursor);
-		count--; text = realloc(text, count); saved = 0; goto move_left;
-	} else {
-		text = realloc(text, count + 1);
-		memmove(text + cursor + 1, text + cursor, count - cursor);
-		text[cursor] = c;
-		count++; saved = 0; goto move_right;
-	}
+	else if (c == 'Q') { if (saved) goto done; }
+	else if (c == 'A') anchor = cursor;
+	else if (c == 'S') save();
+	else if (c == 'N') move_left();
+	else if (c == 'E') move_right();
+	else if (c == 'U') move_left_chunk();
+	else if (c == 'P') move_right_chunk();
+	else if (c == 'C') undo();
+	else if (c == 'K') redo();
+	else if (c == 'I') alternate();
+	else if (c == 'M') copy();
+	else if (c == 'R') cut();
+	else if (c == 'L') paste();
+	else if (c == 'K') execute();
+	else if (c == 127) delete(1);
+	else insert(c, 1);
 	goto loop;
 done:	printf("\033[H\033[2J");
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+//////////printf("%s %s %lu\n", filename, saved ? "s" : "w", count); 
+
+
+
+
+
+
+const size_t new = count + a.dlength - a.ilength;
+	if (a.dlength > a.ilength) text = realloc(text, new);
+	if (a.dlength != a.ilength) memmove(text + *cursor + a.dlength - a.ilength, text + *cursor, count - *cursor);
+	memcpy(text + *cursor - a.ilength, a.deleted, a.dlength);
+	if (a.dlength < a.ilength) text = realloc(text, new);
+	count = new;
+
+
+
+
+
+const size_t new = count + a.ilength - a.dlength;
+	if (a.ilength > a.dlength) text = realloc(text, new);
+	if (a.ilength != a.dlength) memmove(text + *cursor + a.ilength - a.dlength, text + *cursor, count - *cursor);
+	memcpy(text + *cursor - a.dlength, a.inserted, a.ilength);
+	if (a.ilength < a.dlength) text = realloc(text, new);
+	count = new; 
+
+
+
+
+
+
+
+
+
+		struct action new = {0};
+		new.pre = *cursor;
+		const size_t dlength = *cursor - cursor[2];
+		char* deleted = text ? strndup(text + cursor[2], dlength) : 0;
+		const size_t new_count = count + length - dlength;
+		if (length > dlength) text = realloc(text, new_count);
+		if (length != dlength) memmove(text + *cursor + length - dlength, text + *cursor, count - *cursor);
+		if (length) memcpy(text + cursor[2], input, length);
+		if (length < dlength) text = realloc(text, new_count);
+		count = new_count; if (length or dlength) saved = 0;
+		
+		*cursor += length - dlength; cursor[2] = *cursor; cursor[1] = *cursor;
+		new.post = *cursor; new.parent = head;
+		new.inserted = strndup(input, length); new.ilength = length;
+		new.deleted = deleted; new.dlength = dlength;
+		actions[head].children = realloc(actions[head].children, sizeof(size_t) * (size_t) (actions[head].count + 1));
+		actions[head].choice = actions[head].count;
+		actions[head].children[actions[head].count++] = action_count;
+		head = action_count;
+		actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
+		actions[action_count++] = new;
+		printf("+%lu -%lu \n", length, dlength); insert = 0;
+*/
+
+
+
+
+// if (anchor > cursor) { size_t temp = cursor; cursor = anchor; anchor = temp; }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
