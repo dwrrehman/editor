@@ -7,14 +7,15 @@
 #include <stdbool.h>
 #include <termios.h>
 #include <sys/types.h>    // todo:     - fix memory leaks       - write manual       - test test test test test
-#include <sys/ioctl.h>    //           - write feature list     - redo readme.md     - 
+#include <sys/ioctl.h>    //           - write feature list     - redo readme.md     - test with unicode
 typedef size_t nat;
 
 struct action {
 	char* text;
 	nat* children;
-	nat parent, choice, count, length, insert, 
-	pre_cursor, post_cursor, pre_origin, post_origin, pre_saved, post_saved;
+	nat parent, choice, count, length, insert,
+	pre_cursor, post_cursor, pre_origin, 
+	post_origin, pre_saved, post_saved;
 };
 
 static struct winsize window;
@@ -22,7 +23,8 @@ static char filename[4096] = {0};
 static char* text = NULL;
 static char* clipboard = NULL;
 
-static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, count = 0, saved = 1, cliplength = 0, on = 0;
+static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, 
+           cursor_column = 0, count = 0, saved = 1, cliplength = 0, on = 0;
 static nat action_count = 0, head = 0;
 static struct action* actions = NULL;
 
@@ -39,7 +41,7 @@ static void move_left(void) {
 static void move_right(void) {
 	if (cursor < count) cursor++; 
 	if (cursor_row != window.ws_row - 1) return;
-	l: origin++; 
+	l: origin++;
 	if (origin >= count) return;
 	if (text[origin] != 10) goto l; 
 	origin++;
@@ -111,29 +113,11 @@ static inline void copy(void) {
 	pclose(file);
 }
 
-static void calculate_cursor_position(void) {
-	nat row = 0, column = 0, i = origin;
-	for (; i < count; i++) {
-		if (i == cursor) { cursor_row = row; cursor_column = column; }
-		if (row >= window.ws_row - 1) break;
-		char k = text[i];
-		if (k == 10) {
-			column = 0; row++;		
-		} else if (k == 9) {
-			const uint8_t amount = 8 - column % 8;
-			column += amount;
-		} else {
-			if (column >= window.ws_col) { column = 0; row++; }
-			if ((unsigned char) k >> 6 != 2) column++;
-		}
-	} if (i == cursor) { cursor_row = row; cursor_column = column; }
-}
-
-static void display(void) {
-	ioctl(0, TIOCGWINSZ, &window);
+static void display(bool output) {
+	if (output) ioctl(0, TIOCGWINSZ, &window);
 	const nat screen_size = window.ws_row * window.ws_col * 4;
-	char* screen = calloc(screen_size, 1);
-	memcpy(screen, "\033[H\033[2J", 7);
+	char* screen = output ? calloc(screen_size, 1) : 0;
+	if (output) memcpy(screen, "\033[H\033[2J", 7);
 	nat length = 7, row = 0, column = 0, i = origin;
 	for (; i < count; i++) {
 		if (i == cursor) { cursor_row = row; cursor_column = column; }
@@ -141,22 +125,22 @@ static void display(void) {
 		char k = text[i];
 		if (k == 10) {
 			column = 0; row++;
-			screen[length++] = 10;
+			if (output) screen[length++] = 10;
 		} else if (k == 9) {
 			const uint8_t amount = 8 - column % 8;
 			column += amount;
-			memcpy(screen + length, "        ", amount);
-			length += amount;
+			if (output) memcpy(screen + length, "        ", amount);
+			if (output) length += amount;
 		} else {
 			if (column >= window.ws_col) { column = 0; row++; }
 			if ((unsigned char) k >> 6 != 2) column++;
-			screen[length++] = k;
+			if (output) screen[length++] = k;
 		}
 	}
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
-	length += (nat) snprintf(screen + length, 16, "\033[%lu;%luH", cursor_row + 1, cursor_column + 1);
-	write(1, screen, length);
-	free(screen);
+	if (output) length += (nat) snprintf(screen + length, 16, "\033[%lu;%luH", cursor_row + 1, cursor_column + 1);
+	if (output) write(1, screen, length);
+	if (output) free(screen);
 }
 
 static void cut(void) {
@@ -285,7 +269,9 @@ static void forwards(void) {
 	nat t = 0;
 loop:	if (t == cliplength or cursor >= count) return;
 	if (text[cursor] != clipboard[t]) t = 0; else t++; 
-	calculate_cursor_position(); move_right(); goto loop;
+	display(0); 
+	move_right(); 
+	goto loop;
 }
 
 static void backwards(void) {
@@ -298,24 +284,23 @@ loop:	if (not t or not cursor) return;
 
 static void quit(void) { if (saved) on = 0; }
 static void paste(void) { insert_string(clipboard, cliplength); }
-
 static void sendc(void) {
 	if (not strcmp(clipboard, "discard and quit")) on = 0;
 	else if (cliplength > 5 and not strncmp(clipboard, "open ", 5)) load(clipboard + 5);
 	else if (cliplength > 7 and not strncmp(clipboard, "rename ", 7)) {
 		char* new = clipboard + 7;
-		if (not access(new, F_OK)) { printf("rename: file \"%s\" exists", new); getchar(); return; }
-		else puts("rename: file does exists. renaming file..."); 
-		if (rename(filename, new)) {
-			printf("rename: could not rename file: \"%s\": \n", new);
-			perror("rename");
-		} else {
-			printf("rename: [successful]"); 
-			strlcpy(filename, new, sizeof filename);
-			printf("rename: now: \"%s\"\n", filename);
+		if (not access(new, F_OK)) { 
+			printf("rename: file \"%s\" exists", new); 
+			getchar(); 
+			return; 
 		}
-		getchar();
-	} else {
+		if (*filename and rename(filename, new)) {
+			printf("rename: error renaming to: \"%s\": \n", new);
+			perror("rename"); 
+			getchar();
+		} else strlcpy(filename, new, sizeof filename);
+		
+	} else { 
 		printf("unknown command: %s\n", clipboard);
 		getchar();
 	}
@@ -327,7 +312,7 @@ int main(int argc, const char** argv) {
 	action_count = 1; on = 1;
 	char c = 0, b = 0;
 	if (argc >= 2) load(argv[1]);
-loop:	display();
+loop:	display(1);
 	read(0, &c, 1);
 	if (c == 27) {}
 	else if (c == 17) { if (b) 	quit();		else 	{ b = 1; goto loop; } 	} /* Q */
