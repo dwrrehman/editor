@@ -1,0 +1,60 @@
+manual for the text editor:
+-------------------------------
+
+here are the key bindings in the editor:
+
+"^(char)" denotes "control-(char)".
+
+-------------------------------------------------------
+        key    deadstop-X          X
+-------------------------------------------------------
+	 ^Q	quit() 		deadstop()
+	 ^D 	cut()		backwards()
+	 ^R 	paste() 	undo()
+	 ^A 	sendc()		anchor()
+	 ^S 	save()		move_left()
+	 ^H 	copy()		forwards()
+	 ^X 	execute() 	move_right()
+	 ^Z 	load()		redo()
+
+-------------------------------------------------------
+
+using the workman keyboard layout, the arrangement of keys is as follows:
+
+
+-----------------------------------
+
+     [Q]     [D]     [R] 
+   
+       [A]     [S]     [H]
+
+          [Z]      [X]
+
+-----------------------------------
+
+ie, all keybindings are under the left hand, with the control key directly to the right of the "A" key. 
+this leads to fairly ergonomic keybindings, and sequences that can be synthesized out of the basic commands. 
+
+
+
+
+
+
+Examples:
+-----------------------
+
+  . quitting the editor: `control-Q control-Q`
+
+  . saving the current file: `control-Q control-S`
+
+  . move up a line: `control-A <newline> control-Q control-D   control-D control-D control-D ...`
+  . move down a line: `control-A <newline> control-Q control-D   control-H control-H control-H ...`
+
+  . move left a word: `control-A <space> control-Q control-D   control-D control-D control-D ...`
+  . move right a word: `control-A <space> control-Q control-D   control-H control-H control-H ...`
+
+  . execute a command:  `control-A shell-command-here control-Q control-D control-Q control-X`
+
+  . quit the editor unconditionally: `control-A discard and quit control-Q control-D control-Q control-A`
+
+
