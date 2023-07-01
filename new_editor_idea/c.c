@@ -6,21 +6,23 @@
 #include <iso646.h>
 #include <stdbool.h>
 #include <termios.h>
-#include <sys/types.h>
-#include <sys/ioctl.h>
+#include <sys/types.h>    // todo:     - fix memory leaks       - write manual       - test test test test test
+#include <sys/ioctl.h>    //           - write feature list     - redo readme.md     - 
 typedef size_t nat;
 
 struct action {
 	char* text;
 	nat* children;
-	nat parent, choice, count, length, insert, pre_cursor, post_cursor, pre_origin, post_origin, pre_saved, post_saved;
+	nat parent, choice, count, length, insert, 
+	pre_cursor, post_cursor, pre_origin, post_origin, pre_saved, post_saved;
 };
 
 static struct winsize window;
-static char filename[2048] = {0};
+static char filename[4096] = {0};
 static char* text = NULL;
-static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, count = 0, saved = 1;
+static char* clipboard = NULL;
 
+static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, count = 0, saved = 1, cliplength = 0, on = 0;
 static nat action_count = 0, head = 0;
 static struct action* actions = NULL;
 
@@ -29,7 +31,7 @@ static void move_left(void) {
 	origin--; 
 	e: if (not origin) goto decr; 
 	origin--; 
-	if (text[origin] != 10) goto e; 
+	if (text[origin] != 10) goto e;
 	origin++;
 	decr: if (cursor) cursor--;
 }
@@ -44,6 +46,9 @@ static void move_right(void) {
 }
 
 static void create_action(struct action new) {
+	new.post_cursor = cursor; 
+	new.post_origin = origin; 
+	new.post_saved = saved;
 	new.parent = head;
 	actions[head].children = realloc(actions[head].children, sizeof(size_t) * (size_t) (actions[head].count + 1));
 	actions[head].choice = actions[head].count;
@@ -63,13 +68,10 @@ static void delete(bool should_record) {
 	saved = 0; 
 	move_left();
 	if (not should_record) return;
-	new.post_cursor = cursor; 
-	new.post_origin = origin; 
-	new.post_saved = saved;
 	new.insert = 0;
+	new.length = 1;
 	new.text = malloc(1);
 	new.text[0] = c;
-	new.length = 1;
 	create_action(new);
 }
 
@@ -78,48 +80,23 @@ static void insert(char c, bool should_record) {
 	text = realloc(text, count + 1);
 	memmove(text + cursor + 1, text + cursor, count - cursor);
 	text[cursor] = c;
-	count++;
-	saved = 0;
+	count++; saved = 0;
 	move_right();
 	if (not should_record) return;
-	new.post_cursor = cursor;
-	new.post_origin = origin;
-	new.post_saved = saved;
 	new.insert = 1;
+	new.length = 1;
 	new.text = malloc(1);
 	new.text[0] = c;
-	new.length = 1;
 	create_action(new);
 }
 
 static void insert_string(char* string, nat length) {
 	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
 	for (nat i = 0; i < length; i++) insert(string[i], 0);
-	new.post_cursor = cursor; 
-	new.post_origin = origin; 
-	new.post_saved = saved;
 	new.insert = 1;
 	new.text = strndup(string, length); 
 	new.length = length;
 	create_action(new);
-}
-
-static void paste(void) {
-	FILE* file = popen("pbpaste", "r");
-	if (not file) { 
-		perror("paste popen"); 
-		getchar(); 
-		return; 
-	}
-	char* string = NULL;
-	nat length = 0;
-	int c = 0;
-	while ((c = fgetc(file)) != EOF) {
-		string = realloc(string, length + 1);
-		string[length++] = (char) c;
-	}
-	pclose(file);
-	insert_string(string, length);
 }
 
 static inline void copy(void) {
@@ -134,37 +111,30 @@ static inline void copy(void) {
 	pclose(file);
 }
 
-static inline void cut(void) {
-	
-	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
-
-		char* deleted = text + cursor;
-		nat length = anchor - cursor;
-	if (anchor < cursor) {
-
-		deleted = text + anchor;
-		length = cursor - anchor;
-
-	}
-	new.post_cursor = cursor; 
-	new.post_origin = origin; 
-	new.post_saved = saved;
-	new.insert = 0;
-	new.text = deleted;
-	new.length = length;
-	create_action(new);
+static void calculate_cursor_position(void) {
+	nat row = 0, column = 0, i = origin;
+	for (; i < count; i++) {
+		if (i == cursor) { cursor_row = row; cursor_column = column; }
+		if (row >= window.ws_row - 1) break;
+		char k = text[i];
+		if (k == 10) {
+			column = 0; row++;		
+		} else if (k == 9) {
+			const uint8_t amount = 8 - column % 8;
+			column += amount;
+		} else {
+			if (column >= window.ws_col) { column = 0; row++; }
+			if ((unsigned char) k >> 6 != 2) column++;
+		}
+	} if (i == cursor) { cursor_row = row; cursor_column = column; }
 }
 
-static void display(bool output) {
-
+static void display(void) {
 	ioctl(0, TIOCGWINSZ, &window);
 	const nat screen_size = window.ws_row * window.ws_col * 4;
 	char* screen = calloc(screen_size, 1);
-
 	memcpy(screen, "\033[H\033[2J", 7);
-	nat length = 7;
-	nat row = 0, column = 0;
-	nat i = origin;
+	nat length = 7, row = 0, column = 0, i = origin;
 	for (; i < count; i++) {
 		if (i == cursor) { cursor_row = row; cursor_column = column; }
 		if (row >= window.ws_row - 1) break;
@@ -185,53 +155,62 @@ static void display(bool output) {
 	}
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
 	length += (nat) snprintf(screen + length, 16, "\033[%lu;%luH", cursor_row + 1, cursor_column + 1);
-	if (output) write(1, screen, length);
+	write(1, screen, length);
 	free(screen);
 }
 
-static void move_left_chunk(void) {
-	for (nat i = 0; i < 100; i++) {
-		display(0);
-		move_left();
-	}
-}
-
-static void move_right_chunk(void) {
-	for (nat i = 0; i < 100; i++) {
-		display(0);
-		move_right();
-	}
+static void cut(void) {
+	if (anchor > cursor) { nat temp = anchor; anchor = cursor; cursor = temp; }
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
+	cliplength = cursor - anchor;
+	clipboard = strndup(text + anchor, cliplength);
+	for (nat i = 0; i < cliplength; i++) delete(0);
+	new.insert = 0;
+	new.text = strdup(clipboard);
+	new.length = cliplength;
+	create_action(new);
 }
 
 static struct termios configure_terminal(void) {
 	struct termios terminal;
 	tcgetattr(0, &terminal);
 	struct termios copy = terminal; 
-	copy.c_lflag &= ~((size_t) ECHO | ICANON | IEXTEN); 			//   | ISIG
-	copy.c_iflag &= ~((size_t) IXON); 					// BRKINT  | 
+	copy.c_lflag &= ~((size_t) ECHO | ICANON | IEXTEN | ISIG);
+	copy.c_iflag &= ~((size_t) BRKINT | IXON);
 	tcsetattr(0, TCSAFLUSH, &copy);
 	return terminal;
 }
 
-static void load(void) {
-	if (not saved) return;
-	FILE* file = fopen(filename, "r");	
+static void load(const char* this) {
+	if (not saved) {
+		puts("load: error: unsaved changes"); 
+		getchar();
+		return;
+	}
+	FILE* file = fopen(this, "r");	
 	if (not file) {
 		perror("load fopen"); 
 		getchar();
-		return; 
+		return;
 	}
-	fseek(file, 0, SEEK_END); 
-	count = (size_t) ftell(file); 
-	text = malloc(count); 
-	fseek(file, 0, SEEK_SET); 
-	fread(text, 1, count, file); 
+	fseek(file, 0, SEEK_END);
+	count = (size_t) ftell(file);
+	text = malloc(count);
+	fseek(file, 0, SEEK_SET);
+	fread(text, 1, count, file);
 	fclose(file);
+	anchor = 0; cursor = 0; origin = 0;
+	clipboard = NULL; cliplength = 0;
+	cursor_row = 0; cursor_column = 0;
+	saved = 1; head = 0;
+	actions = calloc(1, sizeof(struct action));
+	action_count = 1; on = 1;
+	strlcpy(filename, this, sizeof filename);
 }
 
 static void save(void) {
 	if (not *filename) {
-		puts("save: error: empty filename"); 
+		puts("save: error: currently unnamed"); 
 		getchar();
 		return;
 	}
@@ -248,12 +227,12 @@ static void save(void) {
 
 static void execute(void) {
 	char command[4096] = {0};
-	strlcpy(command, "input_string", sizeof command);
+	strlcpy(command, clipboard, sizeof command);
 	strlcat(command, " 2>&1", sizeof command);
 	printf("executing: %s\n", command);
 	FILE* f = popen(command, "r");
 	if (not f) {
-		printf("error: could not run command \"%s\"\n", command);
+		printf("error: could not execute command \"%s\"\n", command);
 		perror("execute popen");
 		getchar();
 		return;
@@ -271,14 +250,9 @@ static void execute(void) {
 	insert_string(string, length);
 }
 
-static void alternate(void) {
-	if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0;
-}
-
 static void undo(void) {
 	if (not head) return;
-	const struct action a = actions[head];
-	/// printf("u +%lu -%lu, %lu:%lu\n", a.ilength, a.dlength, a.count, a.choice);
+	struct action a = actions[head];
 	cursor = a.post_cursor;
 	origin = a.post_origin;
 	saved = a.post_saved;
@@ -287,14 +261,14 @@ static void undo(void) {
 	cursor = a.pre_cursor;
 	origin = a.pre_origin;
 	saved = a.pre_saved;
-	head = a.parent;
+	head = a.parent; a = actions[head];
+	if (a.count > 1) { printf("\033[0;44m[%lu:%lu]\033[0m", a.count, a.choice); getchar(); }
 }
 
 static void redo(void) {
 	if (not actions[head].count) return;
 	head = actions[head].children[actions[head].choice];
 	const struct action a = actions[head];
-	///  printf("r +%lu -%lu, %lu:%lu\n", a.ilength, a.dlength, a.count, a.choice);
 	cursor = a.pre_cursor;
 	origin = a.pre_origin;
 	saved = a.pre_saved;
@@ -303,36 +277,71 @@ static void redo(void) {
 	cursor = a.post_cursor;
 	origin = a.post_origin;
 	saved = a.post_saved;
+	if (a.choice + 1 < a.count) actions[head].choice++; else actions[head].choice = 0;
+	if (a.count > 1) { printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); getchar(); }
+}
+
+static void forwards(void) {
+	nat t = 0;
+loop:	if (t == cliplength or cursor >= count) return;
+	if (text[cursor] != clipboard[t]) t = 0; else t++; 
+	calculate_cursor_position(); move_right(); goto loop;
+}
+
+static void backwards(void) {
+	nat t = cliplength;
+loop:	if (not t or not cursor) return;
+	move_left(); t--; 
+	if (text[cursor] != clipboard[t]) t = cliplength;
+	goto loop;
+}
+
+static void quit(void) { if (saved) on = 0; }
+static void paste(void) { insert_string(clipboard, cliplength); }
+
+static void sendc(void) {
+	if (not strcmp(clipboard, "discard and quit")) on = 0;
+	else if (cliplength > 5 and not strncmp(clipboard, "open ", 5)) load(clipboard + 5);
+	else if (cliplength > 7 and not strncmp(clipboard, "rename ", 7)) {
+		char* new = clipboard + 7;
+		if (not access(new, F_OK)) { printf("rename: file \"%s\" exists", new); getchar(); return; }
+		else puts("rename: file does exists. renaming file..."); 
+		if (rename(filename, new)) {
+			printf("rename: could not rename file: \"%s\": \n", new);
+			perror("rename");
+		} else {
+			printf("rename: [successful]"); 
+			strlcpy(filename, new, sizeof filename);
+			printf("rename: now: \"%s\"\n", filename);
+		}
+		getchar();
+	} else {
+		printf("unknown command: %s\n", clipboard);
+		getchar();
+	}
 }
 
 int main(int argc, const char** argv) {
-	strlcpy(filename, argc >= 2 ? argv[1] : "Untitled.txt", sizeof filename);
 	struct termios terminal = configure_terminal();
 	actions = calloc(1, sizeof(struct action));
-	action_count = 1;
-	char c = 0;
-	load();
-loop:	display(1);
+	action_count = 1; on = 1;
+	char c = 0, b = 0;
+	if (argc >= 2) load(argv[1]);
+loop:	display();
 	read(0, &c, 1);
-	if (c == 27) goto loop;
-	else if (c == 'Q') { if (saved) goto done; }
-	else if (c == 'A') anchor = cursor;
-	else if (c == 'S') save();
-	else if (c == 'N') move_left();
-	else if (c == 'E') move_right();
-	else if (c == 'U') move_left_chunk();
-	else if (c == 'P') move_right_chunk();
-	else if (c == 'C') undo();
-	else if (c == 'K') redo();
-	else if (c == 'I') alternate();
-	else if (c == 'M') copy();
-	else if (c == 'R') cut();
-	else if (c == 'L') paste();
-	else if (c == 'K') execute();
+	if (c == 27) {}
+	else if (c == 17) { if (b) 	quit();		else 	{ b = 1; goto loop; } 	} /* Q */
+	else if (c == 4)  { if (b) 	cut();		else 	backwards(); 		} /* D */
+	else if (c == 18) { if (b) 	paste(); 	else 	redo(); 		} /* R */
+	else if (c == 1)  { if (b) 	sendc();	else 	anchor = cursor; 	} /* A */
+	else if (c == 19) { if (b) 	save();		else 	move_left(); 		} /* S */
+	else if (c == 8)  { if (b) 	copy();		else 	forwards(); 		} /* H */
+	else if (c == 24) { if (b) 	execute(); 	else 	move_right(); 		} /* X */
+	else if (c == 26) { if (b)  	{}		else 	undo();  		} /* Z */
 	else if (c == 127) delete(1);
 	else insert(c, 1);
-	goto loop;
-done:	printf("\033[H\033[2J");
+	b = 0; if (on) goto loop;
+	printf("\033[H\033[2J");
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
 
@@ -351,6 +360,812 @@ done:	printf("\033[H\033[2J");
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+ Q	quit() 		deadstop()
+ D 	cut()		backwards()
+ R 	paste() 	redo()
+ A 	sendc()		anchor()
+ S 	save()		move_left()
+ H 	copy()		forwards()
+ X 	execute() 	move_right()
+ Z 	load()		undo()
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/** ------------------layer0------------------------------
+
+
+	control-Q 	:	(deadstop)
+		
+	control-D	:	backwards()
+
+	control-R	:	redo()
+
+	control-A	:	anchor()
+
+	control-S	:	move_left()
+
+	control-H	:	forwards()
+
+	control-X	:	move_right()
+
+	control-Z	:	undo()
+
+
+
+------------------------layer1-------------------------
+
+
+
+
+	control-Q 	:	quit()
+		
+	control-D	:	cut()
+
+	control-R	:	
+
+	control-A	:	send_command()
+
+	control-S	:	save()
+
+	control-H	:	copy()
+
+	control-X	:	execute()
+
+	control-Z	:	
+
+
+-------------------------------------------------------
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		//puts("rename: unimplemented!"); 
+		//getchar(); 
+
+	//if (*filename and not len) goto save;
+	//if (not len) { puts("s:no filename given"); goto loop; }
+
+
+
+
+
+
+
+/*
+if (anchor < cursor) {
+
+		deleted = text + anchor;
+		length = cursor - anchor;
+
+	}
+*/
+
+
+
+
+
+
+
+
+
+/*
+
+static void paste(void) {
+	FILE* file = popen("pbpaste", "r");
+	if (not file) { 
+		perror("paste popen"); 
+		getchar(); 
+		return; 
+	}
+	char* string = NULL;
+	nat length = 0;
+	int c = 0;
+	while ((c = fgetc(file)) != EOF) {
+		string = realloc(string, length + 1);
+		string[length++] = (char) c;
+	}
+	pclose(file);
+	insert_string(string, length);
+}
+
+
+static void move_left_chunk(void) {
+	for (nat i = 0; i < 100; i++) {
+		display(0);
+		move_left();
+	}
+}
+
+static void move_right_chunk(void) {
+	for (nat i = 0; i < 100; i++) {
+		display(0);
+		move_right();
+	}
+}
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+//if (c >= 32) { printf("\033[0;44m[%lu]\033[0m", (nat) c); getchar(); }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+
+
+
+
+
+
+		wait i found an error with the execute command, using it to implement copy and paste though!!!
+
+
+				we actually can't give input of the current selection to the command, 
+
+							because we need to know what the current command is 
+
+
+							based on what is selected!!
+
+
+							thats like a critical thing that it needs to do. 
+
+
+						it cuts the current selection, and executes it as a bash command. thats what it does. 
+				so like, how do we give input of another selection then?
+
+
+					we don't lol.    we need another command for copy lol. 
+
+
+
+							i feel like giving input to the command is like      basicallyyyy futile, i think?.. idk.. lol. it seems futile lol.
+						so yeah. i think so honestly 
+
+
+								we should totally have a copy command. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+	 ---------------------- final keybindings: -------------------------------
+
+			lets add a second anchor key!!!! that should help a ton. yay.     a     and    q      i think. 
+a	- anchor 
+d	- move_left_chunk
+h	- move_right_chunk
+q	- deadstop (*)
+r	- cut
+s	- move_left
+x	- move_right
+
+qa	- undo
+qd	- execute
+qh	- copy
+qq	- quit
+qr	- 
+qs	- save
+qx	- redo_alternate
+
+
+
+
+
+------------------------------------------------------------
+
+
+
+q	- deadstop0 (*)
+r	- redo
+z	- undo
+a	- anchor
+s	- move_left
+x	- move_right
+d	- move_left_chunk
+h	- move_right_chunk
+	
+
+qq	- quit
+qs	- save
+
+qz	- find selection ("next")
+qd	- cut  [anchor-cursor sel]			sets selection
+qr	- copy [anchor-cursor sel]			sets selection
+qh	- cut-find anchor-cursor sel.			sets selection
+qx	- cut-execute anchor-cursor sel.		sets selection
+qa	- open [anchor-cursor sel]			sets selection
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+d s h x r
+
+q a z 
+
+
+
+qd qs qh qx qr
+
+qa qz qq
+
+
+
+
+------------------------------------------------------------
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+/* ---------------------- final keybindings: -------------------------------
+
+a	- move_left
+d	- move_left_chunk
+h	- move_right_chunk
+q	- deadstop (*)
+r	- cut
+s	- move_right
+
+
+qa	- redo_alternate          
+qd	- save
+qh	- anchor
+qq	- quit
+qr	- execute       (sends selection as input, always, pastes output always. undoable.
+qs	- undo
+
+	--------			OLD 
+
+
+
+
+
+
+
+
+
+
+
+x	else if (c == 'Q') quit();
+x	else if (c == 'S') save();
+del	else if (c == 'O') open();
+x	else if (c == 'K') execute();
+
+x	else if (c == 'A') anchor = cursor;
+x	else if (c == 'R') cut();
+x	else if (c == 'M') copy();
+del	else if (c == 'L') paste();
+	
+x	else if (c == 'N') move_left();
+x	else if (c == 'E') move_right();
+x	else if (c == 'U') move_left_chunk();
+x	else if (c == 'P') move_right_chunk();
+	
+	else if (c == 'C') undo();
+	else if (c == 'K') redo();
+	else if (c == 'I') alternate();
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+editor primitives:
+-----------------------
+
+
+
+q	- deadstop (*)
+r	- cut
+a	- move_left
+s	- move_right
+d	- move_left_chunk
+t	- move_right_chunk
+
+
+qq	- quit
+qd	- save
+qr	- execute
+qh	- anchor
+qs	- undo
+qa	- redo_alternate
+
+
+
+
+
+
+
+
+
+	
+
+
+very very tempted to make cut() actually do a copy() as well. that would simplify one further keybind, lol. 
+	kindaaa seems like the wrong call though... just because its so wasteful.. like if we just want to copy something. 
+				idk...... hm...  we have to cut, it, only to paste it again. like seriously? idk.... 
+
+							yeah, i think we should keep them seperate. it just makes more sense that way. often you want to delete stuff, without copying it to your clipboard. i think. 
+								hm.. 
+
+
+					welppppp we have 1 too many keybindings then for only 6 keys loll. not great. 
+				hmmm
+
+
+
+
+					literally nothing else can get eliminated though... thats the problem lol. like thats everything that we have. hm. 
+
+
+		
+
+
+
+
+welll
+
+
+	wait
+
+
+			what if we just unconditionally sent the current selection to the program!!!!
+
+					that we executed!!!
+
+
+
+								then, like we could literally have MORE FEATURES
+
+								with less keybindssss
+
+
+
+
+			because then we don't need copy()!!!!
+
+					nice!!!! lets do that. cool beans. 
+
+
+
+
+	so pbcopy and pbpaste, 
+
+		are user senthesized commands
+
+		yay 
+
+
+								that way its platform independent, 
+
+
+
+									andddd has little keybinds. 
+
+
+
+		yay. 
+			i love this lol. 
+
+
+
+cool beans 
+
+
+
+	yay. 
+
+
+lets do that.
+
+lets see if it works
+
+
+
+
+
+
+
+
+	
+
+----------------------extraneous---------------------------
+
+
+
+x	- alternate
+
+	- copy
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Q [17]
+D [4]
+R [18]
+
+A [1]
+S [19]
+H [8]
+
+
+
+	else if (c == 'Q') { if (saved) goto done; }
+	else if (c == 'A') anchor = cursor;
+	else if (c == 'S') save();
+	else if (c == 'N') move_left();				
+	else if (c == 'E') move_right();
+	else if (c == 'U') move_left_chunk();
+	else if (c == 'P') move_right_chunk();
+	else if (c == 'C') undo();
+	else if (c == 'K') redo();
+	else if (c == 'I') alternate();
+	else if (c == 'M') copy();
+	else if (c == 'R') {} //  cut();
+	else if (c == 'L') paste();
+	else if (c == 'K') execute();
+*/
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+  [Q] [D] [R] [W]
+
+   [A] [S] [H] [T]
+	
+     [Z] [X] [M]              <--- this row is not usable.
+
+
+
+
+
+
+
+
+
+  [17] [4] [18] [23]
+
+   [1] [19] [8] [20]
+
+     [-]  [-]  [-]
+
+
+
+1   (start of heading)````````````````
+4   (end of transmission)```````````````
+8   (backspace)	       ```````````````````
+17  (device control 1) ``````````````````
+18  (device control 2)``````````````````
+19  (device control 3)`````````````````
+20  (device control 4)`````````````````
+23  (end of trans. block)`````````````````
+
+
+
+
+
+
+
+
+
+????	
+????	
+
+a	moveleft
+s	moveright
+d	moveleftw
+r	moverightw
+
+q	*
+d	anchor
+r	cut
+w	history-mode
+
+q q	quit
+q d	save
+q r	execute
+q w	open
+
+q a	-
+q s	copy
+q h	paste
+q t 	[UNDEFINED]
+
+history mode:
+----------------
+a	undo
+s	redo
+d	alternate
+q	*
+
+
+
+
+
+  [ * / quit] [leftw/save]  
+
+    [left/] [right/] [rightw/] 
+
+
+
+  [ * / quit] [lw]
+
+   [l] [r] [rw] 
+
+
+
+
+
+  [17] [4] [18]
+
+   [1] [19] [8]
+
+
+
+
+
+
+
+
+
+
+
+
+  [17] [4] [18] [23]
+
+   [1] [19] [8] [20]
+
+
+
+
+
+
+
+
+
+
+
+2	else if (c == 'Q') quit();
+2	else if (c == 'A') anchor();
+2	else if (c == 'S') save();
+3	else if (c == 'O') open();
+1	else if (c == 'N') move_left();				
+1	else if (c == 'E') move_right();
+1	else if (c == 'U') move_left_chunk();
+1	else if (c == 'P') move_right_chunk();
+m1	else if (c == 'C') undo();
+m1	else if (c == 'K') redo();
+m2	else if (c == 'I') alternate();
+2	else if (c == 'M') copy();
+2	else if (c == 'R') cut();
+2	else if (c == 'L') paste();
+3	else if (c == 'K') execute();
+
+
+
+
+
+
+*/
 
 
 
@@ -773,4 +1588,46 @@ theres not really any subsitute for that.
         
 
 */
+
+
+//if (b) { memcpy(screen + length, "\033[0;41m", 7); length += 7; } 
+//if (i == cursor) { if (b) { memcpy(screen + length, "\033[0m", 4); length += 4; } }  
+
+
+
+
+
+
+
+
+/*
+
+// okay, so i kinda want to try to use this editor to write a piece of code. 
+// it doesnt have to be anything fancy, but yeah, i need to test writing code with this thing. 
+// lets see how it will go! yay. [202306305.184617]
+
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+	char buffer[512] = {0};
+
+	fgets(buffer, sizeof buffer, stdin);
+
+	int a = atoi(buffer);
+	
+	fgets(buffer, sizeof buffer, stdin);
+	
+	int b = atoi(buffer);
+
+	printf("%d + %d = %d\n", a, b, a + b);
+
+	exit(0);
+}
+
+
+
+
+*/
+
 
