@@ -6,8 +6,8 @@
 #include <iso646.h>
 #include <stdbool.h>
 #include <termios.h>
-#include <sys/types.h>    // todo:     - fix memory leaks       - write manual       - test test test test test
-#include <sys/ioctl.h>    //           - write feature list     - redo readme.md     - test with unicode
+#include <sys/types.h>    // todo:     - fix memory leaks       - write manual       x- test test test test test
+#include <sys/ioctl.h>    //           - write feature list     x- redo readme.md     - test with unicode
 typedef size_t nat;
 
 struct action {
@@ -314,15 +314,17 @@ int main(int argc, const char** argv) {
 	if (argc >= 2) load(argv[1]);
 loop:	display(1);
 	read(0, &c, 1);
-	if (c == 27) {}
+	if (c == 27) { read(0, &c, 1); read(0, &c, 1);
+		if (c == 'C') move_right(); else if (c == 'D') move_left();
+	}
 	else if (c == 17) { if (b) 	quit();		else 	{ b = 1; goto loop; } 	} /* Q */
 	else if (c == 4)  { if (b) 	cut();		else 	backwards(); 		} /* D */
-	else if (c == 18) { if (b) 	paste(); 	else 	redo(); 		} /* R */
+	else if (c == 18) { if (b) 	paste(); 	else 	undo(); 		} /* R */
 	else if (c == 1)  { if (b) 	sendc();	else 	anchor = cursor; 	} /* A */
 	else if (c == 19) { if (b) 	save();		else 	move_left(); 		} /* S */
 	else if (c == 8)  { if (b) 	copy();		else 	forwards(); 		} /* H */
 	else if (c == 24) { if (b) 	execute(); 	else 	move_right(); 		} /* X */
-	else if (c == 26) { if (b)  	{}		else 	undo();  		} /* Z */
+	else if (c == 26) { if (b)  	{}		else 	redo();  		} /* Z */
 	else if (c == 127) delete(1);
 	else insert(c, 1);
 	b = 0; if (on) goto loop;
@@ -381,12 +383,12 @@ loop:	display(1);
 
  Q	quit() 		deadstop()
  D 	cut()		backwards()
- R 	paste() 	redo()
+ R 	paste() 	undo()
  A 	sendc()		anchor()
  S 	save()		move_left()
  H 	copy()		forwards()
  X 	execute() 	move_right()
- Z 	load()		undo()
+ Z 	load()		redo()
 
 */
 
@@ -413,7 +415,7 @@ loop:	display(1);
 		
 	control-D	:	backwards()
 
-	control-R	:	redo()
+	control-R	:	undo()
 
 	control-A	:	anchor()
 
@@ -423,7 +425,7 @@ loop:	display(1);
 
 	control-X	:	move_right()
 
-	control-Z	:	undo()
+	control-Z	:	redo()
 
 
 
