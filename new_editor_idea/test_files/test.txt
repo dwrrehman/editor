@@ -234,6 +234,12 @@ process:
 
 
 
+cool, i think this works really well, actually!!! i am so happy with ith lol.  yayyyyy         aoshietnaisohtenaioshetnaioshtenaioeshntaiosehntiaosenhtoiashnet lets see bubbles what happens, when we have to like wrap the line lol. i think it seems to work well actually! which is very cool.
+
+
+
+
+
 
 //printf("\033[%hhuD", amount);
 
@@ -347,7 +353,7 @@ printf("\033[6n");
 
 
 
-
+ni
 
 /*
 
@@ -415,4 +421,4 @@ theres not really any subsitute for that.
         
 
 */
-ssxxxxxxxxxxsxxneneshnohentosenhtosnhtoesnhtoesnhtoenshotenqqqqqqqqqqqqnqpunpdqunhpunqdhpun
+ssxxxxxxxxxxsxxneneshnohentosenhtosnhtoesnhtoesnhtoenshotenqqqqqqqqqqqqnqpunpdqunhpunqdhpundd
