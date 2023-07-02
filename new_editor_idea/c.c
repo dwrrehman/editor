@@ -8,7 +8,7 @@
 #include <termios.h>
 #include <signal.h>
 #include <sys/types.h>    // todo:     - fix memory leaks       - write manual        x- test test test test test
-#include <sys/ioctl.h>    //           - write feature list     x- redo readme.md     x- test with unicode    
+#include <sys/ioctl.h>    //           - write feature list     x- redo readme.md     x- test with unicode                
 typedef size_t nat;       //           x- fix the display(0) performance bug on move_right(). 
 
 struct action {
@@ -21,18 +21,17 @@ struct action {
 
 static struct winsize window;
 static char filename[4096] = {0};
-static char* text = NULL;
-static char* clipboard = NULL;
+static char* text = NULL, * clipboard = NULL;
 static struct action* actions = NULL;
 static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, 
 	   count = 0, saved = 1, cliplength = 0, mode = 0, action_count = 0, head = 0;
 
 static void handler(int __attribute__((unused))_) {}
-static void display(bool output) {
-	if (output) ioctl(0, TIOCGWINSZ, &window);
+static void display(void) {
+	ioctl(0, TIOCGWINSZ, &window);
 	const nat screen_size = window.ws_row * window.ws_col * 4;
-	char* screen = output ? calloc(screen_size, 1) : 0;
-	if (output) memcpy(screen, "\033[?25l\033[H", 9);
+	char* screen = calloc(screen_size, 1);
+	memcpy(screen, "\033[?25l\033[H", 9);
 	nat length = 9, row = 0, column = 0, i = origin;
 	for (; i < count; i++) {
 		if (i == cursor) { cursor_row = row; cursor_column = column; }
@@ -40,26 +39,30 @@ static void display(bool output) {
 		char k = text[i];
 		if (k == 10) {
 			column = 0; row++;
-			if (output) { 
-				memcpy(screen + length, "\033[K", 3); 
-				length += 3; 
-				if (row < window.ws_row) screen[length++] = 10;
-			}
+			memcpy(screen + length, "\033[K", 3); 
+			length += 3; 
+			if (row < window.ws_row) screen[length++] = 10;
 		} else if (k == 9) {
 			const uint8_t amount = 8 - column % 8;
 			column += amount;
-			if (output) memcpy(screen + length, "        ", amount);
-			if (output) length += amount;
+			memcpy(screen + length, "        ", amount);
+			length += amount;
 		} else {
 			if (column >= window.ws_col) { column = 0; row++; }
-			if ((unsigned char) k >> 6 != 2) column++;
-			if (output) screen[length++] = k;
+			if ((unsigned char) k >> 6 != 2 and k >= 32) column++;
+			screen[length++] = k;
 		}
 	}
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
-	if (output) length += (nat) snprintf(screen + length, 30, "\033[K\033[%lu;%luH\033[?25h", cursor_row + 1, cursor_column + 1);
-	if (output) write(1, screen, length);
-	if (output) free(screen);
+	while (row < window.ws_row) {
+		row++;
+		memcpy(screen + length, "\033[K", 3);
+		length += 3; 
+		if (row < window.ws_row) screen[length++] = 10;
+	}
+	length += (nat) snprintf(screen + length, 30, "\033[K\033[%lu;%luH\033[?25h", cursor_row + 1, cursor_column + 1);
+	write(1, screen, length);
+	free(screen);
 }
 
 static void move_left(void) {
@@ -110,8 +113,7 @@ static void delete(bool should_record) {
 	memmove(text + cursor - 1, text + cursor, count - cursor);
 	count--;
 	text = realloc(text, count); 
-	saved = 0; 
-	move_left();
+	saved = 0; move_left();
 	if (not should_record) return;
 	new.insert = 0;
 	new.length = 1;
@@ -300,12 +302,24 @@ static void interpret_arrow_key(void) {
 	if (c == 'D') move_left();
 }
 
+static void jump_line(const char* line_string) {
+	const nat target = (nat) atoi(line_string);
+	cursor = 0; origin = 0; cursor_row = 0; cursor_column = 0;
+	nat line = 0;
+	while (cursor < count) {
+		if (line == target) break;
+		if (text[cursor] == 10) line++;
+		move_right();
+	}
+}
+
 static void sendc(void) {
 	if (not strcmp(clipboard, "discard and quit")) mode = 0;
 	else if (not strcmp(clipboard, "copy")) copy();
-	else if (cliplength > 5 and not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
+	else if (cliplength > 3 and not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
 	else if (cliplength > 5 and not strncmp(clipboard, "open ", 5)) load(clipboard + 5);
 	else if (cliplength > 7 and not strncmp(clipboard, "rename ", 7)) rename_file(clipboard + 7);
+	else if (cliplength > 5 and not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);
 	else { printf("unknown command: %s\n", clipboard); getchar(); }
 }
 
@@ -318,28 +332,28 @@ int main(int argc, const char** argv) {
 	char c = 0, p1 = 0, p2 = 0, state = 0;
 	if (argc >= 2) load(argv[1]);
 	cliplength = 1; clipboard = strdup("\n");
-loop:	display(1);
+loop:	display();
 	read(0, &c, 1);
 	if (mode == 1) {
 		if (c == 17) mode = 2;
 		else if (c == 27) interpret_arrow_key();
 		else if (c == 127) delete(1);
-		else if (c == 't' and p1 == 'r' and p2 == 'd') { undo(); undo(); p1 = 0; p2 = 0; mode = 2; }
+		else if (c == 't' and p1 == 'r' and p2 == 'd') { delete(1); delete(1); mode = 2; c = 0; p1 = 0; p2 = 0; goto loop; }
 		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c, 1);
 	} else if (mode == 2) {
 		if (state == 1) {
-			if (c == 'a') {}
+			if (c == 'a') execute("pbpaste");
 			else if (c == 'd') paste();
 			else if (c == 'r') save();
 			else if (c == 't') sendc(); 
 			else if (c == 'n') {}
 			else if (c == 'u') cut();
-			else if (c == 'p') {}
+			else if (c == 'p') copy();
 			else if (c == 'i') { if (saved) mode = 0; }
 			state = 0;
 		} else {
 			if (c == 'a') undo();
-			else if (c == 'd') { anchor = cursor; mode = 1; }
+			else if (c == 'd') { anchor = cursor; mode = 1; c = 0; p1 = 0; p2 = 0; goto loop; }
 			else if (c == 'r') backwards();
 			else if (c == 't') forwards();
 			else if (c == 'n') state = 1;
@@ -388,6 +402,44 @@ loop:	display(1);
 /*
 
 		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1680,5 +1732,10 @@ int main() {
 
 
 */
+
+
+
+
+
 
 
