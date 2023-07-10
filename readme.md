@@ -1,21 +1,21 @@
 # a text editor
 ##### written by Daniel W. R. Rehman.
 
-This is a simple programmable command-line text editor intended for my personal use, based on minimalism, ergonomics and simplicity. It is written in C, and depends only on libc. 
-It's features and behavior are loosely based on that of ed and vi, and emacs.
+This is a modal programmable command-line text editor intended for my personal use, based on minimalism, ergonomics and simplicity. It is written in C, and depends only on libc. 
+It's features and behavior are loosely based on that of ed and vi.
 
 ### Features:
 
  - minimalist feature set and UI
  - few ergonomic and simple input commands to learn
- - fully configurable key bindings                                    (coming soon)
+ - fully configurable key bindings                                    (coming soon)
  - runs fast and is highly memory efficient
- - supports UTF8 unicode
+ - supports UTF8 unicode
  - uses an undo-tree system
  - copy/paste to global clipboard
  - fully programmable: uses an interpreter for a language I also wrote        (coming soon!)
  - no dependancies besides the C standard library.
- - source code is currently less than 330 lines of code. 
+ - source code is currently less than 430 lines of code. 
  - other stuff!!! nice.
 
 

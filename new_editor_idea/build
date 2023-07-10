@@ -4,6 +4,10 @@ if [ "release" = "$1" ]; then
 	clang -Ofast c.c -o editor
 
 
+elif [ "small" = "$1" ]; then
+	clang -Os c.c -o editor	
+
+
 elif [ "clean" = "$1" ]; then
 	rm -rf editor
 	rm -rf editor.dSYM

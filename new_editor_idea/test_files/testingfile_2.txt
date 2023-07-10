@@ -1,0 +1,14 @@
+this is just a test, to see if the editor will prevent me from doing bad stuff lkie overwriting filse lol. 
+
+
+i guess we'll see 
+
+lol. 
+
+long_file_source.c
+piece_of_code_for_testing_editor.c
+test.txt
+testingfile_1.txt
+
+
+

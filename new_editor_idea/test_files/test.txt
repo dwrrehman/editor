@@ -200,7 +200,7 @@ if (text[cursor] == 10) {
 
 
 process:
-	printf("\n\trecieved input(%lu): \n\n\t\t\"", len);
+	printf("\n\trecieved input(bubbles here (and also beans)): \n\n\t\t\"", len);
 	//fwrite(input, len, 1, stdout);
 	for (size_t i = 0; i < len; i++) {
 		if (isprint(input[len])) putchar(input[len]);
@@ -422,3 +422,4 @@ theres not really any subsitute for that.
 
 */
 ssxxxxxxxxxxsxxneneshnohentosenhtosnhtoesnhtoesnhtoenshotenqqqqqqqqqqqqnqpunpdqunhpunqdhpundd
+staticstaticstaticstaticstaticstaticstaticstaticstaticstaticstaticstaticstatic

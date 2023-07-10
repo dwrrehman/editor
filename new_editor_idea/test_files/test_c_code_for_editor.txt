@@ -1,0 +1,15 @@
+#include <stdio.h>
+#include <string.h>
+
+// hi! this is a test of the editor. 
+
+int main(void) {
+	printf("this is a test of the editor! trying to find a bug in it. \n");
+
+	
+	
+
+
+
+}
+

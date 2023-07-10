@@ -1,15 +1,16 @@
 #include <stdio.h>  // 2306202.165852:  
 #include <stdlib.h> // a screen based simpler editor based on the ed-like one, 
-#include <string.h> // uses a string ds, and is not modal. uses capital letters for commands! 
+#include <string.h> // uses a string ds, and is modal. 
 #include <fcntl.h>
 #include <unistd.h>
-#include <iso646.h>         //  MAKE THE EDITOR ONLY USE ALPHA KEYS FOR KEYBINDINGSSSSSSSS PLEASEEEEEEEEE MODALLLLLL PLZ
+#include <iso646.h>         
 #include <stdbool.h>
 #include <termios.h>
 #include <signal.h>
-#include <sys/types.h>    // todo:     - fix memory leaks       - write manual        x- test test test test test
-#include <sys/ioctl.h>    //           - write feature list     x- redo readme.md     x- test with unicode                
-typedef size_t nat;       //           x- fix the display(0) performance bug on move_right(). 
+#include <ctype.h>
+#include <sys/types.h>    
+#include <sys/ioctl.h>   /* bugs:   - memory leaks        - fix move up/down functions. get them working perfectly. */
+typedef size_t nat;       
 
 struct action {
 	char* text;
@@ -23,8 +24,8 @@ static struct winsize window;
 static char filename[4096] = {0};
 static char* text = NULL, * clipboard = NULL;
 static struct action* actions = NULL;
-static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, 
-	   count = 0, saved = 1, cliplength = 0, mode = 0, action_count = 0, head = 0;
+static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, selecting = 0,
+	   count = 0, saved = 1, cliplength = 0, mode = 0, action_count = 0, head = 0, desired_column = 0;
 
 static void handler(int __attribute__((unused))_) {}
 static void display(void) {
@@ -34,6 +35,7 @@ static void display(void) {
 	memcpy(screen, "\033[?25l\033[H", 9);
 	nat length = 9, row = 0, column = 0, i = origin;
 	for (; i < count; i++) {
+		//if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[47m");
 		if (i == cursor) { cursor_row = row; cursor_column = column; }
 		if (row >= window.ws_row) break;
 		char k = text[i];
@@ -48,10 +50,11 @@ static void display(void) {
 			memcpy(screen + length, "        ", amount);
 			length += amount;
 		} else {
-			if (column >= window.ws_col) { column = 0; row++; }
+			if (column >= window.ws_col - 1) { column = 0; row++; }
 			if ((unsigned char) k >> 6 != 2 and k >= 32) column++;
 			screen[length++] = k;
 		}
+		//if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
 	}
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
 	while (row < window.ws_row) {
@@ -60,7 +63,8 @@ static void display(void) {
 		length += 3; 
 		if (row < window.ws_row) screen[length++] = 10;
 	}
-	length += (nat) snprintf(screen + length, 30, "\033[K\033[%lu;%luH\033[?25h", cursor_row + 1, cursor_column + 1);
+	length += (nat) snprintf(screen + length, 30, "\033[K\033[%lu;%luH\033[?25h", 
+				cursor_row + 1, cursor_column + 1);
 	write(1, screen, length);
 	free(screen);
 }
@@ -80,9 +84,10 @@ static void move_right(void) {
 	char c = text[cursor++];
 	if (c == 10) { cursor_column = 0; cursor_row++; }
 	else if (c == 9) cursor_column += 8 - cursor_column % 8;
-	else if (cursor_column >= window.ws_col) { cursor_column = 0; cursor_row++; }
+	else if (cursor_column >= window.ws_col - 1) { cursor_column = 0; cursor_row++; }
 	else if ((unsigned char) c >> 6 != 2) cursor_column++; 
 	if (cursor_row < window.ws_row) return;
+
 	nat column = 0; 
 	l: if (origin >= count) return;
 	c = text[origin++];
@@ -93,12 +98,48 @@ static void move_right(void) {
 	goto l; done: cursor_row--;
 }
 
+static void move_up(void) {
+	while (cursor) {
+		move_left();
+		if (text[cursor] == 10) break;
+	}
+}
+
+static void move_down(void) {
+	const nat save = cursor_column;
+	while (cursor < count) {
+		if (text[cursor] == 10) break;
+		move_right();
+	}
+	move_right();
+	while (cursor < count) {
+		if (cursor_column >= save) break;
+		if (text[cursor] == 10) break;
+		move_right();
+	}
+}
+
+static inline void move_begin(void) { while (cursor and text[cursor - 1] != 10) move_left();  }
+static inline void move_end(void) { while (cursor < count and text[cursor] != 10) move_right();  }
+static inline void move_top(void) { cursor = 0; origin = 0; }
+static inline void move_bottom(void) { while (cursor < count) move_right(); }
+static inline void move_word_left(void) {
+	do move_left();
+	while (cursor > 1 and (not isalnum(text[cursor]) or isalnum(text[cursor - 1])));
+}
+static inline void move_word_right(void) {
+	do move_right(); 
+	while (cursor < count and (isalnum(text[cursor]) or not isalnum(text[cursor - 1])));
+}
+
 static void create_action(struct action new) {
 	new.post_cursor = cursor; 
 	new.post_origin = origin; 
 	new.post_saved = saved;
 	new.parent = head;
-	actions[head].children = realloc(actions[head].children, sizeof(size_t) * (size_t) (actions[head].count + 1));
+	actions[head].children = realloc(
+		actions[head].children, 
+		sizeof(size_t) * (size_t) (actions[head].count + 1));
 	actions[head].choice = actions[head].count;
 	actions[head].children[actions[head].count++] = action_count;
 	head = action_count;
@@ -164,6 +205,7 @@ static void insert_string(char* string, nat length) {
 
 static void paste(void) { insert_string(clipboard, cliplength); }
 static void cut(void) {
+	if (anchor > count) anchor = count;
 	if (anchor > cursor) { nat temp = anchor; anchor = cursor; cursor = temp; }
 	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
 	cliplength = cursor - anchor;
@@ -186,11 +228,14 @@ static struct termios configure_terminal(void) {
 }
 
 static inline void copy(void) {
+	
 	FILE* file = popen("pbcopy", "w");
 	if (not file) {
 		perror("copy popen");
 		getchar(); return;
 	}
+	
+	if (anchor > count) anchor = count;
 	if (anchor < cursor) fwrite(text + anchor, 1, cursor - anchor, file);
 	else fwrite(text + cursor, 1, anchor - cursor, file);
 	pclose(file);
@@ -291,15 +336,28 @@ static void redo(void) {
 	else for (nat i = 0; i < a.length; i++) delete(0);
 	cursor = a.post_cursor; origin = a.post_origin; saved = a.post_saved;
 	if (a.choice + 1 < a.count) actions[head].choice++; else actions[head].choice = 0;
-	if (a.count > 1) { printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); getchar(); }
+	if (a.count > 1) { printf("\033[0;44m[%lu:%lu]\033[0m", 
+			a.count, actions[head].choice); getchar(); }
 }
 
 static void interpret_arrow_key(void) {
-	char c = 0;
-	read(0, &c, 1); 
-	read(0, &c, 1); 
-	if (c == 'C') move_right(); 
-	if (c == 'D') move_left();
+	char c = 0; read(0, &c, 1);
+	if (c == 98) move_word_left();
+	else if (c == 102) move_word_right();
+	else if (c == '[') {
+		read(0, &c, 1); 
+		if (c == 'A') move_up(); 
+		else if (c == 'B') move_down();
+		else if (c == 'C') move_right();
+		else if (c == 'D') move_left();
+		else if (c == 49) {
+			read(0, &c, 1); read(0, &c, 1); read(0, &c, 1); 
+			if (c == 68) move_begin();
+			else if (c == 67) move_end();
+		} 
+		else { printf("2: found escape seq: %d\n", c); getchar(); }
+	} 
+	else { printf("3: found escape seq: %d\n", c); getchar();}
 }
 
 static void jump_line(const char* line_string) {
@@ -316,6 +374,7 @@ static void jump_line(const char* line_string) {
 static void sendc(void) {
 	if (not strcmp(clipboard, "discard and quit")) mode = 0;
 	else if (not strcmp(clipboard, "copy")) copy();
+	else if (not strcmp(clipboard, "at")) { printf("%lu:%lu:%lu\n", count, cursor, anchor); getchar(); }
 	else if (cliplength > 3 and not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
 	else if (cliplength > 5 and not strncmp(clipboard, "open ", 5)) load(clipboard + 5);
 	else if (cliplength > 7 and not strncmp(clipboard, "rename ", 7)) rename_file(clipboard + 7);
@@ -329,7 +388,7 @@ int main(int argc, const char** argv) {
 	struct termios terminal = configure_terminal();
 	actions = calloc(1, sizeof(struct action));
 	action_count = 1; mode = 1;
-	char c = 0, p1 = 0, p2 = 0, state = 0;
+	char c = 0, p1 = 0, state = 0; //  p2 = 0, 
 	if (argc >= 2) load(argv[1]);
 	cliplength = 1; clipboard = strdup("\n");
 loop:	display();
@@ -338,30 +397,223 @@ loop:	display();
 		if (c == 17) mode = 2;
 		else if (c == 27) interpret_arrow_key();
 		else if (c == 127) delete(1);
-		else if (c == 't' and p1 == 'r' and p2 == 'd') { delete(1); delete(1); mode = 2; c = 0; p1 = 0; p2 = 0; goto loop; }
+		else if (c == 'w' and p1 == 'r') { delete(1); mode = 2; c = 0; p1 = 0; }
 		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c, 1);
 	} else if (mode == 2) {
+		nat bubbles = anchor;
+		if (not selecting) bubbles = cursor;
 		if (state == 1) {
-			if (c == 'a') execute("pbpaste");
+			if (0) {}
+			else if (c == 'a') {} // none
+			else if (c == 'd') {}
+			else if (c == 'r') save();
+			else if (c == 't') sendc();
+			else if (c == 's') {}
+			else if (c == 'h') paste();
+			else if (c == 'm') copy();
+			else if (c == 'c') execute("pbpaste");
+
+			else if (c == 'n') move_begin();
+			else if (c == 'u') move_top();
+			else if (c == 'p') {}
+			else if (c == 'i') {} // none
+			else if (c == 'e') move_end();
+			else if (c == 'o') {}
+			else if (c == 'l') move_bottom();
+			else if (c == 'k') {}
+
+			else if (c == 27) interpret_arrow_key();
+			state = 0;
+
+		} else {
+			if (c == 'q') { if (saved) mode = 0; }
+
+			else if (c == 'a') state = 1;
+			else if (c == 'd') delete(1);
+			else if (c == 'r') cut();
+			else if (c == 't') { mode = 1; c = 0; p1 = 0; } 
+			else if (c == 's') { anchor = cursor; selecting = not selecting; }
+			else if (c == 'h') backwards();
+			else if (c == 'm') forwards();
+			else if (c == 'c') undo();
+
+			else if (c == 'n') move_left();
+			else if (c == 'u') move_word_left();
+			else if (c == 'p') move_word_right();
+			else if (c == 'i') state = 1;
+			else if (c == 'e') move_up();
+			else if (c == 'o') move_right();
+			else if (c == 'l') move_down();
+			else if (c == 'k') redo();
+
+			else if (c == 27) interpret_arrow_key();
+		}
+		if (not selecting) anchor = bubbles;
+	} p1 = c;
+	if (mode) goto loop;
+	printf("\033[H\033[2J");
+	tcsetattr(0, TCSAFLUSH, &terminal);
+}
+
+
+/* -------- list of commands that the editor can do with keys ----------------
+
+
+
+	state = 1;
+	{ anchor = cursor; selecting = not selecting; }
+	{ mode = 1; c = 0; p1 = 0; } 
+	save();
+	move_left();
+	move_right();
+	move_up();
+	move_down();
+	move_word_left();
+	move_word_right();
+	backwards();
+	forwards();
+
+	move_top();
+	move_bottom();
+	move_begin();
+	move_end();
+	paste();
+	execute("pbpaste");
+	copy();
+	cut();
+	delete(1);
+	sendc();
+	{ if (saved) mode = 0; }
+	
+
+
+
+
+----------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	move_left();
+	move_right();
+	move_up();
+	move_down();
+
+	move_word_left();
+	move_word_right();
+	move_begin();
+	move_end();
+
+	move_top();
+	move_bottom();
+
+	backwards();
+	forwards();
+
+x	cut();
+	paste();
+
+	copy();
+	execute("pbpaste");
+
+x	save();
+
+x	sendc();
+
+x	{ anchor = cursor; selecting = not selecting; }
+
+x	{ mode = 1; c = 0; p1 = 0; } 
+
+x	{ if (saved) mode = 0; }
+
+x	state = 1;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	cliplength = 1; clipboard = strdup("\n");
+loop:	display();
+	read(0, &c, 1);
+	if (mode == 1) {
+		if (c == 17) mode = 2;
+		else if (c == 27) interpret_arrow_key();
+		else if (c == 127) delete(1);
+		else if (c == 'd' and p1 == 'q') { delete(1); mode = 2; c = 0; p1 = 0; }
+		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c, 1);
+	} else if (mode == 2) {
+		nat bubbles = anchor;
+		if (not selecting) bubbles = cursor;
+		if (state == 1) {
+			if (c == 'a') {}
 			else if (c == 'd') paste();
 			else if (c == 'r') save();
-			else if (c == 't') sendc(); 
+			else if (c == 't') sendc();
+			else if (c == 's') execute("pbpaste");
+			else if (c == 'h') copy();
+			else if (c == 'm') {}
+			else if (c == 'c') {}
+
 			else if (c == 'n') {}
-			else if (c == 'u') cut();
-			else if (c == 'p') copy();
+			else if (c == 'u') {}
+			else if (c == 'p') {}
 			else if (c == 'i') { if (saved) mode = 0; }
+			else if (c == 'e') move_begin();
+			else if (c == 'o') move_end();
+			else if (c == 'l') move_top();
+			else if (c == 'k') move_bottom();
+
+			else if (c == 27) interpret_arrow_key();
 			state = 0;
 		} else {
-			if (c == 'a') undo();
-			else if (c == 'd') { anchor = cursor; mode = 1; c = 0; p1 = 0; p2 = 0; goto loop; }
-			else if (c == 'r') backwards();
-			else if (c == 't') forwards();
-			else if (c == 'n') state = 1;
-			else if (c == 'u') move_left();
-			else if (c == 'p') move_right();
-			else if (c == 'i') redo();
+			if (c == 'a') { anchor = cursor; selecting = not selecting; }
+			else if (c == 'd') {}
+			else if (c == 'r') cut();
+			else if (c == 't') { mode = 1; c = 0; p1 = 0; } 
+			else if (c == 's') move_up();
+			else if (c == 'h') move_down();
+			else if (c == 'm') {}
+			else if (c == 'c') undo();
+
+			else if (c == 'n') backwards();
+			else if (c == 'u') move_word_left();
+			else if (c == 'p') move_word_right();
+			else if (c == 'i') state = 1;
+			else if (c == 'e') move_left();
+			else if (c == 'o') move_right();
+			else if (c == 'l') forwards();
+			else if (c == 'k') redo();
+
+			else if (c == 27) interpret_arrow_key();
 		}
-	} p2 = p1; p1 = c;
+		if (not selecting) anchor = bubbles;
+	} p1 = c; //  p2 = p1; 
 	if (mode) goto loop;
 	printf("\033[H\033[2J");
 	tcsetattr(0, TCSAFLUSH, &terminal);
@@ -374,8 +626,252 @@ loop:	display();
 
 
 
+// todo:     - fix memory leaks       o- write manual        x- test test test test test
+//           o- write feature list     x- redo readme.md     x- test with unicode                
+//           x- fix the display(0) performance bug on move_right(). 
+// x     - MAKE THE EDITOR ONLY USE ALPHA KEYS FOR KEYBINDINGSSSSSSSS PLEASEEEEEEEEE MODALLLLLL PLZ
 
 
+
+  ----------------- bugs: ---------------------
+
+x	- last line does not display properly     when it is a wrapped line
+
+		x	probably because of a newline in the display code?... idk.
+
+
+
+
+	- fix memory leaks
+
+	- 
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+add                  shift + left/right                 and         option + left/right            to insert mode.
+
+				make them          word left and word right,      and begin and end, respectively. 
+
+
+			that will help a lottttt
+
+
+	yay
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+	how to make this more usable:
+
+			add commands for moving the cursor by L/R-word,   up/down,  left/right,    beginline/endline,
+									and forwards/backwards-search.
+
+
+
+
+										do not implement top/bottom.
+
+
+
+			THEN,  also implement the thing where you toggle whether the anchor is "dropped", or "trailing".
+
+
+				ie, it is always the last cursor position before the last command. the cursor doesnt just sit there when not being used. nope. 
+
+
+							then, also make it so that 	dropping anchor 	is seperate from 
+
+										going into insert mode.
+
+
+									make those seperate keybindings. 
+
+
+
+
+
+
+
+
+
+			also, 
+
+
+				use the keys which are                 a s h t d r         n e o i u p 
+
+
+						only 
+
+
+					those 12 keys, only. 
+
+
+
+								ANDDDD the    state         ie, deadstop           "n"
+
+
+
+											i think 
+										maybe not        n          but something 
+
+
+
+			that basically doubles our keybindings to like 
+
+
+									24 ish 
+
+
+
+									more like 23 
+
+
+
+
+
+
+			but yeah, thats enough, i think.
+
+
+
+
+
+
+
+alsooooo
+
+
+
+							make the way to exit insert mode         two characters. 
+
+									pleaseeeeeee please please
+
+
+
+							actually even better, make it one character. 
+								
+
+
+
+						control-A       or something  idk 			or wait control-Q is already exit insert mode 
+								ah
+
+
+										well
+
+
+
+								hm
+
+
+								maybe make it like     qd   or something      or      ;p
+
+										that could work    ;p 
+
+									i like that         
+
+
+											;p
+										qd   or ;p      would be fine 
+							honestly 
+										but lets pickone. 
+									probably qd       i think 
+									yeah 
+										cool 
+						qd  so thats fine 
+							instead of drt 				hm
+												cool
+
+										i think thats fine lol
+
+				yay
+
+
+
+
+
+alrighty
+
+
+
+
+
+
+
+
+so yeah, these changes should bring together the editor quite a bit. i think it will actually be usable after we do these things. 
+
+
+					forwards/backwadrs search is goodddd      just not for literallyyyyy everything. 
+
+							pretty cool that it can do so much though lol.
+
+
+									pretty amazing, honestly. 
+											but yeah. we need things to be faster, though. 
+									so yeah. thats why we are specializing things like this, a little bit. 
+
+
+											in terms of keybindings. 
+
+
+
+
+
+
+
+soooooo yeahhhhh
+
+
+	cool beans
+
+
+
+
+
+
+			
+
+*/
 
 
 
@@ -1712,7 +2208,7 @@ theres not really any subsitute for that.
 #include <stdio.h>
 #include <stdlib.h>
 
-int main() {
+int fmian() {
 	char buffer[512] = {0};
 
 	fgets(buffer, sizeof buffer, stdin);
@@ -1736,6 +2232,142 @@ int main() {
 
 
 
+
+
+
+/*
+
+---------- notes about special character sequences with arrow keys: ---------------------
+
+
+
+	option + right    :         27    102                       word left and word right.
+
+  
+	option + left     :         27    98                        ^
+
+
+
+
+x	option + up       :         27    91     65                 begin and end of line.
+
+
+x	option + down     :         27    91     66		    ^
+
+
+
+
+x	option + shift + left       :    27  91  68                ...what do we put here?
+
+
+x	option + shift + right      :   27   91   67               ^
+
+
+
+
+and for completeness: 
+----------------------
+
+
+x	option + shift + up       :    27  91  65           same as without shift. :(
+
+
+x	option + shift + down      :   27   91   66         same as without shift. :(
+
+
+
+
+
+
+
+
+
+						wait
+
+
+
+
+
+							..never mind. 
+
+
+					we can't do anything with anything except for the first two. 
+
+
+					ie,      option left    and option right 
+
+
+
+
+
+				those the are only ones that are distinct from the regular     arrow key codes. 
+
+					so yeah thats unfornuate lol
+
+			but yeah 
+	
+						so we need to choose:    begin or end of line,   or word left/word right
+
+									to be available in insert mode. 
+
+
+
+								...so yeah. interesting. hm. 
+
+
+					very interesting. 
+
+
+		
+
+
+
+
+
+
+
+
+todo:
+
+	add end of line, 
+
+	add beginning of line 
+
+	add word left 
+
+	add word right 
+
+	
+
+*/
+
+
+
+/*
+
+static inline void move_word_left(void) {
+	do move_left();
+	while (not(
+		(not lcl and not lcc) or (
+			(lcc < lines[lcl].count and isalnum(lines[lcl].data[lcc]))  and 
+			(not lcc or not isalnum(lines[lcl].data[lcc - 1]))
+		)
+	));
+	vdc = vcc;
+}
+
+static inline void move_word_right(void) {
+	do move_right();
+	while (not(
+		(lcl >= count - 1 and lcc >= lines[lcl].count) or (
+			(lcc >= lines[lcl].count or not isalnum(lines[lcl].data[lcc]))  and 
+			(lcc and isalnum(lines[lcl].data[lcc - 1]))
+		)
+	));
+	vdc = vcc;
+}
+
+*/
 
 
 
