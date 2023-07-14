@@ -9,6 +9,7 @@
 #include <signal.h>
 #include <ctype.h>
 #include <time.h>
+#include <sys/stat.h>
 #include <sys/types.h>    
 #include <sys/ioctl.h>
 #include <sys/time.h>
@@ -37,9 +38,8 @@ struct action {
 };
 
 static struct winsize window;
-static char saved_at[4096 * 2] = {0};
-static char filename[4096] = {0};
-static char directory[4096] = {0};
+static char saved_filename[4096] = {0}, saved_directory[4096] = {0};
+static char filename[4096] = {0}, directory[4096] = {0};
 static char* text = NULL, * clipboard = NULL;
 static struct action* actions = NULL;
 static nat mode = 0, cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, 
@@ -71,7 +71,6 @@ static void display(void) {
 				if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
 			}
 		}
-
 
 		char k = text[i];
 		if (k == 10) {
@@ -320,28 +319,70 @@ static void read_file(void) {
 	text = malloc(count);
 	lseek(file, 0, SEEK_SET);
 	read(file, text, count);
+
 	close(file);
+	close(dir);
 
 	anchor = 0; cursor = 0; origin = 0; cursor_row = 0; cursor_column = 0;
 	clipboard = NULL; cliplength = 0;
 	mode &= ~inserting;
 	actions = calloc(1, sizeof(struct action));
 	head = 0; action_count = 1; 
-	snprintf(saved_at, sizeof saved_at, "%s : %s", directory, filename);
+	snprintf(saved_filename, filename, sizeof saved_filename);
+	snprintf(saved_directory, directory, sizeof saved_directory);
+}
+
+static bool identical_files(
+	const char* a_d, const char* a_f,
+	const char* b_d, const char* b_f,
+) {
+	const int a_dir = open(a_d, O_RDONLY | O_DIRECTORY, 0);
+	if (a_dir < 0) { perror("same open directory"); getchar(); return; }
+	const int a_fd = openat(dir, a_f, O_RDONLY, 0);
+	if (a_fd < 0) { perror("same openat file"); getchar(); return; }
+
+	const int b_dir = open(b_d, O_RDONLY | O_DIRECTORY, 0);
+	if (b_dir < 0) { perror("same open directory"); getchar(); return; }
+	const int b_fd = openat(dir, b_f, O_RDONLY, 0);
+	if (b_fd < 0) { perror("same openat file"); getchar(); return; }
+
+	struct stat a_stat = {0};
+	struct stat b_stat = {0};
+	fstat(a_fd, &a_stat);
+	fstat(b_fd, &b_stat);
+	close(b_fd);
+	close(b_dir);
+	close(a_fd);
+	close(a_dir);
+	return 	a_stat.st_dev == b_stat.st_dev and 
+		a_stat.st_ino == b_stat.st_ino;
 }
 
 static void write_file(int flags, mode_t md) {
+
+	if (not md and not identical_files(directory, filename, saved_directory, saved_filename)) {
+		printf("write: error: tried to save the current file a different filename or directory, aborting save.\n");
+		getchar();
+		return;
+	}
+
 	const int dir = open(directory, O_RDONLY | O_DIRECTORY, 0);
 	if (dir < 0) { perror("write open directory"); getchar(); return; }
 	const int file = openat(dir, filename, flags, md);
 	if (file < 0) { perror("write openat file"); getchar(); return; }
 	write(file, text, count);
+
 	close(file);
+	close(dir);
+
 	mode |= saved;
-	snprintf(saved_at, sizeof saved_at, "%s : %s", directory, filename);
+	if (md) {
+		strlcpy(saved_filename, filename, sizeof saved_filename);
+		strlcpy(saved_directory, directory, sizeof saved_directory);
+	}
 }
 static void save_file(void) { write_file(O_WRONLY | O_TRUNC, 0); }
-static void create_file(void) { write_file(O_CREAT | O_WRONLY | O_TRUNC | O_EXCL, S_IRUSR | S_IWUSR  | S_IRGRP | S_IROTH); }
+static void create_file(void) { write_file(O_CREAT | O_WRONLY | O_TRUNC | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH); }
 
 static inline void now(char datetime[32]) {
 	struct timeval t;
@@ -420,15 +461,19 @@ static void jump_line(const char* line_string) {
 
 static void sendc(void) {
 	     if (not strcmp(clipboard, "discard and quit")) mode &= ~active;
+
 	else if (not strcmp(clipboard, "print state")) { printf("%lx:%lu:%lu:%lu\n", mode, count, cursor, anchor); getchar(); }
 	else if (not strcmp(clipboard, "print name")) { printf("%s : %s\n", directory, filename); getchar(); }
-	else if (not strcmp(clipboard, "print saved name")) { puts(saved_at); getchar(); }
+	else if (not strcmp(clipboard, "print saved name")) { printf("%s : %s\n", saved_directory, saved_filename); getchar(); }
+
 	else if (not strcmp(clipboard, "visual selections")) mode ^= visual_anchor;
 	else if (not strcmp(clipboard, "visual split points")) mode ^= visual_splitpoint;
+
 	else if (not strcmp(clipboard, "read")) read_file();
 	else if (not strcmp(clipboard, "save")) save_file();
 	else if (not strcmp(clipboard, "create")) create_file();
 	else if (not strcmp(clipboard, "new")) name_uniquely();
+
 	else if (cliplength > 5 and not strncmp(clipboard, "name ",  5))    strlcpy(filename,  clipboard + 5, sizeof filename); 
 	else if (cliplength > 9 and not strncmp(clipboard, "location ", 9)) strlcpy(directory, clipboard + 9, sizeof directory);
 	else if (cliplength > 3 and not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
