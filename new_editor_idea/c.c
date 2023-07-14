@@ -8,26 +8,41 @@
 #include <termios.h>
 #include <signal.h>
 #include <ctype.h>
+#include <time.h>
 #include <sys/types.h>    
-#include <sys/ioctl.h>   /* bugs:   - memory leaks       
+#include <sys/ioctl.h>
+#include <sys/time.h>
+
+/* bugs:   - memory leaks
 	 x - fix move up/down functions. get them working perfectly. [actually! no, i'm not going to fix them. i am going to simplify them and just work with the new way they work. NOT visual line based. newline based only. yay. */
-typedef size_t nat;       
-static const nat saved = 0x01, selecting = 0x02, visual_anchor = 0x04, visual_splitpoint = 0x08;
+
+typedef size_t nat;
+
+static const nat
+	active = 0x01,
+	saved = 0x02, 
+	inserting = 0x04,
+	selecting = 0x08, 
+	visual_anchor = 0x10, 
+	visual_splitpoint = 0x20,
+	_unused0 = 0x40,
+	_unused1 = 0x80
+;
 
 struct action {
 	char* text;
 	nat* children;
 	nat parent, choice, count, length, insert,
-	pre_cursor, post_cursor, pre_origin, 
-	post_origin, pre_setting, post_setting;
+	pre_cursor, post_cursor, pre_origin, post_origin, pre_mode, post_mode;
 };
 
 static struct winsize window;
+static char saved_at[4096 * 2] = {0};
 static char filename[4096] = {0};
+static char directory[4096] = {0};
 static char* text = NULL, * clipboard = NULL;
 static struct action* actions = NULL;
-static nat mode = 0, setting = saved | visual_anchor | visual_splitpoint;
-static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, 
+static nat mode = 0, cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, 
 	   count = 0, cliplength = 0, action_count = 0, head = 0, previous_cursor = 0;
 
 static void handler(int __attribute__((unused))_) {}
@@ -37,13 +52,13 @@ static void display(void) {
 	char* screen = calloc(screen_size, 1);
 	memcpy(screen, "\033[?25l\033[H", 9);
 	nat length = 9, row = 0, column = 0, i = origin;
-	if (anchor < origin and (setting & selecting)) length += (nat) snprintf(screen + length, 10, "\033[7m");
+	if (anchor < origin and (mode & selecting)) length += (nat) snprintf(screen + length, 10, "\033[7m");
 	for (; i < count; i++) {
 
 		if (i == cursor) { cursor_row = row; cursor_column = column; }
 		if (row >= window.ws_row) break;
 
-		if (setting & visual_anchor) {
+		if (mode & visual_anchor) {
 			if (anchor < cursor) { 
 				if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[7m");
 			} else { 
@@ -76,6 +91,21 @@ static void display(void) {
 		}
 	}
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
+	if (mode & visual_anchor) {
+		if (anchor < cursor) { 
+			if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[7m");
+		} else { 
+			if (i == cursor) length += (nat) snprintf(screen + length, 10, "\033[7m"); 
+		}
+
+		if (anchor < cursor) { 
+			if (i == cursor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
+		} else { 
+			if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
+		}
+	}
+
+
 	while (row < window.ws_row) {
 		row++;
 		memcpy(screen + length, "\033[K", 3);
@@ -147,7 +177,7 @@ static inline void move_word_right(void) {
 static void create_action(struct action new) {
 	new.post_cursor = cursor; 
 	new.post_origin = origin; 
-	new.post_setting = setting;
+	new.post_mode = mode;
 	new.parent = head;
 	actions[head].children = realloc(
 		actions[head].children, 
@@ -161,12 +191,12 @@ static void create_action(struct action new) {
 
 static void delete(bool should_record) {
 	if (not cursor) return;
-	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_setting = setting};
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_mode = mode};
 	const char c = text[cursor - 1];
 	memmove(text + cursor - 1, text + cursor, count - cursor);
 	count--;
 	text = realloc(text, count); 
-	setting &= ~saved; move_left();
+	mode &= ~saved; move_left();
 	if (not should_record) return;
 	new.insert = 0;
 	new.length = 1;
@@ -176,11 +206,11 @@ static void delete(bool should_record) {
 }
 
 static void insert(char c, bool should_record) {
-	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_setting = setting};
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_mode = mode};
 	text = realloc(text, count + 1);
 	memmove(text + cursor + 1, text + cursor, count - cursor);
 	text[cursor] = c;
-	count++; setting &= ~saved;
+	count++; mode &= ~saved;
 	move_right();
 	if (not should_record) return;
 	new.insert = 1;
@@ -207,7 +237,7 @@ loop:	if (not t or not cursor) return;
 }
 
 static void insert_string(char* string, nat length) {
-	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_setting = setting};
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_mode = mode};
 	for (nat i = 0; i < length; i++) insert(string[i], 0); 
 	new.insert = 1;
 	new.text = strndup(string, length);
@@ -219,7 +249,7 @@ static void paste(void) { insert_string(clipboard, cliplength); }
 static void cut(void) {
 	if (anchor > count) anchor = count;
 	if (anchor > cursor) { nat temp = anchor; anchor = cursor; cursor = temp; }
-	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_setting = setting};
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_mode = mode};
 	cliplength = cursor - anchor;
 	clipboard = strndup(text + anchor, cliplength);
 	for (nat i = 0; i < cliplength; i++) delete(0);
@@ -241,13 +271,11 @@ static struct termios configure_terminal(void) {
 }
 
 static inline void copy(void) {
-	
 	FILE* file = popen("pbcopy", "w");
 	if (not file) {
 		perror("copy popen");
 		getchar(); return;
 	}
-	
 	if (anchor > count) anchor = count;
 	if (anchor < cursor) fwrite(text + anchor, 1, cursor - anchor, file);
 	else fwrite(text + cursor, 1, anchor - cursor, file);
@@ -278,66 +306,67 @@ static void execute(const char* input_command) {
 	insert_string(string, length);
 }
 
-static void load(const char* this) {
-	if (not (setting & saved)) {
-		puts("load: error: unsaved changes"); 
+static void read_file(void) {
+	if (not (mode & saved)) {
+		puts("open: error: unsaved changes"); 
 		getchar(); return;
 	}
-	FILE* file = fopen(this, "r");	
-	if (not file) {
-		perror("load fopen"); 
-		getchar(); return;
-	}
-	fseek(file, 0, SEEK_END);
-	count = (size_t) ftell(file);
+	const int dir = open(directory, O_RDONLY | O_DIRECTORY, 0);
+	if (dir < 0) { perror("read open directory"); getchar(); return; }
+	const int file = openat(dir, filename, O_RDONLY, 0);
+	if (file < 0) { perror("read openat file"); getchar(); return; }
+
+	count = (size_t) lseek(file, 0, SEEK_END);
 	text = malloc(count);
-	fseek(file, 0, SEEK_SET);
-	fread(text, 1, count, file);
-	fclose(file);
-	anchor = 0; cursor = 0; origin = 0;
+	lseek(file, 0, SEEK_SET);
+	read(file, text, count);
+	close(file);
+
+	anchor = 0; cursor = 0; origin = 0; cursor_row = 0; cursor_column = 0;
 	clipboard = NULL; cliplength = 0;
-	cursor_row = 0; cursor_column = 0;
-	setting |= saved; head = 0;
+	mode &= ~inserting;
 	actions = calloc(1, sizeof(struct action));
-	action_count = 1; mode = 2;
-	strlcpy(filename, this, sizeof filename);
+	head = 0; action_count = 1; 
+	snprintf(saved_at, sizeof saved_at, "%s : %s", directory, filename);
 }
 
-static void save(void) {
-	if (not *filename) {
-		puts("save: error: currently unnamed"); 
-		getchar(); return;
-	}
-	FILE* output_file = fopen(filename, "w");
-	if (not output_file) { 
-		perror("save fopen");
-		getchar(); return;
-	}
-	fwrite(text, 1, count, output_file); 
-	fclose(output_file); 
-	setting |= saved;
+static void write_file(int flags, mode_t md) {
+	const int dir = open(directory, O_RDONLY | O_DIRECTORY, 0);
+	if (dir < 0) { perror("write open directory"); getchar(); return; }
+	const int file = openat(dir, filename, flags, md);
+	if (file < 0) { perror("write openat file"); getchar(); return; }
+	write(file, text, count);
+	close(file);
+	mode |= saved;
+	snprintf(saved_at, sizeof saved_at, "%s : %s", directory, filename);
+}
+static void save_file(void) { write_file(O_WRONLY | O_TRUNC, 0); }
+static void create_file(void) { write_file(O_CREAT | O_WRONLY | O_TRUNC | O_EXCL, S_IRUSR | S_IWUSR  | S_IRGRP | S_IROTH); }
+
+static inline void now(char datetime[32]) {
+	struct timeval t;
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
 }
 
-static void rename_file(const char* new) {
-	if (not access(new, F_OK)) { 
-		printf("rename: file \"%s\" exists", new); 
-		getchar(); return; 
-	}
-	if (*filename and rename(filename, new)) {
-		printf("rename: error renaming to: \"%s\": \n", new);
-		perror("rename"); getchar(); return;
-	} else strlcpy(filename, new, sizeof filename);
+static void name_uniquely(void) {
+	srand((unsigned)time(0)); rand();
+	char datetime[32] = {0};
+	now(datetime);
+	snprintf(directory, sizeof directory, ".");
+	snprintf(filename, sizeof filename, "%x%x_%s.txt", rand(), rand(), datetime);
 }
 
 static void undo(void) {
 	if (not head) return;
 	struct action a = actions[head];
-	cursor = a.post_cursor; origin = a.post_origin; setting = a.post_setting;
+	cursor = a.post_cursor; origin = a.post_origin; mode = a.post_mode;
 	if (not a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
 	else for (nat i = 0; i < a.length; i++) delete(0);	
-	cursor = a.pre_cursor; origin = a.pre_origin; setting = a.pre_setting;
+	cursor = a.pre_cursor; origin = a.pre_origin; mode = a.pre_mode;
 	head = a.parent; a = actions[head];
-	if (a.count > 1 and (setting & visual_splitpoint)) { 
+	if (a.count > 1 and (mode & visual_splitpoint)) { 
 		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, a.choice); 
 		getchar(); 
 	}
@@ -347,12 +376,12 @@ static void redo(void) {
 	if (not actions[head].count) return;
 	head = actions[head].children[actions[head].choice];
 	const struct action a = actions[head];
-	cursor = a.pre_cursor; origin = a.pre_origin; setting = a.pre_setting;
+	cursor = a.pre_cursor; origin = a.pre_origin; mode = a.pre_mode;
 	if (a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
 	else for (nat i = 0; i < a.length; i++) delete(0);
-	cursor = a.post_cursor; origin = a.post_origin; setting = a.post_setting;
+	cursor = a.post_cursor; origin = a.post_origin; mode = a.post_mode;
 	if (a.choice + 1 < a.count) actions[head].choice++; else actions[head].choice = 0;
-	if (a.count > 1 and (setting & visual_splitpoint)) { 
+	if (a.count > 1 and (mode & visual_splitpoint)) { 
 		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
 		getchar(); 
 	}
@@ -390,15 +419,21 @@ static void jump_line(const char* line_string) {
 }
 
 static void sendc(void) {
-	if (not strcmp(clipboard, "discard and quit")) mode = 0;
-	else if (not strcmp(clipboard, "copy")) copy();
-	else if (not strcmp(clipboard, "visualselections")) setting ^= visual_anchor;
-	else if (not strcmp(clipboard, "visualsplitpoint")) setting ^= visual_splitpoint;
-	else if (not strcmp(clipboard, "at")) { printf("%lu:%lu:%lu\n", count, cursor, anchor); getchar(); }
+	     if (not strcmp(clipboard, "discard and quit")) mode &= ~active;
+	else if (not strcmp(clipboard, "print state")) { printf("%lx:%lu:%lu:%lu\n", mode, count, cursor, anchor); getchar(); }
+	else if (not strcmp(clipboard, "print name")) { printf("%s : %s\n", directory, filename); getchar(); }
+	else if (not strcmp(clipboard, "print saved name")) { puts(saved_at); getchar(); }
+	else if (not strcmp(clipboard, "visual selections")) mode ^= visual_anchor;
+	else if (not strcmp(clipboard, "visual split points")) mode ^= visual_splitpoint;
+	else if (not strcmp(clipboard, "read")) read_file();
+	else if (not strcmp(clipboard, "save")) save_file();
+	else if (not strcmp(clipboard, "create")) create_file();
+	else if (not strcmp(clipboard, "new")) name_uniquely();
+	else if (cliplength > 5 and not strncmp(clipboard, "name ",  5))    strlcpy(filename,  clipboard + 5, sizeof filename); 
+	else if (cliplength > 9 and not strncmp(clipboard, "location ", 9)) strlcpy(directory, clipboard + 9, sizeof directory);
 	else if (cliplength > 3 and not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
-	else if (cliplength > 5 and not strncmp(clipboard, "open ", 5)) load(clipboard + 5);
-	else if (cliplength > 7 and not strncmp(clipboard, "rename ", 7)) rename_file(clipboard + 7);
 	else if (cliplength > 5 and not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);
+	
 	else { printf("unknown command: %s\n", clipboard); getchar(); }
 }
 
@@ -407,25 +442,28 @@ int main(int argc, const char** argv) {
 	sigaction(SIGINT, &action, NULL);
 	struct termios terminal = configure_terminal();
 	actions = calloc(1, sizeof(struct action));
-	action_count = 1; mode = 1;
-	char c = 0, p1 = 0, state = 0; //  p2 = 0, 
-	if (argc >= 2) load(argv[1]);
-	cliplength = 1; clipboard = strdup("\n");
+	action_count = 1; 
+	mode = active | saved | inserting | visual_anchor | visual_splitpoint;
+	char c = 0, p1 = 0, state = 0;
+	if (argc < 2) goto loop;
+	strlcpy(directory, ".", sizeof directory);
+	strlcpy(filename, argv[1], sizeof filename);
+	read_file();
 loop:	display();
 	read(0, &c, 1);
 	previous_cursor = cursor;
-	if (mode == 1) {
-		if (c == 17) mode = 2;
+	if (mode & inserting) {
+		if (c == 17) mode &= ~inserting;
 		else if (c == 27) interpret_arrow_key();
 		else if (c == 127) delete(1);
-		else if (c == 'w' and p1 == 'r') { delete(1); mode = 2; c = 0; p1 = 0; }
+		else if (c == 'w' and p1 == 'r') { delete(1); mode &= ~inserting; c = 0; p1 = 0; }
 		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c, 1);
-	} else if (mode == 2) {
+	} else {
 		if (state == 1) {
 			if (0) {}
 			else if (c == 'a') {} // none
 			else if (c == 'd') {}
-			else if (c == 'r') save();
+			else if (c == 'r') save_file();
 			else if (c == 't') sendc();
 			else if (c == 's') {}
 			else if (c == 'h') paste();
@@ -445,13 +483,13 @@ loop:	display();
 			state = 0;
 
 		} else {
-			if (c == 'q') { if (setting & saved) mode = 0; }
+			if (c == 'q') { if (mode & saved) mode &= ~active; }
 
 			else if (c == 'a') state = 1;
 			else if (c == 'd') delete(1);
 			else if (c == 'r') cut();
-			else if (c == 't') { mode = 1; c = 0; p1 = 0; } 
-			else if (c == 's') { anchor = cursor; setting ^= selecting; }
+			else if (c == 't') { mode |= inserting; c = 0; p1 = 0; } 
+			else if (c == 's') { anchor = cursor; mode ^= selecting; }
 			else if (c == 'h') backwards();
 			else if (c == 'm') forwards();
 			else if (c == 'c') undo();
@@ -467,12 +505,35 @@ loop:	display();
 
 			else if (c == 27) interpret_arrow_key();
 		}
-		if (not (setting & selecting)) anchor = previous_cursor;
+		if (not (mode & selecting)) anchor = previous_cursor;
 	} p1 = c;
-	if (mode) goto loop;
+	if (mode & active) goto loop;
 	printf("\033[H\033[2J");
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2431,6 +2492,375 @@ static inline void move_word_right(void) {
 */
 
 
+
+
+
+/*
+202307145.100222:
+
+so i am completely redoing how the    saving/renaming  system works in the editor, to make it alotttt more robust. 
+
+	
+
+
+	basically 
+
+
+	
+there are two milestones that a file goes through in its life, initially:
+
+
+	1. creation
+
+
+	2. saving / editing
+
+
+
+
+
+
+
+CREATION: 
+--------------
+
+
+	here, we want to call                 open()      with 		O_CREAT | O_WRONLY | O_TRUNC | O_EXCL
+
+
+
+							O_CREAT     :     create if it doesnt exist. 
+
+	
+							O_EXCL      :     make sure you create it. (ie, make sure it doesnt exist!)
+
+
+							O_TRUNC     :     delete the file to be size 0. (already was!)
+
+
+							O_WRONLY    :     we only want to write to it. 
+
+
+
+
+SAVING / EDITING:
+----------------------
+
+
+	here, we want to instead call:        open()          with       O_WRONLY | O_TRUNC
+
+
+
+
+			i think thats it actually
+
+			and it will fail if the file doesnt exist. and not create any new files at all. 
+
+		
+		so yeah. thats interesting lol. 
+
+
+cool beans
+
+
+
+
+
+
+
+
+
+
+NOWWWWWWWW       for the fun part 
+
+
+
+
+							i want to introduce the notion of    
+
+				the file's location being different from its name... 
+
+
+								i think?
+
+
+
+					or maybe not actually. 
+
+
+
+	but i do want to allow for the user to change the location of the file, somehow. 
+
+		i think the way i am going to try to doing that, 
+
+	is to make a command that pastes the current filename into the buffer.   yeah. then, we can just edit, from there. and then send a rename command. lol. i think that will be great honestly. yayyyyy
+
+
+
+
+
+
+okay, lets see if that works i guess
+
+
+
+
+
+
+but also
+
+
+
+				theres this other thing, called 
+
+
+
+
+
+		openat()
+
+
+
+
+								and also openat2()
+
+
+
+
+
+		
+
+
+
+
+
+
+
+wow okay, so this is slightly complicated 
+
+
+
+
+
+
+openat              takes a filedescriptor,   for the dir      that you want to locate the file in,
+
+
+
+
+
+	and so, we need to actually call open 
+
+
+							for that 
+
+
+
+
+
+												to get that fd
+
+
+
+
+
+
+		so, the calls would be 
+
+
+								int dir = open("/directory/path/", O_RDONLY | O_DIRECTORY, 0);
+
+								int file = openat(dir, "filename.txt", O_WRONLY | O_TRUNC, 0);
+
+
+								
+
+
+
+
+		
+
+		thats how we will open the file, for saving        
+
+
+
+
+
+
+
+
+
+	and then for creation, we would do:
+
+
+		int dir = open("/directory/path/", O_RDONLY | O_DIRECTORY, 0);
+
+		int file = openat(dir, "filename.txt", 
+					O_CREAT | O_WRONLY | O_TRUNC | O_EXCL, 
+					S_IRUSR | S_IWUSR  | S_IRGRP | S_IROTH
+				);
+
+
+
+
+so yeah 
+
+
+
+
+thats creation. 
+
+
+
+
+			for reading the file, we would do
+
+
+
+
+
+		
+				int dir = open("/directory/path/", O_RDONLY | O_DIRECTORY, 0);
+
+				int file = openat(dir, "filename.txt", O_RDONLY);
+
+
+
+	
+
+
+
+yayyy
+
+
+
+okay thats all pretty simple 
+	lets code it up now 
+
+
+
+
+
+
+
+
+
+
+
+*/
+
+
+
+				
+
+
+
+
+/*
+
+old saving code:
+
+
+
+static void save_file(void) {
+	if (not *filename) {
+		puts("save: error: currently unnamed"); 
+		getchar(); return;
+	}
+	FILE* output_file = fopen(filename, "w");
+	if (not output_file) { 
+		strlcpy(filename, "", sizeof filename);
+		perror("save fopen");
+		getchar(); return;
+	}
+	fwrite(text, 1, count, output_file); 
+	fclose(output_file); 
+	setting |= saved;
+}
+
+
+
+
+
+
+static void create_file(void) {
+	int dir = open(directory, O_RDONLY | O_DIRECTORY, 0);
+	if (dir < 0) { perror("write open directory"); getchar(); return; }
+	int file = openat(dir, filename, 
+		, 
+		
+	);
+	if (file < 0) { perror("write openat file"); getchar(); return; }
+
+	write(file, text, count);
+	close(file);
+	mode |= saved;
+}
+
+
+
+
+
+
+*/	
+
+
+
+
+
+
+
+/*
+static void rename_file(const char* new) {
+	if (not access(new, F_OK)) { 
+		printf("rename: file \"%s\" exists", new); 
+		getchar(); return; 
+	}
+	if (*filename and rename(filename, new)) {
+		printf("rename: error renaming to: \"%s\": \n", new);
+		perror("rename"); 
+		getchar(); 
+		return;
+	}
+	strlcpy(filename, new, sizeof filename);
+	printf("rename: named \"%s\"\n", filename); getchar();
+}
+
+
+
+static void move_path(const char* new) {
+	strlcpy(directory, new, sizeof directory);
+	printf("move: located at \"%s\"\n", directory); 
+	getchar();
+}
+
+static void delete_filename(void) {
+	strlcpy(filename, "", sizeof filename);
+	printf("filename deleted.\n"); 
+	getchar();
+}
+
+static void delete_filepath(void) {
+	strlcpy(directory, "", sizeof directory);
+	printf("filepath deleted.\n"); 
+	getchar();
+}
+
+
+
+*/
+
+
+
+
+
+
+/*
+
+else if (cliplength > 7 and not strncmp(clipboard, "rename ", 7)) rename_file(clipboard + 7);
+else if (cliplength > 5 and not strncmp(clipboard, "open ", 5)) load(clipboard + 5);
+	else if (cliplength > 7 and not strncmp(clipboard, "rename ", 7)) rename_file(clipboard + 7);
+*/
 
 
 
