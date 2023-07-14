@@ -9,23 +9,26 @@
 #include <signal.h>
 #include <ctype.h>
 #include <sys/types.h>    
-#include <sys/ioctl.h>   /* bugs:   - memory leaks        - fix move up/down functions. get them working perfectly. */
+#include <sys/ioctl.h>   /* bugs:   - memory leaks       
+	 x - fix move up/down functions. get them working perfectly. [actually! no, i'm not going to fix them. i am going to simplify them and just work with the new way they work. NOT visual line based. newline based only. yay. */
 typedef size_t nat;       
+static const nat saved = 0x01, selecting = 0x02, visual_anchor = 0x04, visual_splitpoint = 0x08;
 
 struct action {
 	char* text;
 	nat* children;
 	nat parent, choice, count, length, insert,
 	pre_cursor, post_cursor, pre_origin, 
-	post_origin, pre_saved, post_saved;
+	post_origin, pre_setting, post_setting;
 };
 
 static struct winsize window;
 static char filename[4096] = {0};
 static char* text = NULL, * clipboard = NULL;
 static struct action* actions = NULL;
-static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, selecting = 0,
-	   count = 0, saved = 1, cliplength = 0, mode = 0, action_count = 0, head = 0, desired_column = 0;
+static nat mode = 0, setting = saved | visual_anchor | visual_splitpoint;
+static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, 
+	   count = 0, cliplength = 0, action_count = 0, head = 0, previous_cursor = 0;
 
 static void handler(int __attribute__((unused))_) {}
 static void display(void) {
@@ -34,10 +37,27 @@ static void display(void) {
 	char* screen = calloc(screen_size, 1);
 	memcpy(screen, "\033[?25l\033[H", 9);
 	nat length = 9, row = 0, column = 0, i = origin;
+	if (anchor < origin and (setting & selecting)) length += (nat) snprintf(screen + length, 10, "\033[7m");
 	for (; i < count; i++) {
-		//if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[47m");
+
 		if (i == cursor) { cursor_row = row; cursor_column = column; }
 		if (row >= window.ws_row) break;
+
+		if (setting & visual_anchor) {
+			if (anchor < cursor) { 
+				if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[7m");
+			} else { 
+				if (i == cursor) length += (nat) snprintf(screen + length, 10, "\033[7m"); 
+			}
+
+			if (anchor < cursor) { 
+				if (i == cursor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
+			} else { 
+				if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
+			}
+		}
+
+
 		char k = text[i];
 		if (k == 10) {
 			column = 0; row++;
@@ -54,7 +74,6 @@ static void display(void) {
 			if ((unsigned char) k >> 6 != 2 and k >= 32) column++;
 			screen[length++] = k;
 		}
-		//if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
 	}
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
 	while (row < window.ws_row) {
@@ -101,21 +120,14 @@ static void move_right(void) {
 static void move_up(void) {
 	while (cursor) {
 		move_left();
-		if (text[cursor] == 10) break;
+		if (cursor and text[cursor - 1] == 10) break;
 	}
 }
 
 static void move_down(void) {
-	const nat save = cursor_column;
 	while (cursor < count) {
-		if (text[cursor] == 10) break;
 		move_right();
-	}
-	move_right();
-	while (cursor < count) {
-		if (cursor_column >= save) break;
-		if (text[cursor] == 10) break;
-		move_right();
+		if (cursor < count and text[cursor] == 10) break;
 	}
 }
 
@@ -125,7 +137,7 @@ static inline void move_top(void) { cursor = 0; origin = 0; }
 static inline void move_bottom(void) { while (cursor < count) move_right(); }
 static inline void move_word_left(void) {
 	do move_left();
-	while (cursor > 1 and (not isalnum(text[cursor]) or isalnum(text[cursor - 1])));
+	while (cursor and (not isalnum(text[cursor]) or isalnum(text[cursor - 1])));
 }
 static inline void move_word_right(void) {
 	do move_right(); 
@@ -135,7 +147,7 @@ static inline void move_word_right(void) {
 static void create_action(struct action new) {
 	new.post_cursor = cursor; 
 	new.post_origin = origin; 
-	new.post_saved = saved;
+	new.post_setting = setting;
 	new.parent = head;
 	actions[head].children = realloc(
 		actions[head].children, 
@@ -149,12 +161,12 @@ static void create_action(struct action new) {
 
 static void delete(bool should_record) {
 	if (not cursor) return;
-	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_setting = setting};
 	const char c = text[cursor - 1];
 	memmove(text + cursor - 1, text + cursor, count - cursor);
 	count--;
 	text = realloc(text, count); 
-	saved = 0; move_left();
+	setting &= ~saved; move_left();
 	if (not should_record) return;
 	new.insert = 0;
 	new.length = 1;
@@ -164,11 +176,11 @@ static void delete(bool should_record) {
 }
 
 static void insert(char c, bool should_record) {
-	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_setting = setting};
 	text = realloc(text, count + 1);
 	memmove(text + cursor + 1, text + cursor, count - cursor);
 	text[cursor] = c;
-	count++; saved = 0;
+	count++; setting &= ~saved;
 	move_right();
 	if (not should_record) return;
 	new.insert = 1;
@@ -195,7 +207,7 @@ loop:	if (not t or not cursor) return;
 }
 
 static void insert_string(char* string, nat length) {
-	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_setting = setting};
 	for (nat i = 0; i < length; i++) insert(string[i], 0); 
 	new.insert = 1;
 	new.text = strndup(string, length);
@@ -207,10 +219,11 @@ static void paste(void) { insert_string(clipboard, cliplength); }
 static void cut(void) {
 	if (anchor > count) anchor = count;
 	if (anchor > cursor) { nat temp = anchor; anchor = cursor; cursor = temp; }
-	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = saved};
+	struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_setting = setting};
 	cliplength = cursor - anchor;
 	clipboard = strndup(text + anchor, cliplength);
 	for (nat i = 0; i < cliplength; i++) delete(0);
+	anchor = cursor; previous_cursor = anchor;
 	new.insert = 0;
 	new.text = strdup(clipboard);
 	new.length = cliplength;
@@ -266,7 +279,7 @@ static void execute(const char* input_command) {
 }
 
 static void load(const char* this) {
-	if (not saved) {
+	if (not (setting & saved)) {
 		puts("load: error: unsaved changes"); 
 		getchar(); return;
 	}
@@ -284,7 +297,7 @@ static void load(const char* this) {
 	anchor = 0; cursor = 0; origin = 0;
 	clipboard = NULL; cliplength = 0;
 	cursor_row = 0; cursor_column = 0;
-	saved = 1; head = 0;
+	setting |= saved; head = 0;
 	actions = calloc(1, sizeof(struct action));
 	action_count = 1; mode = 2;
 	strlcpy(filename, this, sizeof filename);
@@ -302,7 +315,7 @@ static void save(void) {
 	}
 	fwrite(text, 1, count, output_file); 
 	fclose(output_file); 
-	saved = 1;
+	setting |= saved;
 }
 
 static void rename_file(const char* new) {
@@ -319,25 +332,30 @@ static void rename_file(const char* new) {
 static void undo(void) {
 	if (not head) return;
 	struct action a = actions[head];
-	cursor = a.post_cursor; origin = a.post_origin; saved = a.post_saved;
+	cursor = a.post_cursor; origin = a.post_origin; setting = a.post_setting;
 	if (not a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
 	else for (nat i = 0; i < a.length; i++) delete(0);	
-	cursor = a.pre_cursor; origin = a.pre_origin; saved = a.pre_saved;
+	cursor = a.pre_cursor; origin = a.pre_origin; setting = a.pre_setting;
 	head = a.parent; a = actions[head];
-	if (a.count > 1) { printf("\033[0;44m[%lu:%lu]\033[0m", a.count, a.choice); getchar(); }
+	if (a.count > 1 and (setting & visual_splitpoint)) { 
+		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, a.choice); 
+		getchar(); 
+	}
 }
 
 static void redo(void) {
 	if (not actions[head].count) return;
 	head = actions[head].children[actions[head].choice];
 	const struct action a = actions[head];
-	cursor = a.pre_cursor; origin = a.pre_origin; saved = a.pre_saved;
+	cursor = a.pre_cursor; origin = a.pre_origin; setting = a.pre_setting;
 	if (a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
 	else for (nat i = 0; i < a.length; i++) delete(0);
-	cursor = a.post_cursor; origin = a.post_origin; saved = a.post_saved;
+	cursor = a.post_cursor; origin = a.post_origin; setting = a.post_setting;
 	if (a.choice + 1 < a.count) actions[head].choice++; else actions[head].choice = 0;
-	if (a.count > 1) { printf("\033[0;44m[%lu:%lu]\033[0m", 
-			a.count, actions[head].choice); getchar(); }
+	if (a.count > 1 and (setting & visual_splitpoint)) { 
+		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
+		getchar(); 
+	}
 }
 
 static void interpret_arrow_key(void) {
@@ -354,7 +372,7 @@ static void interpret_arrow_key(void) {
 			read(0, &c, 1); read(0, &c, 1); read(0, &c, 1); 
 			if (c == 68) move_begin();
 			else if (c == 67) move_end();
-		} 
+		}
 		else { printf("2: found escape seq: %d\n", c); getchar(); }
 	} 
 	else { printf("3: found escape seq: %d\n", c); getchar();}
@@ -374,6 +392,8 @@ static void jump_line(const char* line_string) {
 static void sendc(void) {
 	if (not strcmp(clipboard, "discard and quit")) mode = 0;
 	else if (not strcmp(clipboard, "copy")) copy();
+	else if (not strcmp(clipboard, "visualselections")) setting ^= visual_anchor;
+	else if (not strcmp(clipboard, "visualsplitpoint")) setting ^= visual_splitpoint;
 	else if (not strcmp(clipboard, "at")) { printf("%lu:%lu:%lu\n", count, cursor, anchor); getchar(); }
 	else if (cliplength > 3 and not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
 	else if (cliplength > 5 and not strncmp(clipboard, "open ", 5)) load(clipboard + 5);
@@ -393,6 +413,7 @@ int main(int argc, const char** argv) {
 	cliplength = 1; clipboard = strdup("\n");
 loop:	display();
 	read(0, &c, 1);
+	previous_cursor = cursor;
 	if (mode == 1) {
 		if (c == 17) mode = 2;
 		else if (c == 27) interpret_arrow_key();
@@ -400,8 +421,6 @@ loop:	display();
 		else if (c == 'w' and p1 == 'r') { delete(1); mode = 2; c = 0; p1 = 0; }
 		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c, 1);
 	} else if (mode == 2) {
-		nat bubbles = anchor;
-		if (not selecting) bubbles = cursor;
 		if (state == 1) {
 			if (0) {}
 			else if (c == 'a') {} // none
@@ -426,13 +445,13 @@ loop:	display();
 			state = 0;
 
 		} else {
-			if (c == 'q') { if (saved) mode = 0; }
+			if (c == 'q') { if (setting & saved) mode = 0; }
 
 			else if (c == 'a') state = 1;
 			else if (c == 'd') delete(1);
 			else if (c == 'r') cut();
 			else if (c == 't') { mode = 1; c = 0; p1 = 0; } 
-			else if (c == 's') { anchor = cursor; selecting = not selecting; }
+			else if (c == 's') { anchor = cursor; setting ^= selecting; }
 			else if (c == 'h') backwards();
 			else if (c == 'm') forwards();
 			else if (c == 'c') undo();
@@ -448,12 +467,29 @@ loop:	display();
 
 			else if (c == 27) interpret_arrow_key();
 		}
-		if (not selecting) anchor = bubbles;
+		if (not (setting & selecting)) anchor = previous_cursor;
 	} p1 = c;
 	if (mode) goto loop;
 	printf("\033[H\033[2J");
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// if (not (setting & selecting)) bubbles = cursor;
 
 
 /* -------- list of commands that the editor can do with keys ----------------
@@ -2368,6 +2404,33 @@ static inline void move_word_right(void) {
 }
 
 */
+
+
+
+
+
+
+
+
+
+
+
+/*
+	const nat save = cursor_column;
+	while (cursor < count) {
+		if (text[cursor] == 10 or not cursor_column) break;
+		move_right();
+	}
+	if (text[cursor] == 10) move_right();
+	while (cursor < count) {
+		if (cursor_column >= save) break;
+		if (text[cursor] == 10) break;
+		move_right();
+	}
+
+*/
+
+
 
 
 
