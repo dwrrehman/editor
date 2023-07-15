@@ -1,0 +1,107 @@
+#include <stdio.h>  // 2306202.165852:  
+#include <stdlib.h> // a screen based simpler editor based on the ed-like one, 
+#include <string.h> // uses a string ds, and is modal. 
+#include <fcntl.h>
+#include <unistd.h>
+#include <iso646.h>         
+#include <stdbool.h>
+#include <termios.h>
+#include <signal.h>
+#include <ctype.h>
+#include <sys/types.h>    
+#include <sys/ioctl.h>   
+typedef size_t nat;       
+
+// todo:     - fix memory leaks       o- write manual        x- test test test test test
+//           o- write feature list     x- redo readme.md     x- test with unicode                
+//           x- fix the display(0) performance bug on move_right(). 
+// x     - MAKE THE EDITOR ONLY USE ALPHA KEYS FOR KEYBINDINGSSSSSSSS PLEASEEEEEEEEE MODALLLLLL PLZ
+
+/*  ----------------- bugs: ---------------------
+
+	- last line does not display properly     when it is a wrapped line
+
+			probably because of a newline in the display code?... idk.
+
+	- fix memory leaks
+
+
+
+
+
+
+
+	- i really like how this editor is coming along! its super cool lol. i guess we'll try to save the file lol. why no
+
+*/
+
+
+
+
+
+
+
+
+struct action {
+	char* text;
+	nat* children;
+	nat parent, choice, count, length, insert,
+	pre_cursor, post_cursor, pre_origin, 
+	post_origin, pre_saved, post_saved;
+};
+
+static struct winsize window;
+static char filename[4096] = {0};
+static char* text = NULL, * clipboard = NULL;
+static struct action* actions = NULL;
+static nat cursor = 0, origin = 0, anchor = 0, cursor_row = 0, cursor_column = 0, selecting = 0,
+	   count = 0, saved = 1, cliplength = 0, mode = 0, action_count = 0, head = 0;
+
+static void handler(int __attribute__((unused))_) {}
+static void display(void) {
+	ioctl(0, TIOCGWINSZ, &window);
+	const nat screen_size = window.ws_row * window.ws_col * 4;
+	char* screen = calloc(screen_size, 1);
+	memcpy(screen, "\033[?25l\033[H", 9);
+	nat length = 9, row = 0, column = 0, i = origin;
+	for (; i < count; i++) {
+		if (i == cursor) { cursor_row = row; cursor_column = column; }
+		if (row >= window.ws_row) break;
+		char k = text[i];
+		if (k == 10) {
+			column = 0; row++;
+			memcpy(screen + length, "\033[K", 3); 
+			length += 3; 
+			if (row < window.ws_row) screen[length++] = 10;
+		} else if (k == 9) {
+			const uint8_t amount = 8 - column % 8;
+			column += amount;
+			memcpy(screen + length, "        ", amount);
+			length += amount;
+		} else {
+			if (column >= window.ws_col - 1) { column = 0; row++; }
+			if ((unsigned char) k >> 6 != 2 and k >= 32) column++;
+			screen[length++] = k;
+		}
+	}
+	if (i == cursor) { cursor_row = row; cursor_column = column; }
+	while (row < window.ws_row) {
+		row++;
+		memcpy(screen + length, "\033[K", 3);
+		length += 3; 
+		if (row < window.ws_row - 1) screen[length++] = 10;
+	}
+	length += (nat) snprintf(screen + length, 30, "\033[K\033[%lu;%luH\033[?25h", cursor_row + 1, cursor_column + 1);
+	write(1, screen, length);
+	free(screen);
+}
+
+static void move_left(void) {
+	if (origin < cursor or not origin) goto decr;
+	origin--;
+	e: if (not origin) goto decr;
+	origin--;
+	if (text[origin] != 10) goto e;
+	origin++;
+	decr: if (cursor) cursor--;
+}
