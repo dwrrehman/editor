@@ -1,0 +1,55 @@
+hello there is this my editor
+
+
+it sucks 
+
+	because it overwrited its own source code
+
+
+				oh also the      r   w          way of getting out of insert mode
+
+						is alsooooo shit 
+
+
+
+			sooo 
+yeah
+
+
+
+
+
+
+
+
+
+alarm
+compiler
+editor
+games
+hardware
+languages
+music_utility
+other
+reed_keyboard
+solar_computer
+sudoku
+testing_project
+timer
+transistor computer
+ua
+useful
+wasm_website
+website
+build
+c.c
+sudoku
+sudoku.dSYM
+execute ./sudok
+
+
+
+
+
+
+

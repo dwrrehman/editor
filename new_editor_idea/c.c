@@ -33,7 +33,7 @@ struct action {
 extern char** environ;
 static struct termios terminal;
 static struct winsize window;
-static char saved_filename[4096] = {0}, saved_directory[4096] = {0};
+static char write_filename[4096] = {0}, write_directory[4096] = {0};
 static char read_filename[4096] = {0}, read_directory[4096] = {0};
 static char* text = NULL, * clipboard = NULL;
 static struct action* actions = NULL;
@@ -448,13 +448,15 @@ static void change_directory(const char* d) {
 		getchar(); return;
 	}
 	printf("changed to %s\n", d);
+	getchar();
+
 }
 
 
 static void create_process(char** args) {
 	pid_t pid = fork();
 	if (pid < 0) { 
-		perror("lsh"); 
+		perror("fork"); 
 		getchar(); return;
 	}
 
@@ -471,14 +473,14 @@ static void create_process(char** args) {
 	}
 }
 
-static void execute(const char* command) {
-	printf("executing \"%s\"...", command);
+static void execute(char* command) {
+	printf("executing \"%s\"...\n", command);
 
-	configure_terminal();
-	create_process((char*[]){command, NULL});
 	tcsetattr(0, TCSAFLUSH, &terminal);
+	create_process((char*[]){command, NULL});
+	configure_terminal();
 
-	printf("[finished shell]");
+	printf("[finished shell]\n");
 	getchar();
 }
 
