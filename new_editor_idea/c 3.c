@@ -13,6 +13,7 @@
 #include <sys/types.h>    
 #include <sys/ioctl.h>
 #include <sys/time.h>
+#include <sys/wait.h>
 typedef size_t nat;
 static const nat
 	active = 0x01,
@@ -29,6 +30,8 @@ struct action {
 	pre_cursor, post_cursor, pre_origin, post_origin, pre_saved, post_saved;
 };
 
+extern char** environ;
+static struct termios terminal;
 static struct winsize window;
 static char saved_filename[4096] = {0}, saved_directory[4096] = {0};
 static char read_filename[4096] = {0}, read_directory[4096] = {0};
@@ -344,16 +347,13 @@ static void write_file(int flags, mode_t creating) {
 		printf("filename=%s ", filename); 
 		getchar(); return; 
 	}
+
 	write(file, text, count);
 	close(file);
 	close(dir);
 	mode |= saved;
 
-//	if (not creating) {
-//		printf("save: saved %lub to ", count);
-//		printf("%s : %s\n", directory, filename); 
-//		getchar(); return;
-//	}
+
 
 	strlcpy(saved_filename, read_filename, sizeof saved_filename);
 	strlcpy(saved_directory, read_directory, sizeof saved_directory);
@@ -439,6 +439,46 @@ static void jump_line(const char* line_string) {
 	}
 }
 
+static void change_directory(const char* d) {
+	int r = chdir(d);
+	if (r < 0) {
+		perror("change directory chdir");
+		printf("directory=%s", d);
+		getchar(); return;
+	}
+	printf("changed to %s\n", d);
+}
+
+
+static void create_process(char** args) {
+	pid_t pid = fork();
+	if (pid < 0) { 
+		perror("lsh"); 
+		getchar(); return;
+	}
+
+	if (not pid) {
+		int r = execve(args[0], args, environ);
+		if (r < 0) { 
+			perror("execve"); 
+			exit(1); 
+		}
+	} else {
+		int status = 0;
+		do waitpid(pid, &status, WUNTRACED);
+		while (!WIFEXITED(status) && !WIFSIGNALED(status));
+	}
+}
+
+static void execute(const char* command) {
+	printf("executing \"%s\"...", command);
+	configure_terminal();
+	create_process((char*[]){command, NULL});
+	tcsetattr(0, TCSAFLUSH, &terminal);
+	printf("[finished shell]");
+	getchar();
+}
+
 static void sendc(void) {
 	if (not clipboard) return;
 
@@ -447,7 +487,7 @@ static void sendc(void) {
 
 	else if (not strcmp(clipboard, "print state")) { printf("%lx:%lu:%lu:%lu\n", mode, count, cursor, anchor); getchar(); }
 	else if (not strcmp(clipboard, "print read name")) { printf("%s : %s\n", read_directory, read_filename); getchar(); }
-	else if (not strcmp(clipboard, "print saved name")) { printf("%s : %s\n", saved_directory, saved_filename); getchar(); }
+	else if (not strcmp(clipboard, "print write name")) { printf("%s : %s\n", write_directory, write_filename); getchar(); }
 
 	else if (not strcmp(clipboard, "visual selections")) mode ^= visual_anchor;
 	else if (not strcmp(clipboard, "visual split points")) mode ^= visual_splitpoint;
@@ -459,7 +499,12 @@ static void sendc(void) {
 
 	else if (cliplength > 5 and not strncmp(clipboard, "name ",  5))    strlcpy(read_filename,  clipboard + 5, sizeof read_filename); 
 	else if (cliplength > 9 and not strncmp(clipboard, "location ", 9)) strlcpy(read_directory, clipboard + 9, sizeof read_directory);
-	else if (cliplength > 3 and not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
+	else if (cliplength > 5 and not strncmp(clipboard, "EDIT WRITE filename ",  5))    strlcpy(read_filename,  clipboard + 5, sizeof read_filename); 
+	else if (cliplength > 9 and not strncmp(clipboard, "EDIT WRITE directory ", 9)) strlcpy(read_directory, clipboard + 9, sizeof read_directory);
+
+	else if (cliplength > 7 and not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
+	else if (cliplength > 7 and not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
+	else if (cliplength > 9 and not strncmp(clipboard, "execute ", 9)) execute(clipboard + 9);
 	else if (cliplength > 5 and not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);
 	
 	else { printf("unknown command: %s\n", clipboard); getchar(); }
@@ -493,8 +538,8 @@ loop:	display();
 			else if (c == 'd') {}
 			else if (c == 'r') save_file();
 			else if (c == 't') sendc();
-			else if (c == 's') {}
-			else if (c == 'h') paste();
+			else if (c == 's') paste();
+			else if (c == 'h') {}
 			else if (c == 'm') copy();
 			else if (c == 'c') execute("pbpaste");
 
@@ -556,7 +601,11 @@ loop:	display();
 
 
 
-
+//	if (not creating) {
+//		printf("save: saved %lub to ", count);
+//		printf("%s : %s\n", directory, filename); 
+//		getchar(); return;
+//	}
 
 
 
