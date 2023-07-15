@@ -455,7 +455,7 @@ static void change_directory(const char* d) {
 	int r = chdir(d);
 	if (r < 0) {
 		perror("change directory chdir");
-		printf("directory=%s", d);
+		printf("directory=%s\n", d);
 		getchar(); return;
 	}
 	printf("changed to %s\n", d);
@@ -513,8 +513,6 @@ static void sendc(void) {
 
 	else if (cliplength > 5 and not strncmp(clipboard, "name ",  5))    strlcpy(read_filename,  clipboard + 5, sizeof read_filename); 
 	else if (cliplength > 9 and not strncmp(clipboard, "location ", 9)) strlcpy(read_directory, clipboard + 9, sizeof read_directory);
-	else if (cliplength > 20 and not strncmp(clipboard, "EDIT WRITE filename ",  20))    strlcpy(read_filename,  clipboard + 20, sizeof read_filename); 
-	else if (cliplength > 21 and not strncmp(clipboard, "EDIT WRITE directory ", 21)) strlcpy(read_directory, clipboard + 21, sizeof read_directory);
 
 	else if (cliplength > 7 and not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
 	else if (cliplength > 7 and not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
