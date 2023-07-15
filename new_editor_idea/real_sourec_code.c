@@ -249,14 +249,12 @@ static void cut(void) {
 	create_action(new);
 }
 
-static struct termios configure_terminal(void) {
-	struct termios terminal;
+static void configure_terminal(void) {
 	tcgetattr(0, &terminal);
 	struct termios copy = terminal; 
 	copy.c_lflag &= ~((size_t) ECHO | ICANON | IEXTEN | ISIG);
 	copy.c_iflag &= ~((size_t) BRKINT | IXON);
 	tcsetattr(0, TCSAFLUSH, &copy);
-	return terminal;
 }
 
 static inline void copy(void) {
@@ -472,9 +470,11 @@ static void create_process(char** args) {
 
 static void execute(const char* command) {
 	printf("executing \"%s\"...", command);
+
 	configure_terminal();
 	create_process((char*[]){command, NULL});
 	tcsetattr(0, TCSAFLUSH, &terminal);
+
 	printf("[finished shell]");
 	getchar();
 }
@@ -499,12 +499,13 @@ static void sendc(void) {
 
 	else if (cliplength > 5 and not strncmp(clipboard, "name ",  5))    strlcpy(read_filename,  clipboard + 5, sizeof read_filename); 
 	else if (cliplength > 9 and not strncmp(clipboard, "location ", 9)) strlcpy(read_directory, clipboard + 9, sizeof read_directory);
-	else if (cliplength > 5 and not strncmp(clipboard, "EDIT WRITE filename ",  5))    strlcpy(read_filename,  clipboard + 5, sizeof read_filename); 
-	else if (cliplength > 9 and not strncmp(clipboard, "EDIT WRITE directory ", 9)) strlcpy(read_directory, clipboard + 9, sizeof read_directory);
+	else if (cliplength > 20 and not strncmp(clipboard, "EDIT WRITE filename ",  20))    strlcpy(read_filename,  clipboard + 20, sizeof read_filename); 
+	else if (cliplength > 21 and not strncmp(clipboard, "EDIT WRITE directory ", 21)) strlcpy(read_directory, clipboard + 21, sizeof read_directory);
 
 	else if (cliplength > 7 and not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
 	else if (cliplength > 7 and not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
-	else if (cliplength > 9 and not strncmp(clipboard, "execute ", 9)) execute(clipboard + 9);
+	else if (cliplength > 8 and not strncmp(clipboard, "execute ", 8)) execute(clipboard + 8);
+
 	else if (cliplength > 5 and not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);
 	
 	else { printf("unknown command: %s\n", clipboard); getchar(); }
@@ -513,7 +514,7 @@ static void sendc(void) {
 int main(int argc, const char** argv) {
 	struct sigaction action = {.sa_handler = handler}; 
 	sigaction(SIGINT, &action, NULL);
-	struct termios terminal = configure_terminal();
+	configure_terminal();
 	actions = calloc(1, sizeof(struct action));
 	action_count = 1; 
 	mode = active | saved | inserting; //| visual_anchor | visual_splitpoint;

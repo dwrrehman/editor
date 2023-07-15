@@ -66,8 +66,6 @@ static void display(void) {
 				if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
 			}
 		}
-		if ((mode & selecting) and i == anchor) { length += (nat) snprintf(screen + length, 10, "\033[7m"); }
-		if ((mode & selecting) and i == cursor) { length += (nat) snprintf(screen + length, 10, "\033[1m"); }
 		if (row >= window.ws_row) break;
 
 		char k = text[i];
@@ -86,8 +84,6 @@ static void display(void) {
 			else if ((unsigned char) k >> 6 != 2 and k >= 32) column++;
 			screen[length++] = k;
 		}
-		if ((mode & selecting) and i == cursor) { length += (nat) snprintf(screen + length, 10, "\033[0m"); }
-		if ((mode & selecting) and i == anchor) { length += (nat) snprintf(screen + length, 10, "\033[0m"); }
 	}
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
 	if (mode & visual_anchor) {
@@ -273,7 +269,7 @@ static inline void copy(void) {
 	pclose(file);
 }
 
-static void insert_output(const char* input_command) {
+static void execute(const char* input_command) {
 	char command[4096] = {0};
 	strlcpy(command, input_command, sizeof command);
 	strlcat(command, " 2>&1", sizeof command);
@@ -281,7 +277,7 @@ static void insert_output(const char* input_command) {
 	FILE* f = popen(command, "r");
 	if (not f) {
 		printf("error: could not execute command \"%s\"\n", command);
-		perror("insert_output popen");
+		perror("execute popen");
 		getchar(); return;
 	}
 	char* string = NULL;
@@ -328,15 +324,14 @@ static void read_file(void) {
 	mode &= ~inserting;
 	actions = calloc(1, sizeof(struct action));
 	head = 0; action_count = 1; 
-
-	strlcpy(write_filename, read_filename, sizeof write_filename);
-	strlcpy(write_directory, read_directory, sizeof write_directory);
+	strlcpy(saved_filename, read_filename, sizeof saved_filename);
+	strlcpy(saved_directory, read_directory, sizeof saved_directory);
 }
 
 static void write_file(int flags, mode_t creating) {
 
-	const char* directory = creating? read_directory : write_directory;
-	const char* filename  = creating? read_filename  : write_filename;
+	const char* directory = creating? read_directory : saved_directory;
+	const char* filename  = creating? read_filename  : saved_filename;
 
 	const int dir = open(directory, O_RDONLY | O_DIRECTORY, 0);
 	if (dir < 0) { 
@@ -356,8 +351,10 @@ static void write_file(int flags, mode_t creating) {
 	close(dir);
 	mode |= saved;
 
-	strlcpy(write_filename,   read_filename, sizeof write_filename);
-	strlcpy(write_directory, read_directory, sizeof write_directory);
+
+
+	strlcpy(saved_filename, read_filename, sizeof saved_filename);
+	strlcpy(saved_directory, read_directory, sizeof saved_directory);
 }
 static void save_file(void) { write_file(O_WRONLY | O_TRUNC, 0); }
 static void create_file(void) { write_file(O_CREAT | O_WRONLY | O_TRUNC | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH); }
@@ -520,7 +517,7 @@ int main(int argc, const char** argv) {
 	configure_terminal();
 	actions = calloc(1, sizeof(struct action));
 	action_count = 1; 
-	mode = active | saved | inserting; 
+	mode = active | saved | inserting; //| visual_anchor | visual_splitpoint;
 	char c = 0, p1 = 0, state = 0;
 	if (argc < 2) goto loop;
 	strlcpy(read_directory, ".", sizeof read_directory);
@@ -545,7 +542,7 @@ loop:	display();
 			else if (c == 's') paste();
 			else if (c == 'h') {}
 			else if (c == 'm') copy();
-			else if (c == 'c') insert_output("pbpaste");
+			else if (c == 'c') execute("pbpaste");
 
 			else if (c == 'n') move_begin();
 			else if (c == 'u') move_top();
@@ -692,7 +689,7 @@ static bool identical_files(
 	move_begin();
 	move_end();
 	paste();
-	insert_output("pbpaste");
+	execute("pbpaste");
 	copy();
 	cut();
 	delete(1);
