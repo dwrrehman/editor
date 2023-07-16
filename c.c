@@ -16,20 +16,14 @@
 #include <sys/wait.h>
 typedef size_t nat;
 static const nat
-	active = 0x01,
-	saved = 0x02, 
-	inserting = 0x04,
-	selecting = 0x08, 
-	visual_anchor = 0x10, 
-	visual_splitpoint = 0x20;
-
+	active = 0x01, saved = 0x02, inserting = 0x04, selecting = 0x08, 
+	visual_anchor = 0x10, visual_splitpoint = 0x20;
 struct action {
 	char* text;
 	nat* children;
 	nat parent, choice, count, length, insert,
 	pre_cursor, post_cursor, pre_origin, post_origin, pre_saved, post_saved;
 };
-
 extern char** environ;
 static struct termios terminal;
 static struct winsize window;
@@ -47,29 +41,19 @@ static void display(void) {
 	char* screen = calloc(screen_size, 1);
 	memcpy(screen, "\033[?25l\033[H", 9);
 	nat length = 9, row = 0, column = 0, i = origin;
-	if (mode & visual_anchor) {
-		if (anchor < origin) length += (nat) snprintf(screen + length, 10, "\033[7m");
-	}
+	if ((mode & visual_anchor) and anchor < origin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
 	for (; i < count; i++) {
-
 		if (i == cursor) { cursor_row = row; cursor_column = column; }
-		if (mode & visual_anchor) {
-			if (anchor < cursor) { 
-				if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[7m");
-			} else { 
-				if (i == cursor) length += (nat) snprintf(screen + length, 10, "\033[7m"); 
-			}
-
-			if (anchor < cursor) { 
-				if (i == cursor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
-			} else { 
-				if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
-			}
+		if ((mode & visual_anchor) and anchor < cursor) { 
+			if (i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
+			if (i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
+		} else if (mode & visual_anchor) { 
+			if (i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
+			if (i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
 		}
-		if ((mode & selecting) and i == anchor) { length += (nat) snprintf(screen + length, 10, "\033[7m"); }
-		if ((mode & selecting) and i == cursor) { length += (nat) snprintf(screen + length, 10, "\033[1m"); }
+		if ((mode & selecting) and i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
+		if ((mode & selecting) and i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[1m");
 		if (row >= window.ws_row) break;
-
 		char k = text[i];
 		if (k == 10) {
 			column = 0; row++;
@@ -86,32 +70,24 @@ static void display(void) {
 			else if ((unsigned char) k >> 6 != 2 and k >= 32) column++;
 			screen[length++] = k;
 		}
-		if ((mode & selecting) and i == cursor) { length += (nat) snprintf(screen + length, 10, "\033[0m"); }
-		if ((mode & selecting) and i == anchor) { length += (nat) snprintf(screen + length, 10, "\033[0m"); }
+		if ((mode & selecting) and i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m");
+		if ((mode & selecting) and i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
 	}
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
-	if (mode & visual_anchor) {
-		if (anchor < cursor) { 
-			if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[7m");
-		} else { 
-			if (i == cursor) length += (nat) snprintf(screen + length, 10, "\033[7m"); 
-		}
-
-		if (anchor < cursor) { 
-			if (i == cursor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
-		} else { 
-			if (i == anchor) length += (nat) snprintf(screen + length, 10, "\033[0m"); 
-		}
+	if ((mode & visual_anchor) and anchor < cursor) { 
+		if (i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
+		if (i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
+	} else if (mode & visual_anchor) { 
+		if (i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
+		if (i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
 	}
-
 	while (row < window.ws_row) {
 		row++;
 		memcpy(screen + length, "\033[K", 3);
 		length += 3; 
 		if (row < window.ws_row) screen[length++] = 10;
 	}
-	length += (nat) snprintf(screen + length, 30, "\033[K\033[%lu;%luH\033[?25h", 
-				cursor_row + 1, cursor_column + 1);
+	length += (nat) snprintf(screen + length, screen_size - length, "\033[K\033[%lu;%luH\033[?25h", cursor_row + 1, cursor_column + 1);
 	write(1, screen, length);
 	free(screen);
 }
@@ -134,7 +110,7 @@ static void move_right(void) {
 	else if (cursor_column >= window.ws_col - 1) { cursor_column = 0; cursor_row++; }
 	else if ((unsigned char) c >> 6 != 2) cursor_column++; 
 	if (cursor_row < window.ws_row) return;
-	nat column = 0; 
+	nat column = 0;
 	l: if (origin >= count) return;
 	c = text[origin++];
 	if (c == 10) goto done;
@@ -170,14 +146,14 @@ static inline void move_word_right(void) {
 }
 static void forwards(void) {
 	nat t = 0;
-loop:	if (t == cliplength or cursor >= count) return;
+	loop: if (t == cliplength or cursor >= count) return;
 	if (text[cursor] != clipboard[t]) t = 0; else t++;
 	move_right(); 
 	goto loop;
 }
 static void backwards(void) {
 	nat t = cliplength;
-loop:	if (not t or not cursor) return;
+	loop: if (not t or not cursor) return;
 	move_left(); t--; 
 	if (text[cursor] != clipboard[t]) t = cliplength;
 	goto loop;
@@ -188,9 +164,7 @@ static void create_action(struct action new) {
 	new.post_origin = origin; 
 	new.post_saved = mode & saved;
 	new.parent = head;
-	actions[head].children = realloc(
-		actions[head].children, 
-		sizeof(size_t) * (size_t) (actions[head].count + 1));
+	actions[head].children = realloc(actions[head].children, sizeof(size_t) * (actions[head].count + 1));
 	actions[head].choice = actions[head].count;
 	actions[head].children[actions[head].count++] = action_count;
 	head = action_count;
@@ -319,25 +293,20 @@ static void read_file(void) {
 	text = malloc(count);
 	lseek(file, 0, SEEK_SET);
 	read(file, text, count);
-
 	close(file);
 	close(dir);
-
 	anchor = 0; cursor = 0; origin = 0; cursor_row = 0; cursor_column = 0;
 	clipboard = NULL; cliplength = 0;
 	mode &= ~inserting;
 	actions = calloc(1, sizeof(struct action));
-	head = 0; action_count = 1; 
-
+	head = 0; action_count = 1;
 	strlcpy(write_filename, read_filename, sizeof write_filename);
 	strlcpy(write_directory, read_directory, sizeof write_directory);
 }
 
 static void write_file(int flags, mode_t creating) {
-
 	const char* directory = creating? read_directory : write_directory;
 	const char* filename  = creating? read_filename  : write_filename;
-
 	const int dir = open(directory, O_RDONLY | O_DIRECTORY, 0);
 	if (dir < 0) { 
 		perror("write open directory"); 
@@ -346,35 +315,29 @@ static void write_file(int flags, mode_t creating) {
 	}
 	const int file = openat(dir, filename, flags, creating);
 	if (file < 0) { 
-		perror("write openat file"); 
-		printf("filename=%s ", filename); 
-		getchar(); return; 
+		perror("write openat file");
+		printf("filename=%s ", filename);
+		getchar(); return;
 	}
-
 	write(file, text, count);
 	close(file);
 	close(dir);
 	mode |= saved;
-
 	if (not creating) {
 		printf("\033[1mwrite: saved %lub to ", count);
 		printf("%s : %s \033[0m\n", directory, filename); 
 		fflush(stdout); usleep(300000);
 	}
-	
-
 	if (not creating) return;
-
 	strlcpy(write_filename, filename, sizeof write_filename);
 	strlcpy(write_directory, directory, sizeof write_directory);
-
 	printf("write: created %lub to ", count);
 	printf("%s : %s\n", directory, filename); 
 	getchar();
 }
+
 static void save_file(void) { write_file(O_WRONLY | O_TRUNC, 0); }
 static void create_file(void) { write_file(O_CREAT | O_WRONLY | O_TRUNC | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH); }
-
 static inline void now(char datetime[32]) {
 	struct timeval t;
 	gettimeofday(&t, NULL);
@@ -382,6 +345,7 @@ static inline void now(char datetime[32]) {
 	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
 }
 
+static void insert_now(void) { char dt[32] = {0}; now(dt); insert_string(dt, 17); }
 static void name_uniquely(void) {
 	srand((unsigned)time(0)); rand();
 	char datetime[32] = {0};
@@ -390,9 +354,7 @@ static void name_uniquely(void) {
 	snprintf(read_filename, sizeof read_filename, "%x%x_%s.txt", rand(), rand(), datetime);
 }
 
-static void alternate(void) {
-	if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0;
-}
+static void alternate(void) { if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0; }
 
 static void undo(void) {
 	if (not head) return;
@@ -439,7 +401,7 @@ static void interpret_arrow_key(void) {
 		}
 		else { printf("2: found escape seq: %d\n", c); getchar(); }
 	} 
-	else { printf("3: found escape seq: %d\n", c); getchar();}
+	else { printf("3: found escape seq: %d\n", c); getchar(); }
 }
 
 static void jump_line(const char* line_string) {
@@ -454,8 +416,7 @@ static void jump_line(const char* line_string) {
 }
 
 static void change_directory(const char* d) {
-	int r = chdir(d);
-	if (r < 0) {
+	if (chdir(d) < 0) {
 		perror("change directory chdir");
 		printf("directory=%s\n", d);
 		getchar(); return;
@@ -466,14 +427,12 @@ static void change_directory(const char* d) {
 
 static void create_process(char** args) {
 	pid_t pid = fork();
-	if (pid < 0) { 
+	if (pid < 0) {
 		perror("fork"); 
 		getchar(); return;
 	}
-
 	if (not pid) {
-		int r = execve(args[0], args, environ);
-		if (r < 0) { 
+		if (execve(args[0], args, environ) < 0) { 
 			perror("execve"); 
 			exit(1); 
 		}
@@ -486,42 +445,32 @@ static void create_process(char** args) {
 
 static void execute(char* command) {
 	printf("executing \"%s\"...\n", command);
-
 	tcsetattr(0, TCSAFLUSH, &terminal);
 	create_process((char*[]){command, NULL});
 	configure_terminal();
-
-	printf("[finished shell]\n");
-	getchar();
+	printf("[finished]\n"); getchar();
 }
 
 static void sendc(void) {
 	if (not clipboard) return;
-
-	if (not strcmp(clipboard, "")) { printf("empty string!\n"); getchar(); }
+	if (not strcmp(clipboard, "")) { printf("(empty-test)\n"); getchar(); }
 	else if (not strcmp(clipboard, "discard and quit")) mode &= ~active;
-
 	else if (not strcmp(clipboard, "print state")) { printf("%lx:%lu:%lu:%lu\n", mode, count, cursor, anchor); getchar(); }
 	else if (not strcmp(clipboard, "print read name")) { printf("%s : %s\n", read_directory, read_filename); getchar(); }
 	else if (not strcmp(clipboard, "print write name")) { printf("%s : %s\n", write_directory, write_filename); getchar(); }
-
 	else if (not strcmp(clipboard, "visual selections")) mode ^= visual_anchor;
 	else if (not strcmp(clipboard, "visual split points")) mode ^= visual_splitpoint;
-
 	else if (not strcmp(clipboard, "read")) read_file();
 	else if (not strcmp(clipboard, "save")) save_file();
 	else if (not strcmp(clipboard, "create")) create_file();
 	else if (not strcmp(clipboard, "new")) name_uniquely();
-
-	else if (cliplength > 5 and not strncmp(clipboard, "name ",  5))    strlcpy(read_filename,  clipboard + 5, sizeof read_filename); 
+	else if (not strcmp(clipboard, "dt")) insert_now();
+	else if (cliplength > 5 and not strncmp(clipboard, "name ",  5)) strlcpy(read_filename, clipboard + 5, sizeof read_filename); 
 	else if (cliplength > 9 and not strncmp(clipboard, "location ", 9)) strlcpy(read_directory, clipboard + 9, sizeof read_directory);
-
 	else if (cliplength > 7 and not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
 	else if (cliplength > 7 and not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
 	else if (cliplength > 8 and not strncmp(clipboard, "execute ", 8)) execute(clipboard + 8);
-
 	else if (cliplength > 5 and not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);
-	
 	else { printf("unknown command: %s\n", clipboard); getchar(); }
 }
 
@@ -559,7 +508,6 @@ loop:	display();
 			else if (c == 'h') {}
 			else if (c == 'm') copy();
 			else if (c == 'c') insert_output("pbpaste");
-
 			else if (c == 'n') move_begin();
 			else if (c == 'u') move_top();
 			else if (c == 'p') {}
@@ -571,10 +519,8 @@ loop:	display();
 
 			else if (c == 27) interpret_arrow_key();
 			state = 0;
-
 		} else {
 			if (c == 'q') { if (mode & saved) mode &= ~active; }
-
 			else if (c == 'a') state = 1;
 			else if (c == 'd') delete(1);
 			else if (c == 'r') cut();
@@ -583,7 +529,6 @@ loop:	display();
 			else if (c == 'h') backwards();
 			else if (c == 'm') forwards();
 			else if (c == 'c') undo();
-
 			else if (c == 'n') move_left();
 			else if (c == 'u') move_word_left();
 			else if (c == 'p') move_word_right();
@@ -601,6 +546,36 @@ loop:	display();
 	printf("\033[H\033[2J");
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
