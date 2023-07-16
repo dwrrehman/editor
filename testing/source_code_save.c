@@ -359,12 +359,10 @@ static void write_file(int flags, mode_t creating) {
 	if (not creating) {
 		printf("\033[1mwrite: saved %lub to ", count);
 		printf("%s : %s \033[0m\n", directory, filename); 
-		fflush(stdout); usleep(300000);
+		fflush(stdout); usleep(100000);
 	}
 	
-
 	if (not creating) return;
-
 	strlcpy(write_filename, filename, sizeof write_filename);
 	strlcpy(write_directory, directory, sizeof write_directory);
 

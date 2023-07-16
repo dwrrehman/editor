@@ -15,15 +15,8 @@ It's features and behavior are loosely based on that of ed and vi.
  - copy/paste to global clipboard
  - fully programmable: uses an interpreter for a language I also wrote        (coming soon!)
  - no dependancies besides the C standard library.
- - source code is currently less than 430 lines of code. 
+ - source code is currently less than 600 lines of code. 
  - other stuff!!! nice.
-
-
-
-
-
-
-
 
 
 
