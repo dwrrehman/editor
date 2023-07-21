@@ -12,9 +12,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>    
 #include <sys/ioctl.h>
-#include <sys/time.h>
-#include <sys/wait.h>
-typedef size_t nat;
+#include <sys/time.h>        // make   visual_anchor     do the thing in display    mode & selecting     display
+#include <sys/wait.h>       //   make visual_selections  to the thing in display   mode & visual_anchor   ie, switch them, and make
+typedef size_t nat;          //                           the anchor visualization toggable.
 static const nat
 	active = 0x01, saved = 0x02, inserting = 0x04, selecting = 0x08, 
 	visual_anchor = 0x10, visual_splitpoint = 0x20;
@@ -451,6 +451,66 @@ static void execute(char* command) {
 	printf("[finished]\n"); getchar();
 }
 
+static void print_help_message(void) {
+printf(
+"	read(0, &c, 1);" "\n"
+"	previous_cursor = cursor;" "\n"
+"	if (mode & inserting) {" "\n"
+"		if (c == 17) mode &= ~inserting;" "\n"
+"		else if (c == 27) interpret_arrow_key();" "\n"
+"		else if (c == 127) delete(1);" "\n"
+"		else if (c == 'h' and p1 == 'r') { delete(1); mode &= ~inserting; c = 0; p1 = 0; }" "\n"
+"		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c, 1);" "\n"
+"	} else {" "\n"
+"		if (state == 1) {" "\n"
+"			if (0) {}" "\n"
+"			else if (c == 'a') {} // none" "\n"
+"			else if (c == 'd') {}" "\n"
+"			else if (c == 'r') save_file();" "\n"
+"			else if (c == 't') sendc();" "\n"
+"			else if (c == 's') paste();" "\n"
+"			else if (c == 'h') {}" "\n"
+"			else if (c == 'm') copy();" "\n"
+"			else if (c == 'c') insert_output(\"pbpaste\");" "\n"
+"			else if (c == 'n') move_begin();" "\n"
+"			else if (c == 'u') move_top();" "\n"
+"			else if (c == 'p') {}" "\n"
+"			else if (c == 'i') {} // none" "\n"
+"			else if (c == 'e') move_end();" "\n"
+"			else if (c == 'o') {}" "\n"
+"			else if (c == 'l') move_bottom();" "\n"
+"			else if (c == 'k') alternate();" "\n"
+ "\n"
+"			else if (c == 27) interpret_arrow_key();" "\n"
+"			state = 0;" "\n"
+"		} else {" "\n"
+"			if (c == 'q') { if (mode & saved) mode &= ~active; }" "\n"
+"			else if (c == 'a') state = 1;" "\n"
+"			else if (c == 'd') delete(1);" "\n"
+"			else if (c == 'r') cut();" "\n"
+"			else if (c == 't') { mode |= inserting; c = 0; p1 = 0; } " "\n"
+"			else if (c == 's') { anchor = cursor; mode ^= selecting; }" "\n"
+"			else if (c == 'h') backwards();" "\n"
+"			else if (c == 'm') forwards();" "\n"
+"			else if (c == 'c') undo();" "\n"
+"			else if (c == 'n') move_left();" "\n"
+"			else if (c == 'u') move_word_left();" "\n"
+"			else if (c == 'p') move_word_right();" "\n"
+"			else if (c == 'i') state = 1;" "\n"
+"			else if (c == 'e') move_up();" "\n"
+"			else if (c == 'o') move_right();" "\n"
+"			else if (c == 'l') move_down();" "\n"
+"			else if (c == 'k') redo();" "\n"
+ "\n"
+"			else if (c == 27) interpret_arrow_key();" "\n"
+"		}" "\n"
+"		if (not (mode & selecting)) anchor = previous_cursor;" "\n"
+ "\n"
+);
+getchar();
+
+}
+
 static void sendc(void) {
 	if (not clipboard) return;
 	if (not strcmp(clipboard, "")) { printf("(empty-test)\n"); getchar(); }
@@ -465,6 +525,7 @@ static void sendc(void) {
 	else if (not strcmp(clipboard, "create")) create_file();
 	else if (not strcmp(clipboard, "new")) name_uniquely();
 	else if (not strcmp(clipboard, "dt")) insert_now();
+	else if (not strcmp(clipboard, "help")) print_help_message();
 	else if (cliplength > 5 and not strncmp(clipboard, "name ",  5)) strlcpy(read_filename, clipboard + 5, sizeof read_filename); 
 	else if (cliplength > 9 and not strncmp(clipboard, "location ", 9)) strlcpy(read_directory, clipboard + 9, sizeof read_directory);
 	else if (cliplength > 7 and not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
