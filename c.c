@@ -3,14 +3,16 @@
 #include <string.h> // uses a string ds, and is modal. 
 #include <fcntl.h>
 #include <unistd.h>
-#include <iso646.h>         
+#include <iso646.h>
 #include <stdbool.h>
 #include <termios.h>
 #include <signal.h>
+#include <errno.h>
 #include <ctype.h>
 #include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>    
+#include <dirent.h>
 #include <sys/ioctl.h>
 #include <sys/time.h>        // make   visual_anchor     do the thing in display    mode & selecting     display
 #include <sys/wait.h>       //   make visual_selections  to the thing in display   mode & visual_anchor   ie, switch them, and make
@@ -283,9 +285,12 @@ static void read_file(void) {
 		printf("read_directory=%s ", read_directory); 
 		getchar(); return; 
 	}
+
+	int dir_file = openat(dir, read_filename, O_RDONLY | O_DIRECTORY);
+	if (dir_file >= 0) { close(dir_file); errno = EISDIR; goto read_error; }
 	const int file = openat(dir, read_filename, O_RDONLY, 0);
 	if (file < 0) { 
-		perror("read openat file"); 
+		read_error: perror("read openat file"); 
 		printf("read_filename=%s ", read_filename); 
 		getchar(); return; 
 	}
@@ -574,7 +579,7 @@ static void sendc(void) {
 	else if (not strcmp(clipboard, "read")) read_file();
 	else if (not strcmp(clipboard, "save")) save_file();
 	else if (not strcmp(clipboard, "create")) create_file();
-	else if (not strcmp(clipboard, "new")) name_uniquely(	);
+	else if (not strcmp(clipboard, "new")) name_uniquely();
 	else if (not strcmp(clipboard, "dt")) insert_now();
 	else if (not strcmp(clipboard, "helpmodes")) print_help_message();
 	else if (not strcmp(clipboard, "helpcommands")) print_helpcommands_message();
@@ -583,7 +588,7 @@ static void sendc(void) {
 	else if (cliplength > 9 and not strncmp(clipboard, "location ", 9)) strlcpy(read_directory, clipboard + 9, sizeof read_directory);
 	else if (cliplength > 7 and not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
 	else if (cliplength > 7 and not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
-	else if (cliplength > 8 and not strncmp(clipboard, "execute ", 8)) execute(clipboard + 8);
+	else if (cliplength > 3 and not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
 	else if (cliplength > 5 and not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);
 	else { printf("unknown command: %s\n", clipboard); getchar(); }
 }
@@ -682,14 +687,53 @@ loop:	display();
 
 
 
+/*
 
 
 
 
+perform_directory_read:;
+	DIR* thisdir = fdopendir(dir_file);
+	struct dirent* entry = readdir(thisdir);
+
+	char* string = NULL;
+	size_t length = 0;
+
+	while (entry) {
+		char path[4096] = {0};
+
+		strlcpy(path, read_directory, sizeof path);
+		strlcat(path, "/", sizeof path);
+		strlcat(path, read_filename, sizeof path);
+		strlcat(path, "/", sizeof path);
+		strlcat(path, entry->d_name, sizeof path);
+
+		const size_t len = strlen(entry->d_name);
+		string = realloc(string, length + len + 1);
+		strlcpy(string + length, entry->d_name, len + 1);
+		length += len;
+
+		struct stat statbuf;
+		stat(path, &statbuf);
+		if (S_ISDIR(statbuf.st_mode)) {
+			string = realloc(string, length + 1);
+			string[length++] = '/';
+		}
+
+		string = realloc(string, length + 1);
+		string[length++] = 10;
+
+		entry = readdir(thisdir);
+	}
+	closedir(thisdir);
+	count = length;
+	text = string;
+	goto rest_of_stuff;
+	
+file_read:
 
 
-
-
+*/
 
 
 

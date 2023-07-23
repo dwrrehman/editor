@@ -1,0 +1,47 @@
+YAYYYYY i was able to create a new file, from the current one, just by doing 
+
+```
+	i u i l r           // this deletes the current file contents.     (move top, move bottom, cut)
+
+	t new r h r a t          // this issues the create new command, which names it something unique.
+
+	t create r h r a t      //   this creates the new file, saving it. 
+```
+
+
+so yeah, this seems to work really well actually! i am quiteeeee happy with how this whole thing is working so far. 
+
+	now, i want to do stuff that is devious. 
+
+
+
+		i want to tryto make the system overwrite a file that i had made,  in this directory, 
+
+
+							"by accident"     lol
+
+		i don't know what is going to happen
+
+		but i am going to try really hard to make do that lol. 
+
+
+				lets see if we are successful in that. 
+
+
+
+
+
+
+
+
+
+
+i honestly don't know if we are going to be 
+
+
+	but its worth a shot lol. 
+
+
+
+
+anyways. lets try it.

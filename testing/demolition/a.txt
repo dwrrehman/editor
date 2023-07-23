@@ -7,7 +7,7 @@
 #include <stdbool.h>
 #include <termios.h>
 #include <signal.h>
-#include <ctype.h>
+#include <ctype.h>        // hello?    this is a comment, that i am just putting here, because i don't know where else to put new text, lol. i think this should be fine, though, i think. idk. i guess we'll see lol.
 #include <sys/types.h>    
 #include <sys/ioctl.h>   
 typedef size_t nat;       
