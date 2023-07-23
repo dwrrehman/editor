@@ -20,6 +20,11 @@ yay
 .
 
 lets add the source code for the editor itself now!
+// lets add a single little line to this document, just to test things out, basically. 
+
+// its nothing major. just a small edit, really. lets try to save it, and then open a new document, actually. 
+
+
 
 #include <stdio.h>  // 2306202.165852:   a screen based simpler editor based on the ed-like one, uses a string ds, and is not modal. uses capital letters for commands! 
 #include <stdlib.h>
@@ -429,3 +434,53 @@ theres not really any subsitute for that.
 */
 ssxxxxxxxxxxsxxneneshnohentosenhtosnhtoesnhtoesnhtoenshotenqqqqqqqqqqqqnqpunpdqunhpunqdhpundd
 staticstaticstaticstaticstaticstaticstaticstaticstaticstaticstaticstaticstatic
+
+
+
+
+
+{ print_helpcommands_message(); print_help_message(); }    // currently trying to figure out how to use the editor still, lol. 
+
+					// i think i am getting good progress, though lol. so thats good. lets save this now. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,8 @@
+1202307226.205837
+this is another new file, that i am making. basically just to test the creation of a new
+file, and naming of this file, via the `new` and `create` commands. it should be pretty easy i think. 
+
+lets see if it actually works now. 
+
+it might not lol. but it probably will lol. 
+

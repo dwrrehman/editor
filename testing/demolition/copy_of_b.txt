@@ -15,3 +15,26 @@ yay.
 yayyyy
 
 
+
+
+
+1202307226.204947
+yayyyy that worked!!!
+
+
+todo: 
+	- allow for arguments for the execute command, and insert command       (i think this already does?)
+
+
+x	- make the working directory default for the location of a new file.
+
+
+x	-  test using the new and create commands one after another. lets trythat now, actually. 
+
+
+
+	- allow the creation of a new buffer, from an existing one, without actually invoking the editor again, or quitting it!!!!
+
+
+
+x	- make    dt     a keybind. bind it to     a-d      ie,    d    when in state == 1. 

@@ -269,6 +269,7 @@ static void insert_output(const char* input_command) {
 	}
 	pclose(f);
 	insert_string(string, length);
+	free(string);
 }
 
 static void read_file(void) {
@@ -288,13 +289,11 @@ static void read_file(void) {
 		printf("read_filename=%s ", read_filename); 
 		getchar(); return; 
 	}
-
 	count = (size_t) lseek(file, 0, SEEK_END);
 	text = malloc(count);
 	lseek(file, 0, SEEK_SET);
 	read(file, text, count);
-	close(file);
-	close(dir);
+	close(file); close(dir);
 	anchor = 0; cursor = 0; origin = 0; cursor_row = 0; cursor_column = 0;
 	clipboard = NULL; cliplength = 0;
 	mode &= ~inserting;
@@ -350,7 +349,6 @@ static void name_uniquely(void) {
 	srand((unsigned)time(0)); rand();
 	char datetime[32] = {0};
 	now(datetime);
-	snprintf(read_directory, sizeof read_directory, ".");
 	snprintf(read_filename, sizeof read_filename, "%x%x_%s.txt", rand(), rand(), datetime);
 }
 
@@ -445,8 +443,31 @@ static void create_process(char** args) {
 
 static void execute(char* command) {
 	printf("executing \"%s\"...\n", command);
+	const char* string = command;
+	const size_t length = strlen(command);
+	char** arguments = NULL;
+	size_t argument_count = 0;
+	size_t start = 0, argument_length = 0;
+	for (size_t index = 0; index < length; index++) {
+		if (string[index] != 10) {
+			if (not argument_length) start = index;
+			argument_length++; continue;
+		} else if (not argument_length) continue;
+	process_word:
+		arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+		arguments[argument_count++] = strndup(string + start, argument_length);
+		argument_length = 0;
+	}
+	if (argument_length) goto process_word;
+	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+	arguments[argument_count] = NULL;
+	printf("argv(argc=%lu):\n", argument_count);
+	for (size_t i = 0; i < argument_count; i++) {
+		printf("\targument#%lu: \"%s\"\n", i, arguments[i]);
+	}
+	printf("[end of args]\n");
 	tcsetattr(0, TCSAFLUSH, &terminal);
-	create_process((char*[]){command, NULL});
+	create_process(arguments);
 	configure_terminal();
 	printf("[finished]\n"); getchar();
 }
@@ -465,7 +486,7 @@ printf(
 "		if (state == 1) {" "\n"
 "			if (0) {}" "\n"
 "			else if (c == 'a') {} // none" "\n"
-"			else if (c == 'd') {}" "\n"
+"			else if (c == 'd') insert_now();" "\n"
 "			else if (c == 'r') save_file();" "\n"
 "			else if (c == 't') sendc();" "\n"
 "			else if (c == 's') paste();" "\n"
@@ -474,7 +495,7 @@ printf(
 "			else if (c == 'c') insert_output(\"pbpaste\");" "\n"
 "			else if (c == 'n') move_begin();" "\n"
 "			else if (c == 'u') move_top();" "\n"
-"			else if (c == 'p') {}" "\n"
+"			else if (c == 'p') { print_helpcommands_message(); print_help_message(); }" "\n"
 "			else if (c == 'i') {} // none" "\n"
 "			else if (c == 'e') move_end();" "\n"
 "			else if (c == 'o') {}" "\n"
@@ -506,9 +527,39 @@ printf(
 "		}" "\n"
 "		if (not (mode & selecting)) anchor = previous_cursor;" "\n"
  "\n"
+
 );
 getchar();
 
+}
+
+static void print_helpcommands_message(void) {
+printf(
+"	if (not clipboard) return;" "\n"
+"	if (not strcmp(clipboard, '')) { printf('(empty-test)\\n'); getchar(); }" "\n"
+"	else if (not strcmp(clipboard, 'discard and quit')) mode &= ~active;" "\n"
+"	else if (not strcmp(clipboard, 'print state')) { printf('%%lx:%%lu:%%lu:%%lu\\n', mode, count, cursor, anchor); getchar(); }" "\n"
+"	else if (not strcmp(clipboard, 'print read name')) { printf('%%s : %%s\\n', read_directory, read_filename); getchar(); }" "\n"
+"	else if (not strcmp(clipboard, 'print write name')) { printf('%%s : %%s\\n', write_directory, write_filename); getchar(); }" "\n"
+"	else if (not strcmp(clipboard, 'visual selections')) mode ^= visual_anchor;" "\n"
+"	else if (not strcmp(clipboard, 'visual split points')) mode ^= visual_splitpoint;" "\n"
+"	else if (not strcmp(clipboard, 'read')) read_file();" "\n"
+"	else if (not strcmp(clipboard, 'save')) save_file();" "\n"
+"	else if (not strcmp(clipboard, 'create')) create_file();" "\n"
+"	else if (not strcmp(clipboard, 'new')) name_uniquely();" "\n"
+"	else if (not strcmp(clipboard, 'dt')) insert_now();" "\n"
+"	else if (not strcmp(clipboard, 'helpmodes')) print_help_message();" "\n"
+"	else if (not strcmp(clipboard, 'helpcommands')) print_helpcommands_message();" "\n"
+"	else if (not strcmp(clipboard, 'help')) { print_helpcommands_message(); print_help_message(); }" "\n"
+"	else if (cliplength > 5 and not strncmp(clipboard, 'name ',  5)) strlcpy(read_filename, clipboard + 5, sizeof read_filename); " "\n"
+"	else if (cliplength > 9 and not strncmp(clipboard, 'location ', 9)) strlcpy(read_directory, clipboard + 9, sizeof read_directory);" "\n"
+"	else if (cliplength > 7 and not strncmp(clipboard, 'insert ', 7)) insert_output(clipboard + 7);" "\n"
+"	else if (cliplength > 7 and not strncmp(clipboard, 'change ', 7)) change_directory(clipboard + 7);" "\n"
+"	else if (cliplength > 8 and not strncmp(clipboard, 'execute ', 8)) execute(clipboard + 8);" "\n"
+"	else if (cliplength > 5 and not strncmp(clipboard, 'line ', 5)) jump_line(clipboard + 5);" "\n"
+"	else { printf('unknown command: %%s\\n', clipboard); getchar(); }" "\n"
+"\n");
+getchar();
 }
 
 static void sendc(void) {
@@ -523,9 +574,11 @@ static void sendc(void) {
 	else if (not strcmp(clipboard, "read")) read_file();
 	else if (not strcmp(clipboard, "save")) save_file();
 	else if (not strcmp(clipboard, "create")) create_file();
-	else if (not strcmp(clipboard, "new")) name_uniquely();
+	else if (not strcmp(clipboard, "new")) name_uniquely(	);
 	else if (not strcmp(clipboard, "dt")) insert_now();
-	else if (not strcmp(clipboard, "help")) print_help_message();
+	else if (not strcmp(clipboard, "helpmodes")) print_help_message();
+	else if (not strcmp(clipboard, "helpcommands")) print_helpcommands_message();
+	else if (not strcmp(clipboard, "help")) { print_helpcommands_message(); print_help_message(); }
 	else if (cliplength > 5 and not strncmp(clipboard, "name ",  5)) strlcpy(read_filename, clipboard + 5, sizeof read_filename); 
 	else if (cliplength > 9 and not strncmp(clipboard, "location ", 9)) strlcpy(read_directory, clipboard + 9, sizeof read_directory);
 	else if (cliplength > 7 and not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
@@ -543,10 +596,10 @@ int main(int argc, const char** argv) {
 	action_count = 1; 
 	mode = active | saved | inserting; 
 	char c = 0, p1 = 0, state = 0;
-	if (argc < 2) goto loop;
 	char cwd[4096] = {0};
 	getcwd(cwd, sizeof cwd);
 	strlcpy(read_directory, cwd, sizeof read_directory);
+	if (argc < 2) goto loop;
 	strlcpy(read_filename, argv[1], sizeof read_filename);
 	read_file();
 loop:	display();
@@ -562,7 +615,7 @@ loop:	display();
 		if (state == 1) {
 			if (0) {}
 			else if (c == 'a') {} // none
-			else if (c == 'd') {}
+			else if (c == 'd') insert_now();
 			else if (c == 'r') save_file();
 			else if (c == 't') sendc();
 			else if (c == 's') paste();
@@ -571,7 +624,7 @@ loop:	display();
 			else if (c == 'c') insert_output("pbpaste");
 			else if (c == 'n') move_begin();
 			else if (c == 'u') move_top();
-			else if (c == 'p') {}
+			else if (c == 'p') { print_helpcommands_message(); print_help_message(); }
 			else if (c == 'i') {} // none
 			else if (c == 'e') move_end();
 			else if (c == 'o') {}
