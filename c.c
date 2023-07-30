@@ -475,6 +475,7 @@ static void execute(char* command) {
 	create_process(arguments);
 	configure_terminal();
 	printf("[finished]\n"); getchar();
+	free(arguments);
 }
 
 static void print_help_message(void) {
@@ -614,7 +615,7 @@ loop:	display();
 		if (c == 17) mode &= ~inserting;
 		else if (c == 27) interpret_arrow_key();
 		else if (c == 127) delete(1);
-		else if (c == 'h' and p1 == 'r') { delete(1); mode &= ~inserting; c = 0; p1 = 0; }
+		else if (c == 'h' and p1 == 'r') { delete(1); mode &= ~inserting; c = 0; }
 		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c, 1);
 	} else {
 		if (state == 1) {
@@ -643,7 +644,7 @@ loop:	display();
 			else if (c == 'a') state = 1;
 			else if (c == 'd') delete(1);
 			else if (c == 'r') cut();
-			else if (c == 't') { mode |= inserting; c = 0; p1 = 0; } 
+			else if (c == 't') { mode |= inserting; c = 0; } 
 			else if (c == 's') { anchor = cursor; mode ^= selecting; }
 			else if (c == 'h') backwards();
 			else if (c == 'm') forwards();
