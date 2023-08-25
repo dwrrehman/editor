@@ -8,7 +8,17 @@ yay.
 
 
 
+#include <stdio.h>
+#include <string.h>
 
+int main() {
+
+	printf("%d\n", sizeof(unsigned long long));
+	// i think i like this way of text editing alot more, actually. i still have to do a ton of testing with it, of course. but yeah. pretty cool. yay. 
+
+	
+	
+}
 
 
 

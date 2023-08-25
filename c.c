@@ -1,6 +1,6 @@
-#include <stdio.h>  // 2306202.165852:  
-#include <stdlib.h> // a screen based simpler editor based on the ed-like one, 
-#include <string.h> // uses a string ds, and is modal. 
+#include <stdio.h>  // 202308255.160419:   a rewrite of the simplified editor, to be nonmodal, and even simpler. 
+#include <stdlib.h> 
+#include <string.h> 
 #include <fcntl.h>
 #include <unistd.h>
 #include <iso646.h>
@@ -11,169 +11,18 @@
 #include <ctype.h>
 #include <time.h>
 #include <sys/stat.h>
-#include <sys/types.h>    
-#include <dirent.h>
+#include <sys/types.h>
 #include <sys/ioctl.h>
-#include <sys/time.h>         // make   visual_anchor     do the thing in display    mode & selecting     display
-#include <sys/wait.h>         //   make visual_selections  to the thing in display   mode & visual_anchor   ie, switch them, and make
-typedef size_t nat;           //                           the anchor visualization toggable.
-static const nat active = 0x01, saved = 0x02, selecting = 0x04;
-
-
-
-/*
-
-	things i  want:
-
-		- better key binds:    similar to sublime for selecting text and moving cursor. 
-
-
-	x	- multiple clipboards..?........ hmmmm  or maybe we just use the global one lol. 
-					idk 
-
-
-
-
-
-	d	- default random/unique filename   for a new file.   rename it using the command-line.   don't reinvent something that works well.
-												too risky to do that    for renaming files. 
-													or just custom naming files in general.
-	d	- don't support opening of files from withint the editor itself.   thats just not neccessary. literally just close that file and open another one. its not that hard lol!!!
-
-
-		- remove some fancy features:
-
-		x	- being able to change directory of the process?..'
-		x	- being able to run a command?... ehh... idk.... maybeeeee.... hm........
-
-						i might leave that one. idk. kinda tricky. 
-
-
-		leave this one:    being able to paste the output of a command. thats useful. very. welll.... is it though? hm.... idk that it is... 
-
-				we probably need this one for pbpaste,  so i leave it i guess. 
-
-
-	
-	x	- simplify displaying:       try to get rid of the anchor idea...?   ideallyyyyyyy.
-
-		- always have visual split point enabled..  yeah. i think so. theres no reason to disable it. 
-
-		 -      ideallyyyyyyyyyyyyyyy don't have an insert mode.      do everything in insert mode.   using   capital letters for commands.   i thinkkkk
-
-					hm. yeah. lets try it. 
-
-						ORRRR we use control characters. thats another way to do it.   probably capital chars though. 
-
-
-		remove the top and bottom keybindings. thats just going to be done using a search.   
-
-
-
-				also, rework the way that forward and backward will work:       make it even simpler/faster to use. 
-
-
-								its going to be literally our main way of navigating. 
-
-
-					
-				
-				FIX MOVE UP AND MOVE DOWN           PLZ
-
-
-							WE JUST NEED TO FIX THESEEEE
-									PLZ
-
-
-					
-
-
-		- make read file done unconditionally at the start of the program,   and called NO WHERE ELSE.   inline the function plz. 
-
-		- SAME WITH CREATE:    inline the code to be at the start of the program, to create the new file (with a random-unique name, of course) if the user didnt supply any arguments to the call.   wait, should we actually not do this, and just have the save function detect if we havent saved it yet?
-					WAIT! yes!!!   instead, we will just fall back on the create function, actually.   yeah.  so if write fails,  then we create.   yes.   lets do that.   i like that. 
-
-
-		- make     cut()   do a     delete(1);       if the range is empty!!!   ???    or maybe not, idk.  actually no, i think we need both. 
-
-		
-
-		- make delete   ("127")      do a cut,   if the current selecting is nonempty. YESS
-							ie, more like sublime.   also rebind the SHIFT-arrow keys  to be selecting, instead of move begin and end. i think. idk. hm. 
-
-	
-
-
-
-
-
-
-
-so i think the final command set is:
-
-
-
-
-
-
-"			else if (c == 'r') save_file();" "\n"
-"			else if (c == 't') sendc();" "\n"
-"			else if (c == 's') paste();" "\n"
-"			else if (c == 'm') copy();" "\n"
-"			else if (c == 'c') insert_output(\"pbpaste\");" "\n"
-"			else if (c == 'n') move_begin();" "\n"
-"			else if (c == 'e') move_end();" "\n"
-"			else if (c == 'k') alternate();" "\n"
-
-
-"			else if (c == 'q') { if (mode & saved) mode &= ~active; }" "\n"
-"			else if (c == 's') { anchor = cursor; mode ^= selecting; }" "\n"
-"			else if (c == 'd') delete(1);" "\n"
-"			else if (c == 'r') cut();" "\n"
-"			else if (c == 'h') backwards();" "\n"
-"			else if (c == 'm') forwards();" "\n"
-"			else if (c == 'c') undo();" "\n"
-"			else if (c == 'n') move_left();" "\n"
-"			else if (c == 'u') move_word_left();" "\n"
-"			else if (c == 'p') move_word_right();" "\n"
-"			else if (c == 'e') move_up();" "\n"
-"			else if (c == 'o') move_right();" "\n"
-"			else if (c == 'l') move_down();" "\n"
-"			else if (c == 'k') redo();" "\n"
-"			else if (c == 27) interpret_arrow_key();" "\n"
-
-
-"	else if (not strcmp(clipboard, 'discard and quit')) mode &= ~active;" "\n"
-"	else if (not strcmp(clipboard, 'visual selections')) mode ^= visual_anchor;" "\n"
-"	else if (cliplength > 7 and not strncmp(clipboard, 'insert ', 7)) insert_output(clipboard + 7);" "\n"
-"	else if (cliplength > 7 and not strncmp(clipboard, 'change ', 7)) change_directory(clipboard + 7);" "\n"
-"	else if (cliplength > 8 and not strncmp(clipboard, 'execute ', 8)) execute(clipboard + 8);" "\n"
-"	else if (cliplength > 5 and not strncmp(clipboard, 'line ', 5)) jump_line(clipboard + 5);" "\n"
-
-"	else { printf('unknown command: %%s\\n', clipboard); getchar(); }" "\n"
-
-
-
-
-and then we have to rebind all of these,   and delete the   "inserting"   state bit.  but not the selecting bit, i think. 
-
-
-
-
-*/
-
-
-
-
-
-
-
+#include <sys/time.h>
+#include <sys/wait.h>
+typedef size_t nat;
 struct action {
 	char* text;
 	nat* children;
 	nat parent, choice, count, length, insert,
 	pre_cursor, post_cursor, pre_origin, post_origin, pre_saved, post_saved;
 };
+static const nat active = 0x01, saved = 0x02, selecting = 0x04;
 extern char** environ;
 static struct termios terminal;
 static struct winsize window;
@@ -190,24 +39,13 @@ static void display(void) {
 	char* screen = calloc(screen_size, 1);
 	memcpy(screen, "\033[?25l\033[H", 9);
 	nat length = 9, row = 0, column = 0, i = origin;
-
-
 	const nat begin = anchor < cursor ? anchor : cursor;
 	const nat end = anchor < cursor ? cursor : anchor;
-
-
 	if (anchor < origin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
 	for (; i < count; i++) {
 		if (i == cursor) { cursor_row = row; cursor_column = column; }
-		if (anchor < cursor) { 
-			if (i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
-			if (i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
-		} else { 
-			if (i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
-			if (i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
-		}
-		if ((mode & selecting) and i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
-		if ((mode & selecting) and i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[1m");
+		//if (i == begin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
+		//if (i == end) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
 		if (row >= window.ws_row) break;
 		char k = text[i];
 		if (k == 10) {
@@ -225,17 +63,10 @@ static void display(void) {
 			else if ((unsigned char) k >> 6 != 2 and k >= 32) column++;
 			screen[length++] = k;
 		}
-		if ((mode & selecting) and i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m");
-		if ((mode & selecting) and i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
 	}
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
-	if (anchor < cursor) { 
-		if (i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
-		if (i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
-	} else { 
-		if (i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
-		if (i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
-	}
+	//if (i == begin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
+	//if (i == end) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
 	while (row < window.ws_row) {
 		row++;
 		memcpy(screen + length, "\033[K", 3);
@@ -282,8 +113,15 @@ static void move_up(void) {
 	}
 }
 static void move_down(void) {
+	const nat save = cursor_row;
 	while (cursor < count) {
 		move_right();
+		
+		if (cursor < count and text[cursor] == 10) break;
+	}
+	while (cursor < count) {
+		move_right();
+		if (cursor < count and cursor_row >= save) break;
 		if (cursor < count and text[cursor] == 10) break;
 	}
 }
@@ -593,20 +431,15 @@ static void sendc(void) {
 }
 
 int main(int argc, const char** argv) {
-
 	struct sigaction action = {.sa_handler = handler}; 
 	sigaction(SIGINT, &action, NULL);
-
 	configure_terminal();
-
 	actions = calloc(1, sizeof(struct action));
 	action_count = 1;
 	mode = active | saved; 
-
 	char cwd[4096] = {0};
 	getcwd(cwd, sizeof cwd);
 	strlcpy(directory, cwd, sizeof directory);
-
 	if (argc < 2) {
 		srand((unsigned)time(0)); rand();
 		char datetime[32] = {0};
@@ -614,24 +447,18 @@ int main(int argc, const char** argv) {
 		snprintf(filename, sizeof filename, "%x%x_%s.txt", rand(), rand(), datetime);
 		goto loop;
 	}
-
 	strlcpy(filename, argv[1], sizeof filename);
-
 	const int dir = open(directory, O_RDONLY | O_DIRECTORY, 0);
 	if (dir < 0) { 
 		perror("read open directory"); 
-		printf("directory=%s ", directory); 
-		exit(1);
+		printf("directory=%s ", directory);  exit(1);
 	}
-
 	int df = openat(dir, filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
-
 	const int file = openat(dir, filename, O_RDONLY, 0);
 	if (file < 0) { 
 		read_error: perror("read openat file"); 
-		printf("filename=%s ", filename); 
-		exit(1);
+		printf("filename=%s ", filename);  exit(1);
 	}
 	count = (size_t) lseek(file, 0, SEEK_END);
 	text = malloc(count);
@@ -642,46 +469,49 @@ int main(int argc, const char** argv) {
 	clipboard = NULL; cliplength = 0;
 	actions = calloc(1, sizeof(struct action));
 	head = 0; action_count = 1;
-	
 	char c = 0;
-
 loop:	display();
 	read(0, &c, 1);
 	previous_cursor = cursor;
+
+	if (c == 127 or c == 'D') delete(1);
+
+	else if (c == 17 /*Q*/) { if (mode & saved) mode &= ~active; }
+	else if (c == 8  /*H*/) {}
+	else if (c == 18 /*R*/) {}
+
+	else if (c == 4  /*D*/) insert_now();
+	else if (c == 1  /*A*/) { read(0, &c, 1); insert(c, 1); }
+
+	else if (c == 24 /*X*/) redo();
+	else if (c == 26 /*Z*/) undo();
+	else if (c == 19 /*S*/) alternate();
 	
-	if (c == 'q') { if (mode & saved) mode &= ~active; }
 	else if (c == 27) interpret_arrow_key();
-	else if (c == 127 or c == 'd') delete(1);
-
-	else if (c == 's') { anchor = cursor; mode ^= selecting; }
-
-	else if (c == 'r') cut();
-	else if (c == 's') paste();
-	else if (c == 'm') copy();
-	else if (c == 'c') insert_output("pbpaste");
-	else if (c == 'd') insert_now();
 	
-	else if (c == 't') sendc();
-	else if (c == 'r') save_file();
-	
-	else if (c == 'c') undo();
-	else if (c == 'k') redo();
-	else if (c == 'k') alternate();
+	else if (c == 'Q') { if (mode & saved) mode &= ~active; }
+	else if (c == 'A') { anchor = cursor; mode ^= selecting; }
+	else if (c == 'R') cut();
+	else if (c == 'C') copy();
+	else if (c == 'W') paste();
+	else if (c == 'V') insert_output("pbpaste");
 
-	else if (c == 'h') backwards();
-	else if (c == 'm') forwards();
+	else if (c == 'T') sendc();
+	else if (c == 'S') save_file();
 
-	else if (c == 'n') move_left();
-	else if (c == 'u') move_word_left();
-	else if (c == 'p') move_word_right();
-	else if (c == 'n') move_begin();
-	else if (c == 'e') move_end();
-	else if (c == 'e') move_up();
-	else if (c == 'o') move_right();
-	else if (c == 'l') move_down();
+	else if (c == 'H') backwards();
+	else if (c == 'M') forwards();
+
+	else if (c == 'N') move_left();
+	else if (c == 'U') move_word_left();
+	else if (c == 'P') move_word_right();
+	else if (c == 'K') move_begin();
+	else if (c == 'I') move_end();
+	else if (c == 'E') move_up();
+	else if (c == 'O') move_right();
+	else if (c == 'L') move_down();
 
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c, 1);
-
 	if (not (mode & selecting)) anchor = previous_cursor;
 	if (mode & active) goto loop;
 	printf("\033[H\033[2J");
@@ -3498,6 +3328,199 @@ else if (not strcmp(clipboard, "print state")) { printf("%lx:%lu:%lu:%lu\n", mod
 else if (not strcmp(clipboard, "visual selections")) mode ^= visual_anchor;
 
 */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+	things i  want:
+
+		- better key binds:    similar to sublime for selecting text and moving cursor. 
+
+
+	x	- multiple clipboards..?........ hmmmm  or maybe we just use the global one lol. 
+					idk 
+
+
+
+
+
+	d	- default random/unique filename   for a new file.   rename it using the command-line.   don't reinvent something that works well.
+												too risky to do that    for renaming files. 
+													or just custom naming files in general.
+	d	- don't support opening of files from withint the editor itself.   thats just not neccessary. literally just close that file and open another one. its not that hard lol!!!
+
+
+		- remove some fancy features:
+
+		x	- being able to change directory of the process?..'
+		x	- being able to run a command?... ehh... idk.... maybeeeee.... hm........
+
+						i might leave that one. idk. kinda tricky. 
+
+
+		leave this one:    being able to paste the output of a command. thats useful. very. welll.... is it though? hm.... idk that it is... 
+
+				we probably need this one for pbpaste,  so i leave it i guess. 
+
+
+	
+	x	- simplify displaying:       try to get rid of the anchor idea...?   ideallyyyyyyy.
+
+		- always have visual split point enabled..  yeah. i think so. theres no reason to disable it. 
+
+		 -      ideallyyyyyyyyyyyyyyy don't have an insert mode.      do everything in insert mode.   using   capital letters for commands.   i thinkkkk
+
+					hm. yeah. lets try it. 
+
+						ORRRR we use control characters. thats another way to do it.   probably capital chars though. 
+
+
+		remove the top and bottom keybindings. thats just going to be done using a search.   
+
+
+
+				also, rework the way that forward and backward will work:       make it even simpler/faster to use. 
+
+
+								its going to be literally our main way of navigating. 
+
+
+					
+				
+				FIX MOVE UP AND MOVE DOWN           PLZ
+
+
+							WE JUST NEED TO FIX THESEEEE
+									PLZ
+
+
+					
+
+
+		- make read file done unconditionally at the start of the program,   and called NO WHERE ELSE.   inline the function plz. 
+
+		- SAME WITH CREATE:    inline the code to be at the start of the program, to create the new file (with a random-unique name, of course) if the user didnt supply any arguments to the call.   wait, should we actually not do this, and just have the save function detect if we havent saved it yet?
+					WAIT! yes!!!   instead, we will just fall back on the create function, actually.   yeah.  so if write fails,  then we create.   yes.   lets do that.   i like that. 
+
+
+		- make     cut()   do a     delete(1);       if the range is empty!!!   ???    or maybe not, idk.  actually no, i think we need both. 
+
+		
+
+		- make delete   ("127")      do a cut,   if the current selecting is nonempty. YESS
+							ie, more like sublime.   also rebind the SHIFT-arrow keys  to be selecting, instead of move begin and end. i think. idk. hm. 
+
+	
+
+
+
+
+
+
+
+so i think the final command set is:
+
+
+
+
+
+
+"			else if (c == 'r') save_file();" "\n"
+"			else if (c == 't') sendc();" "\n"
+"			else if (c == 's') paste();" "\n"
+"			else if (c == 'm') copy();" "\n"
+"			else if (c == 'c') insert_output(\"pbpaste\");" "\n"
+"			else if (c == 'n') move_begin();" "\n"
+"			else if (c == 'e') move_end();" "\n"
+"			else if (c == 'k') alternate();" "\n"
+
+
+"			else if (c == 'q') { if (mode & saved) mode &= ~active; }" "\n"
+"			else if (c == 's') { anchor = cursor; mode ^= selecting; }" "\n"
+"			else if (c == 'd') delete(1);" "\n"
+"			else if (c == 'r') cut();" "\n"
+"			else if (c == 'h') backwards();" "\n"
+"			else if (c == 'm') forwards();" "\n"
+"			else if (c == 'c') undo();" "\n"
+"			else if (c == 'n') move_left();" "\n"
+"			else if (c == 'u') move_word_left();" "\n"
+"			else if (c == 'p') move_word_right();" "\n"
+"			else if (c == 'e') move_up();" "\n"
+"			else if (c == 'o') move_right();" "\n"
+"			else if (c == 'l') move_down();" "\n"
+"			else if (c == 'k') redo();" "\n"
+"			else if (c == 27) interpret_arrow_key();" "\n"
+
+
+"	else if (not strcmp(clipboard, 'discard and quit')) mode &= ~active;" "\n"
+"	else if (not strcmp(clipboard, 'visual selections')) mode ^= visual_anchor;" "\n"
+"	else if (cliplength > 7 and not strncmp(clipboard, 'insert ', 7)) insert_output(clipboard + 7);" "\n"
+"	else if (cliplength > 7 and not strncmp(clipboard, 'change ', 7)) change_directory(clipboard + 7);" "\n"
+"	else if (cliplength > 8 and not strncmp(clipboard, 'execute ', 8)) execute(clipboard + 8);" "\n"
+"	else if (cliplength > 5 and not strncmp(clipboard, 'line ', 5)) jump_line(clipboard + 5);" "\n"
+
+"	else { printf('unknown command: %%s\\n', clipboard); getchar(); }" "\n"
+
+
+
+
+and then we have to rebind all of these,   and delete the   "inserting"   state bit.  but not the selecting bit, i think. 
+
+
+       // make   visual_anchor     do the thing in display    mode & selecting     display
+       //   make visual_selections  to the thing in display   mode & visual_anchor   ie, switch them, and make
+       //                           the anchor visualization toggable.
+ 	
+
+
+
+
+// 2306202.165852:  a screen based simpler editor based on the ed-like one, 
+// uses a string ds, and is modal. 
+
+
+
+//if ((mode & selecting) and i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m");
+		//if ((mode & selecting) and i == anchor) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
+		//if ((mode & selecting) and i == begin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
+		//if ((mode & selecting) and i == cursor) length += (nat) snprintf(screen + length, screen_size - length, "\033[1m");
+
+*/
+
 
 
 
