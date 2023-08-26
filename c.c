@@ -211,7 +211,7 @@ static void cut(void) {
 	cliplength = cursor - anchor;
 	clipboard = strndup(text + anchor, cliplength);
 	for (nat i = 0; i < cliplength; i++) delete(0);
-	anchor = cursor; previous_cursor = anchor;
+	anchor = cursor; previous_cursor = anchor; mode &= ~selecting;
 	new.insert = 0;
 	new.text = strdup(clipboard);
 	new.length = cliplength;
@@ -280,8 +280,7 @@ try_open:;
 			getchar(); return;
 		}
 		perror("write openat file");
-		printf("filename=%s ", filename);
-		getchar();
+		printf("filename=%s\n", filename);
 		flags = O_CREAT | O_WRONLY | O_TRUNC | O_EXCL;
 		m     = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 		goto try_open;
