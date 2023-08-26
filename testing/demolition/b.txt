@@ -16,11 +16,51 @@ int main() {
 	printf("%d\n", sizeof(unsigned long long));
 	// i think i like this way of text editing alot more, actually. i still have to do a ton of testing with it, of course. but yeah. pretty cool. yay. 
 
-	
+	char buffer[4096] = {0};
+	fgets(buffer, sizeof buffer, stdin);	
+	int n = atoi(buffer);
+	fgets(buffer, sizeof buffer, stdin);	
+	int m = atoi(buffer);
+
+	printf("m = %d, n = %d\n", m, n);
 	
 }
 
+/*
+	1202308255.185252	
 
 
 
+// wow, this editor is actually working so incredibly amazing so far!!
+	like, 
+	i am actually flabber gasted at how well this is working 
 
+
+			like, it is literally effortless to actaully use it.  
+			i am so incredibly happy with this!!!
+
+		we just need to figure out a way to be able to input capital letters, lol. ands we need to fix the move up and move down functions lol. 
+
+				those are literally the only two things that we have to do, in order to make the editor like genuinely usable, i think. 
+
+				pretty amazing, if you ask me. 
+
+					i love this, so much. 
+
+
+				gahhhhhhhhhhhh i love this so much!!
+							yeah capital letters have to happen at some point lol 
+					we need a way of inputting those. 
+								at least            somehowwwwwwww
+
+		so yeah 
+
+
+
+		hm 
+
+				god i love this 
+
+		i am so happy with it
+
+*/

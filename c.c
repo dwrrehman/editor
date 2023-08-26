@@ -41,11 +41,11 @@ static void display(void) {
 	nat length = 9, row = 0, column = 0, i = origin;
 	const nat begin = anchor < cursor ? anchor : cursor;
 	const nat end = anchor < cursor ? cursor : anchor;
-	if (anchor < origin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
+	if ((mode & selecting) and anchor < origin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
 	for (; i < count; i++) {
 		if (i == cursor) { cursor_row = row; cursor_column = column; }
-		//if (i == begin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
-		//if (i == end) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
+		if ((mode & selecting) and i == begin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
+		if ((mode & selecting) and i == end) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
 		if (row >= window.ws_row) break;
 		char k = text[i];
 		if (k == 10) {
@@ -65,8 +65,8 @@ static void display(void) {
 		}
 	}
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
-	//if (i == begin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
-	//if (i == end) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
+	if ((mode & selecting) and i == begin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
+	if ((mode & selecting) and i == end) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
 	while (row < window.ws_row) {
 		row++;
 		memcpy(screen + length, "\033[K", 3);
@@ -473,35 +473,28 @@ int main(int argc, const char** argv) {
 loop:	display();
 	read(0, &c, 1);
 	previous_cursor = cursor;
-
 	if (c == 127 or c == 'D') delete(1);
-
-	else if (c == 17 /*Q*/) { if (mode & saved) mode &= ~active; }
 	else if (c == 8  /*H*/) {}
 	else if (c == 18 /*R*/) {}
-
+	else if (c == 24 /*X*/) {}
+	else if (c == 26 /*Z*/) {}
+	else if (c == 17 /*Q*/) { if (mode & saved) mode &= ~active; }
 	else if (c == 4  /*D*/) insert_now();
 	else if (c == 1  /*A*/) { read(0, &c, 1); insert(c, 1); }
-
-	else if (c == 24 /*X*/) redo();
-	else if (c == 26 /*Z*/) undo();
 	else if (c == 19 /*S*/) alternate();
-	
 	else if (c == 27) interpret_arrow_key();
-	
 	else if (c == 'Q') { if (mode & saved) mode &= ~active; }
 	else if (c == 'A') { anchor = cursor; mode ^= selecting; }
 	else if (c == 'R') cut();
 	else if (c == 'C') copy();
 	else if (c == 'W') paste();
 	else if (c == 'V') insert_output("pbpaste");
-
 	else if (c == 'T') sendc();
 	else if (c == 'S') save_file();
-
 	else if (c == 'H') backwards();
 	else if (c == 'M') forwards();
-
+	else if (c == 'X') redo();
+	else if (c == 'Z') undo();
 	else if (c == 'N') move_left();
 	else if (c == 'U') move_word_left();
 	else if (c == 'P') move_word_right();
@@ -510,8 +503,8 @@ loop:	display();
 	else if (c == 'E') move_up();
 	else if (c == 'O') move_right();
 	else if (c == 'L') move_down();
-
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c, 1);
+
 	if (not (mode & selecting)) anchor = previous_cursor;
 	if (mode & active) goto loop;
 	printf("\033[H\033[2J");
