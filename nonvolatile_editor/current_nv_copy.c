@@ -1,5 +1,5 @@
-#include <stdio.h>  // 202308255.160419:   a rewrite of the simplified editor, to be nonmodal, and even simpler. 
-#include <stdlib.h> 
+#include <stdio.h>  // 202309074.165637:   
+#include <stdlib.h> //  another rewrite to make the editor simpler, and non-volatile- to never require saving. 
 #include <string.h> 
 #include <fcntl.h>
 #include <unistd.h>

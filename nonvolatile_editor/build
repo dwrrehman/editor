@@ -1,0 +1,25 @@
+#!/bin/zsh
+
+if [ "release" = "$1" ]; then
+	clang -Ofast nv.c -o editor
+
+
+elif [ "small" = "$1" ]; then
+	clang -Os nv.c -o editor	
+
+
+elif [ "clean" = "$1" ]; then
+	rm -rf editor
+	rm -rf editor.dSYM
+	rm -rf nv.plist
+
+elif [ "" = "$1" ]; then 
+	clang -g -O0 -Weverything -Wno-poison-system-directories -Wno-declaration-after-statement -fsanitize=address,undefined nv.c -o editor -ferror-limit=4
+
+elif [ "check" = "$1" ]; then 
+	clang -Weverything --analyze -Wno-declaration-after-statement -Wno-poison-system-directories nv.c
+
+
+else 
+	echo "build: unknown target: $1"
+fi
