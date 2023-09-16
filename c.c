@@ -24,7 +24,6 @@ static off_t cursor = 0, origin = 0, anchor = 0, count = 0;
 
 static size_t mode = 1, selecting = 1;
 
-
 //const off_t begin = anchor < cursor ? anchor : cursor;
 //const off_t end = anchor < cursor ? cursor : anchor;
 //if ((selecting) and anchor < origin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
@@ -49,7 +48,6 @@ static void display(void) {
 	nat row = 0, column = 0;
 	nat cursor_row = 0, cursor_column = 0;
 
-
 	origin = 0;
 
 	off_t i = origin;
@@ -63,7 +61,7 @@ static void display(void) {
 		char k = 0;
 		ssize_t n = read(file, &k, 1); i++;
 		if (n == 0) break;
-		if (n <= 0) { perror("read() syscall"); exit(1); }
+		if (n < 0) { perror("read() syscall"); exit(1); }
 
 		if (k == 10) {
 			column = 0; row++;
@@ -94,10 +92,6 @@ static void display(void) {
 	length += (nat) snprintf(screen + length, screen_size - length, "\033[K\033[%lu;%luH\033[?25h", cursor_row + 1, cursor_column + 1);
 	write(1, screen, length);
 	free(screen);
-
-	// lseek(file, cursor, SEEK_SET);
-	// lseek(file, cursor, SEEK_SET);
-	// lseek(file, -1, SEEK_CUR);
 }
 
 static void move_left(void) {
@@ -112,36 +106,88 @@ static void move_right(void) {
 
 static void move_begin(void) { 
 	while (cursor) {
-
 		char k = 0;
 		lseek(file, cursor - 1, SEEK_SET);
 		ssize_t n = read(file, &k, 1);
 		lseek(file, cursor, SEEK_SET);
 		if (n == 0) break;
-		if (n <= 0) { perror("read() syscall"); exit(1); }
+		if (n < 0) { perror("read() syscall"); exit(1); }
 		if (k == 10) break;
-
 		move_left();  
 	}
 }
 
-static void move_end(void) { 
+static void move_end(void) {
 	//while (cursor < count and text[cursor] != 10) move_right(); 
 }
 
 static void move_word_left(void) {
-	//do move_left();
-	//while (cursor and (not isalnum(text[cursor]) or isalnum(text[cursor - 1])));
+	move_left();
+	while (cursor) {
+
+		char here = 0, behind = 0;
+		
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &behind, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+			n = read(file, &here, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+		lseek(file, cursor, SEEK_SET);
+
+		if(not (
+		not isalnum(here) or 
+		isalnum(behind) 
+		)) break;
+		move_left();
+	}
+}
+
+static void move_word_right(void) {
+	move_right();
+	while (cursor < count) {
+
+		char here = 0, behind = 0;
+		
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &behind, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+			n = read(file, &here, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+		lseek(file, cursor, SEEK_SET);
+
+		if(not (
+		isalnum(here) or 
+		not isalnum(behind) 
+		)) break;
+		move_right();
+	}
+}
+
+/*
+static void move_word_right(void) {
+	//do move_right();
+	//while (cursor < count and (isalnum(text[cursor]) or not isalnum(text[cursor - 1])));
+}
+
+
+static void move_word_left(void) {
+	move_left();
+	while (cursor and (not isalnum(text[cursor]) or isalnum(text[cursor - 1])));
 }
 static void move_word_right(void) {
 	//do move_right(); 
 	//while (cursor < count and (isalnum(text[cursor]) or not isalnum(text[cursor - 1])));
 }
+*/
+
 
 static void move_up(void) {}
 
 static void move_down(void) {}
-
 
 static void get_count(void) {
 	struct stat s;
@@ -183,7 +229,7 @@ static void delete(void) {
 	move_left();
 }
 
-static void interpret_arrow_key(void) {
+static void interpret_arrow_key(void) {    // customize in Terminal.app  the escape sequences for all arrow key combinations we need!!
 	char c = 0; read(0, &c, 1);
 	if (false) {}
 	else if (c == 'b') move_word_left();
@@ -198,8 +244,8 @@ static void interpret_arrow_key(void) {
 		else if (c == 49) {
 			read(0, &c, 1); read(0, &c, 1); read(0, &c, 1); 
 			if (false) {}
-			//else if (c == 68) move_begin();
-			//else if (c == 67) move_end();
+			else if (c == 68) move_begin();
+			else if (c == 67) move_end();
 		}
 		//else { printf("2: found escape seq: %d\n", c); getchar(); }
 	} 
@@ -254,8 +300,6 @@ loop:	display();
 	if (c == 'Q') mode = 0;
 	else if (c == 27) interpret_arrow_key();
 	else if (c == 127) delete();
-	else if (c == 'B') move_begin();
-	else if (c == 'E') move_end();
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c);
 	if (mode) goto loop;
 	close(file); 
@@ -353,6 +397,16 @@ loop:	display();
 
 
 /*
+
+
+// lseek(file, cursor, SEEK_SET);
+	// lseek(file, cursor, SEEK_SET);
+	// lseek(file, -1, SEEK_CUR);
+
+
+
+
+
 
 	if (origin < cursor or not origin) goto decr;
 	origin--;
