@@ -25,7 +25,6 @@ static off_t cursor = 0, origin = 0, anchor = 0, count = 0;
 static size_t mode = 1, selecting = 1;
 
 
-
 //const off_t begin = anchor < cursor ? anchor : cursor;
 //const off_t end = anchor < cursor ? cursor : anchor;
 //if ((selecting) and anchor < origin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
@@ -49,6 +48,9 @@ static void display(void) {
 
 	nat row = 0, column = 0;
 	nat cursor_row = 0, cursor_column = 0;
+
+
+	origin = 0;
 
 	off_t i = origin;
 	lseek(file, origin, SEEK_SET);
@@ -93,61 +95,104 @@ static void display(void) {
 	write(1, screen, length);
 	free(screen);
 
-	lseek(file, cursor, SEEK_SET);
-}
-
-static inline void now(char datetime[32]) {
-	struct timeval t;
-	gettimeofday(&t, NULL);
-	struct tm* tm = localtime(&t.tv_sec);
-	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+	// lseek(file, cursor, SEEK_SET);
+	// lseek(file, cursor, SEEK_SET);
+	// lseek(file, -1, SEEK_CUR);
 }
 
 static void move_left(void) {
-	lseek(file, -1, SEEK_CUR);
+	if (not cursor) return;
 	cursor--;
 }
 
 static void move_right(void) {
+	if (cursor >= count) return;
 	cursor++;
-	lseek(file, cursor, SEEK_SET);
 }
 
-static void insert(char c) {
+static void move_begin(void) { 
+	while (cursor) {
 
+		char k = 0;
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &k, 1);
+		lseek(file, cursor, SEEK_SET);
+		if (n == 0) break;
+		if (n <= 0) { perror("read() syscall"); exit(1); }
+		if (k == 10) break;
+
+		move_left();  
+	}
+}
+
+static void move_end(void) { 
+	//while (cursor < count and text[cursor] != 10) move_right(); 
+}
+
+static void move_word_left(void) {
+	//do move_left();
+	//while (cursor and (not isalnum(text[cursor]) or isalnum(text[cursor - 1])));
+}
+static void move_word_right(void) {
+	//do move_right(); 
+	//while (cursor < count and (isalnum(text[cursor]) or not isalnum(text[cursor - 1])));
+}
+
+static void move_up(void) {}
+
+static void move_down(void) {}
+
+
+static void get_count(void) {
 	struct stat s;
 	fstat(file, &s);
 	count = s.st_size;
-	size_t size = (size_t) (count - cursor);
-	char* r = malloc(size + 1);
-	r[0] = c;
+}
 
-	read(file, r + 1, size);
+static void insert(char c) {
+	get_count();
+	const size_t size = (size_t) (count - cursor);
+	char* rest = malloc(size + 1); 
+	*rest = c;
+
 	lseek(file, cursor, SEEK_SET);
-	write(file, r, size + 1);
-	free(r);
-	move_right();
+	read(file, rest + 1, size);
+	lseek(file, cursor, SEEK_SET);
+	write(file, rest, size + 1);
 	fsync(file);
+	free(rest);
+
+	move_right();
 }
 
 static void delete(void) {
 	if (not cursor) return;
 
+	get_count();
+	const size_t size = (size_t) (count - cursor);
+	char* rest = malloc(size); 
+
+	lseek(file, cursor, SEEK_SET);
+	read(file, rest, size);
+	lseek(file, cursor - 1, SEEK_SET);
+	write(file, rest, size);
+	ftruncate(file, --count);
+	fsync(file);
+	free(rest);
 
 	move_left();
-	fsync(file);
 }
 
 static void interpret_arrow_key(void) {
 	char c = 0; read(0, &c, 1);
 	if (false) {}
-	//else if (c == 'b') move_word_left();
-	//else if (c == 'f') move_word_right();
+	else if (c == 'b') move_word_left();
+	else if (c == 'f') move_word_right();
 	else if (c == '[') {
 		read(0, &c, 1); 
 		if (false) {}
-		//else if (c == 'A') move_up(); 
-		//else if (c == 'B') move_down();
+		else if (c == 'A') move_up(); 
+		else if (c == 'B') move_down();
 		else if (c == 'C') move_right();
 		else if (c == 'D') move_left();
 		else if (c == 49) {
@@ -161,6 +206,12 @@ static void interpret_arrow_key(void) {
 	//else { printf("3: found escape seq: %d\n", c); getchar(); }
 }
 
+static inline void now(char datetime[32]) {
+	struct timeval t;
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+}
 
 int main(int argc, const char** argv) {
 
@@ -188,22 +239,23 @@ int main(int argc, const char** argv) {
 
 	else if (argc == 2) strlcpy(filename, argv[1], sizeof filename);
 	else exit(puts("usage error"));
-
 	const int dir = open(directory, O_RDONLY | O_DIRECTORY, 0);
 	if (dir < 0) { perror("read open directory"); exit(1); }
-
 	int df = openat(dir, filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
-
 	file = openat(dir, filename, flags, permission);
 	if (file < 0) { read_error: perror("read openat file"); exit(1); }
 
+	get_count();
 	char c = 0;
+
 loop:	display();
 	read(0, &c, 1);
 	if (c == 'Q') mode = 0;
 	else if (c == 27) interpret_arrow_key();
 	else if (c == 127) delete();
+	else if (c == 'B') move_begin();
+	else if (c == 'E') move_end();
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c);
 	if (mode) goto loop;
 	close(file); 
