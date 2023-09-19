@@ -16,50 +16,35 @@
 #include <sys/wait.h>
 
 typedef size_t nat;
-
 extern char** environ;
+static struct winsize window = {0};
 
-static int file = -1;                                               // , tree = -1;
-static off_t cursor = 0, origin = 0, anchor = 0, count = 0;
-
-static size_t mode = 1, selecting = 1;
-
-//const off_t begin = anchor < cursor ? anchor : cursor;
-//const off_t end = anchor < cursor ? cursor : anchor;
-//if ((selecting) and anchor < origin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m");
-//if ((selecting) and i == begin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
-//if ((selecting) and i == end) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
-//if ((selecting) and i == begin) length += (nat) snprintf(screen + length, screen_size - length, "\033[7m"); 
-//if ((selecting) and i == end) length += (nat) snprintf(screen + length, screen_size - length, "\033[0m"); 
-
+static int file = -1;  // , tree = -1;
+static off_t cursor = 0, origin = 0, count = 0, anchor = 0;
+static nat mode = 0, selecting = 0;
+static nat cursor_row = 0, cursor_column = 0, desired_column = 0;
 
 static void display(void) {
-
-	struct winsize window = {0};
 	ioctl(0, TIOCGWINSZ, &window);
-
 	const nat screen_size = window.ws_row * window.ws_col * 4;
-
 	char* screen = calloc(screen_size, 1);
 	memcpy(screen, "\033[?25l\033[H", 9);
-
 	nat length = 9;
-
 	nat row = 0, column = 0;
-	nat cursor_row = 0, cursor_column = 0;
-
-	origin = 0;
-
 	off_t i = origin;
 	lseek(file, origin, SEEK_SET);
 
+	const off_t begin = anchor < cursor ? anchor : cursor;
+	const off_t end = anchor < cursor ? cursor : anchor;
+	if (selecting and anchor < origin) { memcpy(screen + length, "\033[7m", 4); length += 4; }
+	ssize_t n = 0;
 	while (1) {
-
-		if (i == cursor) { cursor_row = row; cursor_column = column; }		
+		if (selecting and i == begin) { memcpy(screen + length, "\033[7m", 4); length += 4; }
+		if (selecting and i == end) { memcpy(screen + length, "\033[0m", 4); length += 4; }
+		if (i == cursor) { cursor_row = row; cursor_column = column; }
 		if (row >= window.ws_row) break;
-
 		char k = 0;
-		ssize_t n = read(file, &k, 1); i++;
+		n = read(file, &k, 1); i++;
 		if (n == 0) break;
 		if (n < 0) { perror("read() syscall"); exit(1); }
 
@@ -81,113 +66,20 @@ static void display(void) {
 	}
 
 	if (i == cursor) { cursor_row = row; cursor_column = column; }
-	
+
 	while (row < window.ws_row) {
 		row++;
 		memcpy(screen + length, "\033[K", 3);
 		length += 3; 
 		if (row < window.ws_row) screen[length++] = 10;
-	}
+	} 
 
+	if (cursor == count and not n and cursor_row == window.ws_row - 1 and not cursor_column)
+		length += (nat) snprintf(screen + length, screen_size - length, "\033[%d;1H\033[K", window.ws_row);
 	length += (nat) snprintf(screen + length, screen_size - length, "\033[K\033[%lu;%luH\033[?25h", cursor_row + 1, cursor_column + 1);
 	write(1, screen, length);
 	free(screen);
 }
-
-static void move_left(void) {
-	if (not cursor) return;
-	cursor--;
-}
-
-static void move_right(void) {
-	if (cursor >= count) return;
-	cursor++;
-}
-
-static void move_begin(void) { 
-	while (cursor) {
-		char k = 0;
-		lseek(file, cursor - 1, SEEK_SET);
-		ssize_t n = read(file, &k, 1);
-		lseek(file, cursor, SEEK_SET);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-		if (k == 10) break;
-		move_left();  
-	}
-}
-
-static void move_end(void) {
-	//while (cursor < count and text[cursor] != 10) move_right(); 
-}
-
-static void move_word_left(void) {
-	move_left();
-	while (cursor) {
-
-		char here = 0, behind = 0;
-		
-		lseek(file, cursor - 1, SEEK_SET);
-		ssize_t n = read(file, &behind, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-			n = read(file, &here, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-		lseek(file, cursor, SEEK_SET);
-
-		if(not (
-		not isalnum(here) or 
-		isalnum(behind) 
-		)) break;
-		move_left();
-	}
-}
-
-static void move_word_right(void) {
-	move_right();
-	while (cursor < count) {
-
-		char here = 0, behind = 0;
-		
-		lseek(file, cursor - 1, SEEK_SET);
-		ssize_t n = read(file, &behind, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-			n = read(file, &here, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-		lseek(file, cursor, SEEK_SET);
-
-		if(not (
-		isalnum(here) or 
-		not isalnum(behind) 
-		)) break;
-		move_right();
-	}
-}
-
-/*
-static void move_word_right(void) {
-	//do move_right();
-	//while (cursor < count and (isalnum(text[cursor]) or not isalnum(text[cursor - 1])));
-}
-
-
-static void move_word_left(void) {
-	move_left();
-	while (cursor and (not isalnum(text[cursor]) or isalnum(text[cursor - 1])));
-}
-static void move_word_right(void) {
-	//do move_right(); 
-	//while (cursor < count and (isalnum(text[cursor]) or not isalnum(text[cursor - 1])));
-}
-*/
-
-
-static void move_up(void) {}
-
-static void move_down(void) {}
 
 static void get_count(void) {
 	struct stat s;
@@ -195,29 +87,179 @@ static void get_count(void) {
 	count = s.st_size;
 }
 
+static void move_left_raw(void) {
+	get_count();
+	if (not cursor) return;
+	if (origin < cursor) goto decr;
+	origin--;
+loop: 	if (not origin) goto decr;
+	origin--;
+	char c = 0;
+	lseek(file, origin, SEEK_SET);
+	ssize_t n = read(file, &c, 1);
+	if (n == 0) return;
+	if (n < 0) { perror("read() syscall"); exit(1); }
+	if (c != 10) goto loop;
+	origin++;
+decr: 	cursor--;
+}
+
+static void move_right_raw(void) {
+	get_count();
+	if (cursor >= count) return;
+	char c = 0;
+	lseek(file, cursor, SEEK_SET);
+	ssize_t n = read(file, &c, 1);
+	if (n == 0) return;
+	if (n < 0) { perror("read() syscall"); exit(1); }
+	cursor++;
+	if (c == 10) { cursor_column = 0; cursor_row++; }
+	else if (c == 9) cursor_column += 8 - cursor_column % 8;
+	else if (cursor_column >= window.ws_col - 1) { cursor_column = 0; cursor_row++; }
+	else if ((unsigned char) c >> 6 != 2) cursor_column++; 
+	if (cursor_row < window.ws_row) return;
+	nat column = 0;
+loop: 	if (origin >= count) return;
+	lseek(file, origin, SEEK_SET);
+	n = read(file, &c, 1);
+	if (n == 0) return;
+	if (n < 0) { perror("read() syscall"); exit(1); }
+	origin++;
+	if (c == 10) goto done;
+	else if (c == 9) column += 8 - column % 8;
+	else if (column >= window.ws_col - 1) goto done;
+	else if ((unsigned char) c >> 6 != 2) column++;
+	goto loop; 
+done: 	cursor_row--;
+}
+
+static void move_left(void) {
+	move_left_raw();
+	desired_column = cursor_column;
+}
+
+static void move_right(void) {
+	move_right_raw();
+	desired_column = cursor_column;
+}
+
+static void move_up_begin(void) {
+	while (cursor) {
+		move_left();
+		char c = 0;
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &c, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+		if (cursor and c == 10) break;
+	}
+}
+
+static void move_down_end(void) {
+	while (cursor < count) {
+		move_right();
+		char c = 0;
+		lseek(file, cursor, SEEK_SET);
+		ssize_t n = read(file, &c, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+		if (cursor < count and c == 10) break;
+	}
+}
+
+static void move_up(void) {
+	
+}
+
+static void move_down(void) {
+
+	while (cursor < count) {
+		move_right_raw();
+		if (not cursor_column) break;
+	}
+	while (cursor < count) {
+		if (cursor_column >= desired_column) break;
+		char c = 0;
+		lseek(file, cursor, SEEK_SET);
+		ssize_t n = read(file, &c, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+		if (c == 10) break;
+		move_right_raw(); 
+	}
+}
+
+/*
+static void forwards(void) {
+	nat t = 0;
+	loop: if (t == cliplength or cursor >= count) return;
+	if (text[cursor] != clipboard[t]) t = 0; else t++;
+	move_right(); 
+	goto loop;
+}
+
+static void backwards(void) {
+	nat t = cliplength;
+	loop: if (not t or not cursor) return;
+	move_left(); t--; 
+	if (text[cursor] != clipboard[t]) t = cliplength;
+	goto loop;
+}
+*/
+
+static void move_word_left(void) {
+	move_left();
+	while (cursor) {
+		char here = 0, behind = 0;
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &behind, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+			n = read(file, &here, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+
+		if (not (not isalnum(here) or isalnum(behind))) break;
+		move_left();
+	}
+}
+
+static void move_word_right(void) {
+	move_right();
+	while (cursor < count) {
+		char here = 0, behind = 0;
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &behind, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+			n = read(file, &here, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+
+		if (not (isalnum(here) or not isalnum(behind))) break;
+		move_right();
+	}
+}
+
 static void insert(char c) {
 	get_count();
 	const size_t size = (size_t) (count - cursor);
 	char* rest = malloc(size + 1); 
 	*rest = c;
-
 	lseek(file, cursor, SEEK_SET);
 	read(file, rest + 1, size);
 	lseek(file, cursor, SEEK_SET);
 	write(file, rest, size + 1);
 	fsync(file);
 	free(rest);
-
 	move_right();
 }
 
 static void delete(void) {
 	if (not cursor) return;
-
 	get_count();
 	const size_t size = (size_t) (count - cursor);
 	char* rest = malloc(size); 
-
 	lseek(file, cursor, SEEK_SET);
 	read(file, rest, size);
 	lseek(file, cursor - 1, SEEK_SET);
@@ -225,7 +267,6 @@ static void delete(void) {
 	ftruncate(file, --count);
 	fsync(file);
 	free(rest);
-
 	move_left();
 }
 
@@ -234,26 +275,26 @@ static void interpret_arrow_key(void) {    // customize in Terminal.app  the esc
 	if (false) {}
 	else if (c == 'b') move_word_left();
 	else if (c == 'f') move_word_right();
+	else if (c == 'd') move_down_end();
+	else if (c == 'u') move_up_begin();
 	else if (c == '[') {
 		read(0, &c, 1); 
 		if (false) {}
 		else if (c == 'A') move_up(); 
 		else if (c == 'B') move_down();
-		else if (c == 'C') move_right();
+		else if (c == 'C') move_right(); 
 		else if (c == 'D') move_left();
 		else if (c == 49) {
 			read(0, &c, 1); read(0, &c, 1); read(0, &c, 1); 
 			if (false) {}
-			else if (c == 68) move_begin();
-			else if (c == 67) move_end();
+			else if (c == 68) { anchor = cursor; selecting = not selecting; }
+			else if (c == 67) {}
 		}
-		//else { printf("2: found escape seq: %d\n", c); getchar(); }
 	} 
-	//else { printf("3: found escape seq: %d\n", c); getchar(); }
 }
 
 static inline void now(char datetime[32]) {
-	struct timeval t;
+	struct timeval t = {0};
 	gettimeofday(&t, NULL);
 	struct tm* tm = localtime(&t.tv_sec);
 	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
@@ -267,13 +308,11 @@ int main(int argc, const char** argv) {
 	copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSAFLUSH, &copy);
 
-	char filename[4096] = {0};
-	char directory[4096] = {0};
+	char filename[4096] = {0}, directory[4096] = {0};
 	getcwd(directory, sizeof directory);
 
 	int flags = O_RDWR;
 	mode_t permission = 0;
-
 	if (argc < 2) {
 		srand((unsigned)time(0)); rand();
 		char datetime[32] = {0};
@@ -294,6 +333,7 @@ int main(int argc, const char** argv) {
 
 	get_count();
 	char c = 0;
+	mode = 1;
 
 loop:	display();
 	read(0, &c, 1);
@@ -350,11 +390,44 @@ loop:	display();
 
 
 
+/*
+
+ // todo: make this move up visual lines properly, not skipping the origin to the next logical line. 
+
+
+
+	todos:
+
+	x	- make move_right and move_left move the origin as well   up and down   visual lines.   
+				 thats the secret building block that everything builds off of. 
+
+
+		- make move_right and move_left go up and down visual lines.
+
+		- make move_up and move_down use visual lines as well. 
+
+
+		- have very good support for visual movement on softwrapped lines. 
+
+	x	- have very good support for displaying softwrapped lines. 
 
 
 
 
 
+		- make smooth scrolling a thing!!!! use terminal sequences to print just what you need to print in order to see the next line scroll!!!
+
+
+					- on second thought:      we should acttually just discard the mouse/trackpad entirely. 
+
+									no support for anything related to the mouse, 
+
+									this includes smooth scrolling?.. hm...... hm...
+
+
+
+
+*/
 
 
 
@@ -397,6 +470,230 @@ loop:	display();
 
 
 /*
+static void move_begin(void) { 
+	while (cursor) {
+		char k = 0;
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &k, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+		if (k == 10) break;
+		move_left();  
+	}
+}
+
+static void move_end(void) {
+	while (cursor < count) {
+		char k = 0;
+		lseek(file, cursor, SEEK_SET);
+		ssize_t n = read(file, &k, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+		if (k == 10) break;
+		move_right(); 
+	}
+}
+
+
+
+
+
+
+
+
+
+
+// if (cursor_column >= desired_column) break; // and cursor_row >= desired_row// 
+
+
+// if (origin_s == origin or save == cursor_row)
+
+
+
+
+
+// const	 nat origin_s = origin;	
+	// const nat save = cursor_row;
+	// const nat desired_row = cursor_row < window.ws_row - 1 ? cursor_row + 1 : cursor_row;
+	//if (cursor_row < window.ws_row - 1 and cursor_row >= desired_row) break;
+
+
+
+
+
+
+
+
+
+
+static void move_left(void) {
+	if (not cursor) return;
+	if (origin < cursor) goto decr;
+
+	
+	
+
+
+
+decr: 	cursor--;
+}
+
+
+
+static void move_left(void) {
+	if (not cursor) return;
+
+	if (origin < cursor) goto decr;
+	origin--;
+e: 	if (not origin) goto decr;
+	origin--;
+	if (text[origin] != 10) goto e;
+	origin++;
+
+decr: 	cursor--;
+}
+
+
+static void move_right(void) {
+	if (cursor >= count) return;
+	char c = text[cursor++];
+	if (c == 10) { cursor_column = 0; cursor_row++; }
+	else if (c == 9) cursor_column += 8 - cursor_column % 8;
+	else if (cursor_column >= window.ws_col - 1) { cursor_column = 0; cursor_row++; }
+	else if ((unsigned char) c >> 6 != 2) cursor_column++; 
+	if (cursor_row < window.ws_row) return;
+	nat column = 0;
+	l: if (origin >= count) return;
+	c = text[origin++];
+	if (c == 10) goto done;
+	else if (c == 9) column += 8 - column % 8;
+	else if (column >= window.ws_col - 1) goto done;
+	else if ((unsigned char) c >> 6 != 2) column++;
+	goto l; done: cursor_row--;
+}
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+
+
+
+static void move_begin(void) { 
+	while (cursor) {
+		char k = 0;
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &k, 1);
+		lseek(file, cursor, SEEK_SET);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+		if (k == 10) break;
+		move_left();  
+	}
+}
+
+static void move_end(void) {
+	while (cursor < count and text[cursor] != 10) move_right(); 
+}
+
+static void move_word_left(void) {
+	move_left();
+	while (cursor) {
+
+		char here = 0, behind = 0;
+		
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &behind, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+			n = read(file, &here, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+		lseek(file, cursor, SEEK_SET);
+
+		if(not (
+		not isalnum(here) or 
+		isalnum(behind) 
+		)) break;
+		move_left();
+	}
+}
+
+static void move_word_right(void) {
+	move_right();
+	while (cursor < count) {
+
+		char here = 0, behind = 0;
+		
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &behind, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+			n = read(file, &here, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+		lseek(file, cursor, SEEK_SET);
+
+		if(not (
+		isalnum(here) or 
+		not isalnum(behind) 
+		)) break;
+		move_right();
+	}
+}
+
+static void move_word_right(void) {
+	//do move_right();
+	//while (cursor < count and (isalnum(text[cursor]) or not isalnum(text[cursor - 1])));
+}
+
+
+static void move_word_left(void) {
+	move_left();
+	while (cursor and (not isalnum(text[cursor]) or isalnum(text[cursor - 1])));
+}
+static void move_word_right(void) {
+	//do move_right(); 
+	//while (cursor < count and (isalnum(text[cursor]) or not isalnum(text[cursor - 1])));
+}
+
+
+static void move_up(void) {}
+
+static void move_down(void) {}
+
+
+
+
 
 
 // lseek(file, cursor, SEEK_SET);
@@ -1197,6 +1494,23 @@ static void insert(char c) {
 
 
 
+
+
+
+
+
+
+
+char c = 0;
+		lseek(file, cursor, SEEK_SET);
+		ssize_t n = read(file, &c, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+		if (c == 10) break;
 */
+
+
+
+
 
 
