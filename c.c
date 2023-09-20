@@ -167,6 +167,40 @@ static void move_down_end(void) {
 	}
 }
 
+static void move_word_left(void) {
+	move_left();
+	while (cursor) {
+		char here = 0, behind = 0;
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &behind, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+			n = read(file, &here, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+
+		if (not (not isalnum(here) or isalnum(behind))) break;
+		move_left();
+	}
+}
+
+static void move_word_right(void) {
+	move_right();
+	while (cursor < count) {
+		char here = 0, behind = 0;
+		lseek(file, cursor - 1, SEEK_SET);
+		ssize_t n = read(file, &behind, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+			n = read(file, &here, 1);
+		if (n == 0) break;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+
+		if (not (isalnum(here) or not isalnum(behind))) break;
+		move_right();
+	}
+}
+
 static void move_up(void) {
 	
 }
@@ -206,40 +240,6 @@ static void backwards(void) {
 	goto loop;
 }
 */
-
-static void move_word_left(void) {
-	move_left();
-	while (cursor) {
-		char here = 0, behind = 0;
-		lseek(file, cursor - 1, SEEK_SET);
-		ssize_t n = read(file, &behind, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-			n = read(file, &here, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-
-		if (not (not isalnum(here) or isalnum(behind))) break;
-		move_left();
-	}
-}
-
-static void move_word_right(void) {
-	move_right();
-	while (cursor < count) {
-		char here = 0, behind = 0;
-		lseek(file, cursor - 1, SEEK_SET);
-		ssize_t n = read(file, &behind, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-			n = read(file, &here, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-
-		if (not (isalnum(here) or not isalnum(behind))) break;
-		move_right();
-	}
-}
 
 static void insert(char c) {
 	get_count();
@@ -307,6 +307,7 @@ int main(int argc, const char** argv) {
 	struct termios copy = terminal; 
 	copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSAFLUSH, &copy);
+	write(1, "\033[?1049h", 8);
 
 	char filename[4096] = {0}, directory[4096] = {0};
 	getcwd(directory, sizeof directory);
@@ -344,7 +345,7 @@ loop:	display();
 	if (mode) goto loop;
 	close(file); 
 	close(dir);
-	printf("\033[H\033[2J"); 	// todo: make this use the alt screen!
+	write(1, "\033[?1049l", 8);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
 
@@ -391,6 +392,22 @@ loop:	display();
 
 
 /*
+
+
+
+if (not fuzz) {
+		write(1, "\033[?1049h\033[?1000h\033[7l", 20);
+	} 
+
+
+	if (not fuzz) {
+		write(1, "\033[?1049l\033[?1000l\033[7h", 20);
+	}
+
+
+
+
+
 
  // todo: make this move up visual lines properly, not skipping the origin to the next logical line. 
 
