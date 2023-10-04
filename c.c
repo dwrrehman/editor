@@ -15,9 +15,6 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 
-// awesome reference for escape sequences:
-// https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
-
 typedef size_t nat;
 static const nat active = 0x01, inserting = 0x02, selecting = 0x04, unused0 = 0x08;
 
@@ -442,8 +439,6 @@ int main(int argc, const char** argv) {
 
 
 
-
-
 	struct termios terminal;
 	tcgetattr(0, &terminal);
 	struct termios copy = terminal; 
@@ -572,6 +567,11 @@ loop:	display();
 
 
 
+
+
+
+// awesome reference for escape sequences:
+// https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
 
 
 

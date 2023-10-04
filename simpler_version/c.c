@@ -14,14 +14,13 @@
 #include <sys/time.h>
 #include <sys/wait.h>
 
-extern char** environ;
+typedef size_t nat;
 
+extern char** environ;
 static char active = 0x01, inserting = 0x02;
-
-extern char** environ;
 static int file = -1;//, tree = -1;
 static int mode = 0;
-static off_t cursor = 0, count = 0; 
+static off_t cursor = 0, count = 0, anchor = 0;
 
 int main(int argc, const char** argv) {
 
@@ -57,31 +56,33 @@ int main(int argc, const char** argv) {
 	terminal.c_cc[VKILL]   = _POSIX_VDISABLE;
 	terminal.c_cc[VWERASE] = _POSIX_VDISABLE;
 	terminal.c_cc[VQUIT]   = _POSIX_VDISABLE;
+	terminal.c_cc[VEOL]    = _POSIX_VDISABLE;
+	tcsetattr(0, TCSAFLUSH, &terminal);
 
 	struct stat s;
 	fstat(file, &s);
 	count = s.st_size;
 
+	anchor = 0;
+	cursor = count;
+
 	char buffer[32] = {0};
-	mode = active;
+	mode = active | inserting;
 
-exiti:
-	mode &= ~inserting;
-	terminal.c_cc[VEOL] = ' ';
-	tcsetattr(0, TCSAFLUSH, &terminal);
-	
-loop:;	ssize_t n = read(0, buffer, sizeof buffer);
+sw:	mode ^= inserting;
+	write(1, mode & inserting ? "\n" : ".", 1);
+loop:;	ssize_t nn = read(0, buffer, sizeof buffer);
 
-	if (n < 0) { perror("read"); exit(errno); } 
-	else if (n == 0) goto exiti;
+	if (nn < 0) { perror("read"); exit(errno); } 
+	else if (nn == 0) goto sw;
+	nat n = (size_t) nn;
 
 	if (mode & inserting) {
-		printf("inserting: \"%.*s\"\n", (int) n, buffer);
-		if (n == 4 and not memcmp(buffer, "quit", 4)) goto exiti;
+		if (n == 5 and not memcmp(buffer, "adrt\n", 5)) goto sw;
 		fstat(file, &s);
 		count = s.st_size;
-		const size_t length = (size_t) n;
-		const size_t size = (size_t) (count - cursor);
+		const nat length = n;
+		const off_t size = count - cursor;
 		char* rest = malloc(size + length); 
 		memcpy(rest, buffer, length);
 		lseek(file, cursor, SEEK_SET);
@@ -94,37 +95,142 @@ loop:;	ssize_t n = read(0, buffer, sizeof buffer);
 		free(rest);
 		goto loop;
 	} 
-	const char c = *buffer;
-	if (c == 'q') mode = 0;
 
-	else if (c == 't') {
-		mode |= inserting;
-		terminal.c_cc[VEOL] = _POSIX_VDISABLE;
-		tcsetattr(0, TCSAFLUSH, &terminal);
-		write(1, "\n", 1);
-		goto loop;
+	     if (n == 5 and not memcmp(buffer, "quit\n", n)) mode = 0;
+	else if (n == 7 and not memcmp(buffer, "insert\n", n)) goto sw;
+	else if (n == 7 and not memcmp(buffer, "anchor\n", n)) anchor = cursor;
+	else if (n == 6 and not memcmp(buffer, "debug\n", n)) printf("%llu %llu %llu\n", cursor, anchor, count); 
+
+	else if (n == 7 and not memcmp(buffer, "delete\n", n)) {
+		
+		fstat(file, &s);
+		count = s.st_size;
+		if (anchor > count) anchor = count;
+		if (cursor > count) cursor = count;
+		if (anchor > cursor) { off_t temp = anchor; anchor = cursor; cursor = temp; }
+		const off_t length = cursor - anchor;
+
+		const off_t size = count - cursor;
+		char* rest = malloc(size);
+		lseek(file, cursor, SEEK_SET);
+		read(file, rest, size);
+		lseek(file, cursor - length, SEEK_SET);
+		write(file, rest, size);
+		count -= length;
+		ftruncate(file, count);
+		fsync(file);
+		free(rest);
+		cursor = anchor;
+
+	} else if (n == 6 and not memcmp(buffer, "print\n", n)) {
+
+		fstat(file, &s);
+		count = s.st_size;
+		if (anchor > count) anchor = count;
+		if (cursor > count) cursor = count;
+		const off_t begin = anchor < cursor ? anchor : cursor;
+		const off_t end   = anchor < cursor ? cursor : anchor;
+
+		char* screen = malloc(end - begin);
+		lseek(file, begin, SEEK_SET);
+		read(file, screen, end - begin);
+		write(1, screen, end - begin);
 	}
 
-	else if (c == 'd') { 		// display
-		printf("display command!\n");
-	}
-	else if (c == 's') { 		// search
+	else if (*buffer == 't') {
+		if (buffer[n - 1] == 10) n--;
+		const char* clipboard = buffer + 1;
+		const nat cliplength = n - 1;
+		
+		nat t = 0;
+		sloop: if (t == cliplength or cursor >= count) goto sdone;
 
-		printf("search command!\n");
-		/*static void forwards(void) {
-			nat t = 0;
-			loop: if (t == cliplength or cursor >= count) return;
-			if (text[cursor] != clipboard[t]) t = 0; else t++;
-			move_right(); 
-			goto loop;
-		}*/
+		char cc = 0;
+		lseek(file, cursor, SEEK_SET);
+		n = read(file, &cc, 1);
+		if (n == 0) goto bdone;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+
+		if (cc != clipboard[t]) t = 0; else t++;
+		cursor++;
+		goto sloop;
+		sdone:;
 	} 
+
+	else if (*buffer == 'r') {
+
+		if (buffer[n - 1] == 10) n--;
+		const char* clipboard = buffer + 1;
+		const nat cliplength = n - 1;
+		
+		nat t = cliplength;
+		bloop: if (not t or not cursor) goto bdone;
+		cursor--; t--; 
+				
+		char cc = 0;
+		lseek(file, cursor, SEEK_SET);
+		n = read(file, &cc, 1);
+		if (n == 0) goto bdone;
+		if (n < 0) { perror("read() syscall"); exit(1); }
+
+		if (cc != clipboard[t]) t = cliplength;
+		goto bloop;
+		bdone:;	
+	} 
+
 	else write(1, "?\n", 2);
 	if (mode) goto loop;
 	close(file);
 	close(dir);
 	tcsetattr(0, TCSAFLUSH, &original);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
