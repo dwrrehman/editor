@@ -16,20 +16,70 @@
 #include <sys/wait.h>
 
 typedef size_t nat;
-static const nat active = 0x01, inserting = 0x02, selecting = 0x04, unused0 = 0x08;
-
+static const nat active = 0x01, inserting = 0x02, selecting = 0x04;
 extern char** environ;
 static struct winsize window = {0};
-
 static int file = -1, tree = -1;
 static off_t cursor = 0, origin = 0, count = 0, anchor = 0;
 static nat mode = 0;
 static nat cursor_row = 0, cursor_column = 0, desired_column = 0;
+static char* screen = NULL;
+static nat screen_size = 0;
+
+
+
+static nat display_mode = 0;
+
+
+	/*		TODO: implement this:
+	---------------------------------------------------------------
+
+
+			0 means full refresh,
+
+	 		1 means partial refresh after cursor, 
+
+			2 means just update cursor position, 
+
+			3 means scroll screen downwards, 
+
+			4 means scroll means scroll upwards. 
+
+
+	*/
+
+
+
+
+static void get_count(void) {
+	struct stat s;
+	fstat(file, &s);
+	count = s.st_size;
+}
+
+static char at(off_t atc) {
+	char c = 0;
+	lseek(file, atc, SEEK_SET);
+	ssize_t n = read(file, &c, 1);
+	if (n == 0) return 0;
+	if (n != 1) { perror("at read"); exit(1); }
+	return c;
+}
+
+static char next(void) {
+	char c = 0;
+	ssize_t n = read(file, &c, 1);
+	if (n == 0) return 0;
+	if (n != 1) { perror("next read"); exit(1); }
+	return c;
+}
 
 static void display(void) {
+
 	ioctl(0, TIOCGWINSZ, &window);
-	const nat screen_size = window.ws_row * window.ws_col * 4;
-	char* screen = calloc(screen_size, 1);
+	const nat new_size = 9 + 32 + window.ws_row * (window.ws_col + 5) * 4;
+	if (new_size != screen_size) { screen = realloc(screen, screen_size); display_mode = 0; }
+
 	memcpy(screen, "\033[?25l\033[H", 9);
 	nat length = 9;
 	nat row = 0, column = 0;
@@ -39,16 +89,15 @@ static void display(void) {
 	const off_t begin = anchor < cursor ? anchor : cursor;
 	const off_t end = anchor < cursor ? cursor : anchor;
 	if ((mode & selecting) and anchor < origin) { memcpy(screen + length, "\033[7m", 4); length += 4; }
-	ssize_t n = 0;
+	bool asht = false;
 	while (1) {
 		if ((mode & selecting) and i == begin) { memcpy(screen + length, "\033[7m", 4); length += 4; }
 		if ((mode & selecting) and i == end) { memcpy(screen + length, "\033[0m", 4); length += 4; }
 		if (i == cursor) { cursor_row = row; cursor_column = column; }
 		if (row >= window.ws_row) break;
-		char k = 0;
-		n = read(file, &k, 1); i++;
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
+		char k = next();
+		if (not k) { asht = true; break; }
+		i++;
 
 		if (k == 10) {
 			column = 0; row++;
@@ -76,8 +125,7 @@ static void display(void) {
 		if (row < window.ws_row) screen[length++] = 10;
 	} 
 
-	if (	cursor == count and 
-		not n and 
+	if (	cursor == count and asht and
 		cursor_row == window.ws_row - 1 and 
 		not cursor_column
 	)
@@ -97,52 +145,43 @@ static void display(void) {
 	);
 
 	write(1, screen, length);
-	free(screen);
 }
 
-static void get_count(void) {
-	struct stat s;
-	fstat(file, &s);
-	count = s.st_size;
-}
 
 static void move_left_raw(void) {
 	get_count();
 	if (not cursor) return;
+
 	if (origin < cursor) goto decr;
 	origin--;
 loop: 	if (not origin) goto decr;
 	origin--;
-	char c = 0;
-	lseek(file, origin, SEEK_SET);
-	ssize_t n = read(file, &c, 1);
-	if (n == 0) return;
-	if (n < 0) { perror("read() syscall"); exit(1); }
+	char c = at(origin);
+	if (not c) return;
 	if (c != 10) goto loop;
 	origin++;
+
 decr: 	cursor--;
 }
 
 static void move_right_raw(void) {
 	get_count();
 	if (cursor >= count) return;
-	char c = 0;
-	lseek(file, cursor, SEEK_SET);
-	ssize_t n = read(file, &c, 1);
-	if (n == 0) return;
-	if (n < 0) { perror("read() syscall"); exit(1); }
+	char c = at(cursor);
+	if (not c) return;
 	cursor++;
 	if (c == 10) { cursor_column = 0; cursor_row++; }
 	else if (c == 9) cursor_column += 8 - cursor_column % 8;
 	else if (cursor_column >= window.ws_col - 1) { cursor_column = 0; cursor_row++; }
 	else if ((unsigned char) c >> 6 != 2) cursor_column++; 
-	if (cursor_row < window.ws_row) return;
+	if (cursor_row < window.ws_row) {
+		
+		return;
+	}
 	nat column = 0;
 loop: 	if (origin >= count) return;
-	lseek(file, origin, SEEK_SET);
-	n = read(file, &c, 1);
-	if (n == 0) return;
-	if (n < 0) { perror("read() syscall"); exit(1); }
+	c = at(origin);
+	if (not c) return;
 	origin++;
 	if (c == 10) goto done;
 	else if (c == 9) column += 8 - column % 8;
@@ -165,11 +204,8 @@ static void move_right(void) {
 static void move_up_begin(void) {
 	while (cursor) {
 		move_left();
-		char c = 0;
-		lseek(file, cursor - 1, SEEK_SET);
-		ssize_t n = read(file, &c, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
+		char c = at(cursor - 1);
+		if (not c) return;
 		if (cursor and c == 10) break;
 	}
 }
@@ -177,11 +213,8 @@ static void move_up_begin(void) {
 static void move_down_end(void) {
 	while (cursor < count) {
 		move_right();
-		char c = 0;
-		lseek(file, cursor, SEEK_SET);
-		ssize_t n = read(file, &c, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
+		char c = at(cursor);
+		if (not c) return;
 		if (cursor < count and c == 10) break;
 	}
 }
@@ -189,15 +222,10 @@ static void move_down_end(void) {
 static void move_word_left(void) {
 	move_left();
 	while (cursor) {
-		char here = 0, behind = 0;
-		lseek(file, cursor - 1, SEEK_SET);
-		ssize_t n = read(file, &behind, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-			n = read(file, &here, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-
+		char behind = at(cursor - 1);
+		if (not behind) return;
+		char here = next();
+		if (not here) return;
 		if (not (not isalnum(here) or isalnum(behind))) break;
 		move_left();
 	}
@@ -206,15 +234,10 @@ static void move_word_left(void) {
 static void move_word_right(void) {
 	move_right();
 	while (cursor < count) {
-		char here = 0, behind = 0;
-		lseek(file, cursor - 1, SEEK_SET);
-		ssize_t n = read(file, &behind, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-			n = read(file, &here, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
-
+		char behind = at(cursor - 1);
+		if (not behind) return;
+		char here = next();
+		if (not here) return;
 		if (not (isalnum(here) or not isalnum(behind))) break;
 		move_right();
 	}
@@ -231,11 +254,7 @@ static void move_down(void) {
 	}
 	while (cursor < count) {
 		if (cursor_column >= desired_column) break;
-		char c = 0;
-		lseek(file, cursor, SEEK_SET);
-		ssize_t n = read(file, &c, 1);
-		if (n == 0) break;
-		if (n < 0) { perror("read() syscall"); exit(1); }
+		char c = at(cursor);
 		if (c == 10) break;
 		move_right_raw(); 
 	}
@@ -270,6 +289,29 @@ static void delete(off_t length) {
 	fsync(file);
 	free(rest);
 	move_left();
+}
+
+static void cut(void) {
+	if (not (mode & selecting)) return;
+	if (anchor > cursor) {
+		const off_t temp = anchor;
+		anchor = cursor;
+		cursor = temp;
+	}
+	const off_t length = cursor - anchor;
+	get_count();
+	const size_t size = (size_t) (count - cursor);
+	char* rest = malloc(size);
+	lseek(file, cursor, SEEK_SET);
+	read(file, rest, size);
+	lseek(file, cursor - length, SEEK_SET);
+	write(file, rest, size);
+	count -= length;
+	ftruncate(file, count);
+	fsync(file);
+	free(rest);
+	cursor = anchor;
+	mode &= ~selecting;
 }
 
 int main(int argc, const char** argv) {
@@ -316,7 +358,7 @@ loop:	display();
 	if (mode & inserting) {
 		if (c == 127) delete(1);
 		else if (c == 27) mode &= ~inserting;
-		else if (c == '') {}
+		///else if (c == 'Q') {}
 		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1);
 	} else {
 		if (c == 'q') mode &= ~active;
@@ -327,7 +369,7 @@ loop:	display();
 		else if (c == 't') mode |= inserting;
 
 		else if (c == 'd') delete(1);
-		else if (c == 'r') { }
+		else if (c == 'r') cut();
 		else if (c == 'm') move_down_end();
 		
 		else if (c == 'n') move_left();
@@ -346,6 +388,26 @@ loop:	display();
 	write(1, "\033[?1049l", 8);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
