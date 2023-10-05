@@ -1,2 +1,6 @@
-quit
-ashtashtQQ
+//this is a file to test to see if the editor is working properly!
+
+int main() {
+	printf("hello world!\n");
+	return 0;
+}
