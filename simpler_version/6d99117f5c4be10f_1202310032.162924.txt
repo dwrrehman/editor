@@ -5,5 +5,11 @@
 int main() {
 
 	printf("hello world!\n");
+        int x = 0;
+        if (x == 4) {
+
+                printf("x was equal to four!!! aborting...\n");
+                abort();
+        }
 
 }
