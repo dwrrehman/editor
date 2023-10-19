@@ -27,7 +27,6 @@ static char* screen = NULL;
 static nat screen_size = 0;
 
 
-
 static nat display_mode = 0;
 
 
@@ -35,35 +34,35 @@ static nat display_mode = 0;
 	---------------------------------------------------------------
 
 
-			0 means full refresh,
-
-	 		1 means partial refresh after cursor, 
-
-			2 means just update cursor position, 
-
-			3 means scroll screen downwards, 
-
-			4 means scroll means scroll upwards. 
+			- move up       on visual lines
 
 
+			- more efficient display logic:   multiple types of display updates:
+
+
+				0 means full refresh,	
+
+		 		1 means partial refresh after cursor, 
+
+				2 means just update cursor position, 
+
+				3 means scroll screen downwards, 
+
+				4 means scroll means scroll upwards. 
+
+
+
+			- make it nonmodal, by using a input history system! i think.. 
+
+
+			
 	*/
-
-
 
 
 static void get_count(void) {
 	struct stat s;
 	fstat(file, &s);
 	count = s.st_size;
-}
-
-static char at(off_t atc) {
-	char c = 0;
-	lseek(file, atc, SEEK_SET);
-	ssize_t n = read(file, &c, 1);
-	if (n == 0) return 0;
-	if (n != 1) { perror("at read"); exit(1); }
-	return c;
 }
 
 static char next(void) {
@@ -74,11 +73,16 @@ static char next(void) {
 	return c;
 }
 
+static char at(off_t atc) {
+	lseek(file, atc, SEEK_SET);
+	return next();
+}
+
 static void display(void) {
 
 	ioctl(0, TIOCGWINSZ, &window);
 	const nat new_size = 9 + 32 + window.ws_row * (window.ws_col + 5) * 4;
-	if (new_size != screen_size) { screen = realloc(screen, screen_size); display_mode = 0; }
+	if (new_size != screen_size) { screen = realloc(screen, new_size); screen_size = new_size; display_mode = 0; }
 
 	memcpy(screen, "\033[?25l\033[H", 9);
 	nat length = 9;
@@ -147,11 +151,9 @@ static void display(void) {
 	write(1, screen, length);
 }
 
-
-static void move_left_raw(void) {
+static void move_left_raw(void) { 
 	get_count();
 	if (not cursor) return;
-
 	if (origin < cursor) goto decr;
 	origin--;
 loop: 	if (not origin) goto decr;
@@ -160,7 +162,19 @@ loop: 	if (not origin) goto decr;
 	if (not c) return;
 	if (c != 10) goto loop;
 	origin++;
-
+	nat column = 0; 
+	off_t p = origin, o = origin;
+loop1: 	if (origin >= cursor) goto done;
+	c = at(origin);
+	if (not c) return;
+	origin++;
+	if (c == 10) goto r;
+	else if (c == 9) column += 8 - column % 8;
+	else if (column >= window.ws_col - 1) { r: column = 0; p = o; o = origin; } 
+	else if ((unsigned char) c >> 6 != 2) column++;
+	goto loop1;
+done:	cursor_column = column;
+	origin = previous; 
 decr: 	cursor--;
 }
 
@@ -174,10 +188,7 @@ static void move_right_raw(void) {
 	else if (c == 9) cursor_column += 8 - cursor_column % 8;
 	else if (cursor_column >= window.ws_col - 1) { cursor_column = 0; cursor_row++; }
 	else if ((unsigned char) c >> 6 != 2) cursor_column++; 
-	if (cursor_row < window.ws_row) {
-		
-		return;
-	}
+	if (cursor_row < window.ws_row) return;
 	nat column = 0;
 loop: 	if (origin >= count) return;
 	c = at(origin);
@@ -243,9 +254,23 @@ static void move_word_right(void) {
 	}
 }
 
+
+
+
 static void move_up(void) {
-	move_word_left();       // unimplemented 
+	while (cursor) {
+		move_left_raw();
+		if (not cursor_column) break;
+	}
+	while (cursor) {
+		if (cursor_column < desired_column) break;
+		char c = at(cursor);
+		if (c == 10) break;
+		move_left_raw();
+	}
 }
+
+
 
 static void move_down(void) {
 	while (cursor < count) {
@@ -259,6 +284,15 @@ static void move_down(void) {
 		move_right_raw(); 
 	}
 }
+
+
+
+
+
+
+
+
+
 
 static void insert(char* string, nat length) {
 	get_count();
@@ -353,12 +387,29 @@ int main(int argc, const char** argv) {
 	char c = 0;
 	mode = active;
 
-loop:	display();
+	char history[8] = {0};
+
+loop:	display();           
+
+
+
+
+///TODO: make the editor use a seqence of inputs, 
+///    a up to 5 deep history of what we pressed!! useful alot. 
+///    put all commands into insert. this will be a nonmodal editor. 
+///    we will figure out the ergonomics of holding down a key later. 
+///     in actuality we shouldnt even be doing that, so yeah. it works. 
+
+//// TODO:   addd forwards and backwards search, plz
+
+
+
+
 	read(0, &c, 1);
 	if (mode & inserting) {
 		if (c == 127) delete(1);
 		else if (c == 27) mode &= ~inserting;
-		///else if (c == 'Q') {}
+		else if (c == 1)  mode &= ~inserting;
 		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1);
 	} else {
 		if (c == 'q') mode &= ~active;
@@ -381,6 +432,9 @@ loop:	display();
 		else if (c == 'p') move_word_right();
 		else if (c == 'l') move_down();
 	}
+	
+	for (nat i = 0; i < 7; i++) history[i + 1] = history[i];
+	*history = c;
 
 	if (mode & active) goto loop;
 	close(file);
@@ -393,6 +447,55 @@ loop:	display();
 
 
 
+
+
+
+/*
+
+
+absolutely required edit mode commands:
+
+
+done:
+	- inserting text    (done)  just typing
+	- deleting text     (done)  pressing the delete key
+
+todo:
+	- backwards search     <--------  these ones are the most important. 
+	- forwards search      <--------  these ones are the most important. 
+
+	- cut selection  <--------- these ones are of second importance.
+	- anchor drop    <--------- these ones are of second importance.
+
+	- copy selection     <------- make this have its own sub-key sequence.
+	- paste selection    <------- make this have its own sub-key sequence.
+
+
+
+
+
+
+
+
+deleted:
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+*/
 
 
 
