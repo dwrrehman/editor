@@ -1,0 +1,161 @@
+hi there!
+
+this is a file which i am using to test out the editor, with writing text. i am hoping to have the editor able to write code and text documents fairly soon. i think the only other things that i really need to implement are:
+
+	- copy-paste
+
+	- the clipboard and cutting functionality
+
+	- fowards and backwards search using the clipboard
+
+	- the shell system
+
+
+							and most of all 
+
+
+
+	- the undo tree functoinality.    (ie, effectively a version control system. lol)
+
+
+
+
+
+so yeah, once those are implemented, then we are done. so yeah. 
+
+
+copy paste   is basicallyyyy done          so is the shell system. 
+
+clipboard and forwardsbackwards search is easyyyyy
+
+
+
+		its the undo tree thats hard. so yeah. we NEED to do that too. not optional. hm. 
+
+	
+
+
+so yeah, i am going to try to figure out how to do that now. 
+
+itll be difficult, but i know we can implement it correctly, and make it easy and bug free to use.   yay. 
+
+
+
+
+
+
+yeah, just takes some time though,  alot of planning 
+
+
+and drafting out the right primitives to have in terms of storing changes to the file. 
+
+my current idea is to actuallyyyyyy have it be the case that edits are done one character at a time.
+
+ie, every single edit to the file is character based. very important.  
+
+that way, every single undo tree action is of constant length. 
+
+thats currently the idea. 
+
+
+
+			wait!!! i just thought of something!!!
+
+
+
+
+
+
+one file     that is the latest 
+
+
+new created every time 
+
+
+	unless you tell it you want to use an existing undo tree file   in which it will load that, and start from there!
+
+
+
+			ie, we give a file name, and we just start traversing  or appening to that file. 
+
+				only redo/undo    reads from the file.   all other operations just append. an entry to the file, no matter the action. 
+
+
+
+					yeah this is good 
+
+
+
+	yusss
+
+
+
+and we can just hardcode the filepath?      orrrr 
+idk 
+ maybe make it a runtime flag and argument we pass in, actually. yeah. lets do that .
+
+
+or if you just pass in two files,  
+
+with a -undotree in the middle.
+
+	yeah, i think this is the way forwards.   cool beans. nice. yay. 
+
+
+
+
+so yeah that shoulddd work. yay. 
+
+
+
+
+also i want to put back the arrow keys, becase occassionally i use them?
+
+
+idk... hmm
+
+i  don't want to make this thing modal though. idk. we'll figure out that stuff later. thats the easy stuff
+
+
+undo tree is the hard stuff 
+
+lets figure that out first. 
+
+
+
+
+
+
+
+
+
+
+
+
+okay actually so i like the undo tree file being able to be specified
+
+	thats great 
+
+	because thats out usage anyways, most of the time,
+
+		but the problem is 
+
+
+
+						our insert and delete functions are actually not based on characters, 
+
+
+						they insert and delete arbitrary length strings. 
+
+						which..
+
+						makes this especially difficult. 
+
+
+				hm. 
+
+
+				so i doubt that the file will truly be able to be indexable, simply. 
+
+
+	i think we will actually need to 

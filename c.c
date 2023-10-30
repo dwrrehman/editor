@@ -14,27 +14,30 @@
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <sys/wait.h>
-
 typedef size_t nat;
 static const nat active = 0x01, inserting = 0x02, selecting = 0x04;
 extern char** environ;
 static struct winsize window = {0};
-static int file = -1, tree = -1;
+static int file = -1, history = -1;
 static off_t cursor = 0, origin = 0, count = 0, anchor = 0;
 static nat mode = 0;
 static nat cursor_row = 0, cursor_column = 0, desired_column = 0;
 static char* screen = NULL;
 static nat screen_size = 0;
-
-
+static char* clipboard = NULL;
+static nat cliplength = 0;
 static nat display_mode = 0;
 
+/*
 
-	/*		TODO: implement this:
+		TODO: implement this:
 	---------------------------------------------------------------
 
 
-			- move up       on visual lines
+		x	- move up       on visual lines
+
+			- implementing the undo tree     create a .history file in the /histories/ dir,
+								 if none was supplied on command line.
 
 
 			- more efficient display logic:   multiple types of display updates:
@@ -42,18 +45,16 @@ static nat display_mode = 0;
 
 				0 means full refresh,	
 
-		 		1 means partial refresh after cursor, 
+		 	x	1 means partial refresh after cursor, 
 
 				2 means just update cursor position, 
 
-				3 means scroll screen downwards, 
+			x	3 means scroll screen downwards, 
 
-				4 means scroll means scroll upwards. 
+			x	4 means scroll screen upwards. 
 
 
-
-			- make it nonmodal, by using a input history system! i think.. 
-
+		x	- make it nonmodal, by using a input history system! i think.. 
 
 			
 	*/
@@ -76,6 +77,13 @@ static char next(void) {
 static char at(off_t atc) {
 	lseek(file, atc, SEEK_SET);
 	return next();
+}
+
+static void at_string(off_t atc, nat byte_count, char* destination) {
+	lseek(file, atc, SEEK_SET);
+	ssize_t n = read(file, destination, byte_count);
+	if (n == 0) return;
+	if (n < 0) { perror("next read"); exit(1); }
 }
 
 static void display(void) {
@@ -151,7 +159,7 @@ static void display(void) {
 	write(1, screen, length);
 }
 
-static void move_left_raw(void) { 
+static void move_left_raw(void) {    
 	get_count();
 	if (not cursor) return;
 	if (origin < cursor) goto decr;
@@ -162,19 +170,6 @@ loop: 	if (not origin) goto decr;
 	if (not c) return;
 	if (c != 10) goto loop;
 	origin++;
-	nat column = 0; 
-	off_t p = origin, o = origin;
-loop1: 	if (origin >= cursor) goto done;
-	c = at(origin);
-	if (not c) return;
-	origin++;
-	if (c == 10) goto r;
-	else if (c == 9) column += 8 - column % 8;
-	else if (column >= window.ws_col - 1) { r: column = 0; p = o; o = origin; } 
-	else if ((unsigned char) c >> 6 != 2) column++;
-	goto loop1;
-done:	cursor_column = column;
-	origin = previous; 
 decr: 	cursor--;
 }
 
@@ -254,36 +249,180 @@ static void move_word_right(void) {
 	}
 }
 
-
-
-
 static void move_up(void) {
 	while (cursor) {
 		move_left_raw();
-		if (not cursor_column) break;
-	}
-	while (cursor) {
-		if (cursor_column < desired_column) break;
-		char c = at(cursor);
-		if (c == 10) break;
-		move_left_raw();
+		if (at(cursor - 1) == 10) break;
 	}
 }
-
-
 
 static void move_down(void) {
 	while (cursor < count) {
 		move_right_raw();
 		if (not cursor_column) break;
 	}
+
 	while (cursor < count) {
 		if (cursor_column >= desired_column) break;
-		char c = at(cursor);
-		if (c == 10) break;
+		if (at(cursor) == 10) break;
 		move_right_raw(); 
 	}
 }
+
+static void forwards(void) {
+	nat t = 0;
+	loop: if (t == cliplength or cursor >= count) return;
+	if (at(cursor) != clipboard[t]) t = 0; else t++;
+	move_right(); 
+	goto loop;
+}
+
+static void backwards(void) {
+	nat t = cliplength;
+	loop: if (not t or not cursor) return;
+	move_left(); t--; 
+	if (at(cursor) != clipboard[t]) t = cliplength;
+	goto loop;
+}
+
+static void move_top(void) { cursor = 0; origin = 0; cursor_column = 0; cursor_row = 0; }
+static void move_bottom(void) { while (cursor < count) move_right(); }
+
+
+
+
+
+		/*
+
+		static void create_action(struct action new) {
+			new.post_cursor = cursor; 
+			new.post_origin = origin; 
+		//	new.post_saved = mode & saved;
+			new.parent = head;
+			actions[head].children = realloc(actions[head].children, sizeof(size_t) * (actions[head].count + 1));
+			actions[head].choice = actions[head].count;
+			actions[head].children[actions[head].count++] = action_count;
+			head = action_count;
+			actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
+			actions[action_count++] = new;
+		}
+
+		static void delete(bool should_record) {
+			if (not cursor) return;
+			struct action new = {
+				.pre_cursor = cursor, 
+				.pre_origin = origin, 
+		//		.pre_saved = mode & saved
+			};
+			const char c = text[cursor - 1];
+			memmove(text + cursor - 1, text + cursor, count - cursor);
+			count--;
+			text = realloc(text, count); 
+			mode &= ~saved; move_left();
+			if (not should_record) return;
+			new.insert = 0;
+			new.length = 1;
+			new.text = malloc(1);
+			new.text[0] = c;
+			create_action(new);
+		}
+
+		static void insert(char c, bool should_record) {
+			struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = mode & saved};
+			text = realloc(text, count + 1);
+			memmove(text + cursor + 1, text + cursor, count - cursor);
+			text[cursor] = c;
+			count++; mode &= ~saved;
+			move_right();
+			if (not should_record) return;
+			new.insert = 1;
+			new.length = 1;
+			new.text = malloc(1);
+			new.text[0] = c;
+			create_action(new);
+		}
+
+
+
+static void alternate(void) { if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0; }
+static void undo(void) {
+	if (not head) return;
+	struct action a = actions[head];
+	cursor = a.post_cursor; origin = a.post_origin; mode = (mode & ~saved) | a.post_saved; 
+	if (not a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	else for (nat i = 0; i < a.length; i++) delete(0);	
+	cursor = a.pre_cursor; origin = a.pre_origin; mode = (mode & ~saved) | a.pre_saved; anchor = cursor;
+	head = a.parent; a = actions[head];
+	if (a.count > 1) { 
+		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, a.choice); 
+		getchar(); 
+	}
+}
+
+static void redo(void) {
+	if (not actions[head].count) return;
+	head = actions[head].children[actions[head].choice];
+	const struct action a = actions[head];
+	cursor = a.pre_cursor; origin = a.pre_origin; mode = (mode & ~saved) | a.pre_saved; 
+	if (a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	else for (nat i = 0; i < a.length; i++) delete(0);
+	cursor = a.post_cursor; origin = a.post_origin; mode = (mode & ~saved) | a.post_saved; anchor = cursor;
+	if (a.count > 1) { 
+		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
+		getchar(); 
+	}
+}
+
+
+
+
+typedef size_t nat;
+struct action {
+	char* text;
+	nat* children;
+	nat parent, choice, count, length, insert,
+	pre_cursor, post_cursor, pre_origin, post_origin, pre_saved, post_saved;
+};
+
+
+static const nat active = 0x01, saved = 0x02, selecting = 0x04;
+
+
+extern char** environ;
+
+static struct termios terminal;
+
+static struct winsize window;
+
+
+
+static char filename[4096] = {0}, directory[4096] = {0};
+
+static char* text = NULL, * clipboard = NULL;
+
+static struct action* actions = NULL;
+
+static nat mode = 0, 
+	
+	cursor = 0, origin = 0, anchor = 0, 
+
+	cursor_row = 0, cursor_column = 0, 
+
+	   count = 0, 
+
+	cliplength = 0, 
+
+
+	action_count = 0, head = 0, 
+
+
+previous_cursor = 0;
+
+
+
+
+		*/
+
 
 
 
@@ -306,23 +445,23 @@ static void insert(char* string, nat length) {
 	count += length;
 	fsync(file);
 	free(rest);
-	move_right();
+	for (nat i = 0; i < length; i++) move_right();
 }
 
-static void delete(off_t length) {
-	if (cursor < length) return;
+static void delete(nat length) {
+	if (cursor < (off_t) length) return;
 	get_count();
 	const size_t size = (size_t) (count - cursor);
 	char* rest = malloc(size);
 	lseek(file, cursor, SEEK_SET);
 	read(file, rest, size);
-	lseek(file, cursor - length, SEEK_SET);
+	lseek(file, cursor - (off_t) length, SEEK_SET);
 	write(file, rest, size);
 	count -= length;
 	ftruncate(file, count);
 	fsync(file);
 	free(rest);
-	move_left();
+	for (nat i = 0; i < length; i++) move_left();
 }
 
 static void cut(void) {
@@ -334,6 +473,9 @@ static void cut(void) {
 	}
 	const off_t length = cursor - anchor;
 	get_count();
+	cliplength = (size_t) length;
+	clipboard = realloc(clipboard, cliplength);
+	at_string(anchor, cliplength, clipboard);
 	const size_t size = (size_t) (count - cursor);
 	char* rest = malloc(size);
 	lseek(file, cursor, SEEK_SET);
@@ -346,6 +488,23 @@ static void cut(void) {
 	free(rest);
 	cursor = anchor;
 	mode &= ~selecting;
+}
+
+static bool is(const char* string, char c, char* past) {
+
+	nat length = strlen(string);
+
+	//printf("c0: comparing %d and %d\n", c, string[length - 1]);
+	//getchar();
+	if (c != string[length - 1]) return 0;
+	
+	for (nat h = 0, i = 1; i < length; i++, h++) {
+		//printf("c%lu: comparing %d and %d\n", h, past[h], string[length - 1 - i]);
+		//getchar();
+		if (past[h] != string[length - 1 - i]) return 0;
+	}
+
+	return 1;
 }
 
 int main(int argc, const char** argv) {
@@ -376,6 +535,38 @@ int main(int argc, const char** argv) {
 	file = openat(dir, filename, flags, permission);
 	if (file < 0) { read_error: perror("read openat file"); exit(1); }
 
+
+
+
+
+
+
+	const char* history_directory = "/Users/dwrr/Documents/personal/histories/";
+	char history_filename[4096] = {0};
+
+	if (true) {
+		char datetime[32] = {0};
+		struct timeval t = {0};
+		gettimeofday(&t, NULL);
+		struct tm* tm = localtime(&t.tv_sec);
+		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+		snprintf(
+			history_filename, sizeof history_filename, 
+			"%x%x_%s.history.txt", rand(), rand(), datetime
+		);
+		flags |= O_CREAT | O_EXCL;
+		permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+	}
+
+	const int hdir = open(history_directory, O_RDONLY | O_DIRECTORY, 0);
+	if (hdir < 0) { perror("read open history directory"); exit(1); }
+	df = openat(dir, history_filename, O_RDONLY | O_DIRECTORY);
+	if (df >= 0) { close(df); errno = EISDIR; goto hread_error; }
+	history = openat(hdir, history_filename, flags, permission);
+	if (history < 0) { hread_error: perror("read openat history file"); exit(1); }
+
+
+
 	struct termios terminal;
 	tcgetattr(0, &terminal);
 	struct termios copy = terminal; 
@@ -387,29 +578,15 @@ int main(int argc, const char** argv) {
 	char c = 0;
 	mode = active;
 
-	char history[8] = {0};
+	char past[10] = {0};
+	const char* exit_sequence = "rtun";
 
-loop:	display();           
-
-
-
-
-///TODO: make the editor use a seqence of inputs, 
-///    a up to 5 deep history of what we pressed!! useful alot. 
-///    put all commands into insert. this will be a nonmodal editor. 
-///    we will figure out the ergonomics of holding down a key later. 
-///     in actuality we shouldnt even be doing that, so yeah. it works. 
-
-//// TODO:   addd forwards and backwards search, plz
-
-
-
-
+loop:	display();
 	read(0, &c, 1);
 	if (mode & inserting) {
 		if (c == 127) delete(1);
 		else if (c == 27) mode &= ~inserting;
-		else if (c == 1)  mode &= ~inserting;
+		else if (is(exit_sequence, c, past)) { delete(strlen(exit_sequence) - 1); mode &= ~inserting; } 
 		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1);
 	} else {
 		if (c == 'q') mode &= ~active;
@@ -422,6 +599,9 @@ loop:	display();
 		else if (c == 'd') delete(1);
 		else if (c == 'r') cut();
 		else if (c == 'm') move_down_end();
+
+		else if (c == 'f') forwards();
+		else if (c == 'b') backwards();
 		
 		else if (c == 'n') move_left();
 		else if (c == 'e') move_up();
@@ -431,10 +611,15 @@ loop:	display();
 		else if (c == 'u') move_word_left();
 		else if (c == 'p') move_word_right();
 		else if (c == 'l') move_down();
+
+		else if (c == 'c') move_top();
+		else if (c == 'v') move_bottom();
 	}
 	
-	for (nat i = 0; i < 7; i++) history[i + 1] = history[i];
-	*history = c;
+	nat i = 10; 
+	while (i-- > 1) past[i] = past[i - 1];
+
+	*past = c;
 
 	if (mode & active) goto loop;
 	close(file);
@@ -450,6 +635,75 @@ loop:	display();
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+///TODO: make the editor use a seqence of inputs, 
+///    a up to 5 deep history of what we pressed!! useful alot. 
+///    put all commands into insert. this will be a nonmodal editor. 
+///    we will figure out the ergonomics of holding down a key later. 
+///     in actuality we shouldnt even be doing that, so yeah. it works. 
+
+
+
+
+
+
+
+
+/*
+	nat column = 0;
+	off_t p = origin, o = origin;
+loop1: 	if (origin >= cursor) goto done;
+	c = at(origin);
+	if (not c) return;
+	origin++;
+	if (c == 10) goto r;
+	else if (c == 9) column += 8 - column % 8;
+	else if (column >= window.ws_col - 1) { r: column = 0; p = o; o = origin; } 
+	else if ((unsigned char) c >> 6 != 2) column++;
+	goto loop1;
+done:	cursor_column = column;
+	o = p; 
+*/
+
+
+
+// this code has a bug:  its not computing cursor_column and cursor_row correctly, which is neccessary information for move_up to work properly. we need to compute that properly using an n^2 algorithm over the line... yikes.... not happening. hmm. 
+
+
+
+
+
+
+
+
+
+
 /*
 
 
@@ -457,15 +711,15 @@ absolutely required edit mode commands:
 
 
 done:
-	- inserting text    (done)  just typing
-	- deleting text     (done)  pressing the delete key
+x	- inserting text    (done)  just typing
+x	- deleting text     (done)  pressing the delete key
 
 todo:
-	- backwards search     <--------  these ones are the most important. 
-	- forwards search      <--------  these ones are the most important. 
+x	- backwards search     <--------  these ones are the most important. 
+x	- forwards search      <--------  these ones are the most important. 
 
-	- cut selection  <--------- these ones are of second importance.
-	- anchor drop    <--------- these ones are of second importance.
+x	- cut selection  <--------- these ones are of second importance.
+x	- anchor drop    <--------- these ones are of second importance.
 
 	- copy selection     <------- make this have its own sub-key sequence.
 	- paste selection    <------- make this have its own sub-key sequence.
@@ -493,7 +747,12 @@ deleted:
 
 
 
+	while (cursor) {
+		if (at(cursor) == 10) break;
+		move_left_raw();
+	}
 
+	// move_right_raw();
 
 */
 
@@ -1948,7 +2207,7 @@ char c = 0;
 int main(int argc, const char** argv) {
 	typedef size_t nat;
 	const char active = 0x01, inserting = 0x02;
-	int file = -1, tree = -1;
+	int file = -1, history = -1;
 	int mode = 0;
 	off_t cursor = 0, count = 0, anchor = 0, m = 0;
 	const char* help_string = "q z c m d<str> t<str> h<str> r<str> a<num> s<num> ";
@@ -2212,7 +2471,7 @@ static void insert(char* string, nat length) {
 	count += length;
 	fsync(file);
 	free(rest);
-	move_right();
+	for (nat i = 0; i < length; i++) move_right();
 }
 
 static void delete(off_t length) {
@@ -2232,7 +2491,7 @@ static void delete(off_t length) {
 	ftruncate(file, count);
 	fsync(file);
 	free(rest);
-	move_left();
+	for (nat i = 0; i < length; i++) move_left();
 }
 
 
