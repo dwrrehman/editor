@@ -1,4 +1,6 @@
-// this is a file to test to see if the editor is working properly!
+hi there lol tqq
+
+qqhi there lol hello there// this is a file to test to see if the editor is working properly!
 
 int main() {
 	printf("hello world!\n");
@@ -86,7 +88,7 @@ tttq
 
 
 
-
+hello this is my editor, i am testing loading of the .history file. i am not sure that i am going to make it a txt file... but... yeah, i think i might, actually. just to make things really easy. then going to seperate things by newlines, probably. yay. using sprintf into the file. pretty simple probably. yay. 
 
 
 

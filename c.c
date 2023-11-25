@@ -1,3 +1,297 @@
+// editor source code. written on 202311201.014937 by dwrr
+
+/*
+
+202311245.115046:
+	BUG:
+
+		if the line is exactly the wrap width, there is a bug where the cursor desyncs. fix this.
+
+
+
+
+
+
+
+
+if the lien    is exactly the rap with         then we will get a cursor   d sink
+
+		static void create_action(struct action new) {
+			new.post_cursor = cursor; 
+			new.post_origin = origin; 
+		//	new.post_saved = mode & saved;
+			new.parent = head;
+			actions[head].children = realloc(actions[head].children, sizeof(size_t) * (actions[head].count + 1));
+			actions[head].choice = actions[head].count;
+			actions[head].children[actions[head].count++] = action_count;
+			head = action_count;
+			actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
+			actions[action_count++] = new;
+		}
+ 
+		static void delete(bool should_record) {
+			if (not cursor) return;
+			struct action new = {
+				.pre_cursor = cursor, 
+				.pre_origin = origin, 
+		//		.pre_saved = mode & saved
+			};
+			const char c = text[cursor - 1];
+			memmove(text + cursor - 1, text + cursor, count - cursor);
+			count--;
+			text = realloc(text, count); 
+			mode &= ~saved; move_left();
+			if (not should_record) return;
+			new.insert = 0;
+			new.length = 1;
+			new.text = malloc(1);
+			new.text[0] = c;
+			create_action(new);
+		}
+
+		static void insert(char c, bool should_record) {
+			struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = mode & saved};
+			text = realloc(text, count + 1);
+			memmove(text + cursor + 1, text + cursor, count - cursor);
+			text[cursor] = c;
+			count++; mode &= ~saved;
+			move_right();
+			if (not should_record) return;
+			new.insert = 1;
+			new.length = 1;
+			new.text = malloc(1);
+			new.text[0] = c;
+			create_action(new);
+		}
+
+
+
+static void alternate(void) { if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0; }
+static void undo(void) {
+	if (not head) return;
+	struct action a = actions[head];
+	cursor = a.post_cursor; origin = a.post_origin; mode = (mode & ~saved) | a.post_saved; 
+	if (not a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	else for (nat i = 0; i < a.length; i++) delete(0);	
+	cursor = a.pre_cursor; origin = a.pre_origin; mode = (mode & ~saved) | a.pre_saved; anchor = cursor;
+	head = a.parent; a = actions[head];
+	if (a.count > 1) { 
+		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, a.choice); 
+		getchar(); 
+	}
+}
+
+static void redo(void) {
+	if (not actions[head].count) return;
+	head = actions[head].children[actions[head].choice];
+	const struct action a = actions[head];
+	cursor = a.pre_cursor; origin = a.pre_origin; mode = (mode & ~saved) | a.pre_saved; 
+	if (a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	else for (nat i = 0; i < a.length; i++) delete(0);
+	cursor = a.post_cursor; origin = a.post_origin; mode = (mode & ~saved) | a.post_saved; anchor = cursor;
+	if (a.count > 1) { 
+		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
+		getchar(); 
+	}
+}
+
+
+
+
+typedef size_t nat;
+
+
+						struct action {
+							char* text;
+						//	nat* children;
+							nat parent, 
+							choice, 
+						//	count, 
+							length, 
+						//	insert,
+							pre_cursor, post_cursor, 
+						//	pre_origin, post_origin, 
+						//	pre_saved, post_saved;
+						};
+
+
+						struct action {
+							char* text;
+																//	nat* children;
+							nat parent, 
+				not	necc	--->	choice, 
+																//	count, 
+							length, 
+																//	insert,
+							pre_cursor, post_cursor, 
+															//	pre_origin, post_origin, 
+															//	pre_saved, post_saved;
+						};
+
+
+
+
+
+
+						struct action {
+							nat parent, pre_cursor, post_cursor, length;          4 * 4bytes (u32)  =  16 bytes + string.
+							char* text;
+						};
+
+
+
+
+				each of these will be uint32_t's, except for   length which is a   int32_t   i think  ie signed 
+				so yeah. yay
+
+
+						
+
+
+
+							oh, also head      which is the first 4 bytes of the file, 
+							is found at the beginning,  so all offsets   .parents       will be larger than 4. 
+
+									so yeah 
+
+
+								also .parents are file offsets of other node's .parent
+
+
+
+
+
+
+
+		struct action_header {
+			u32 parent;
+			u32 pre;
+			u32 post;
+			u32 length;
+		};
+
+
+	we will simply write a header, and then write the string .text  directly afterwards. 
+
+			using   
+
+				add new node in tree:
+
+				===================================
+
+		
+
+						struct action_header node = {
+							.parent = read_head(),
+							.pre = cursor,
+							.length = text_length,
+						};
+
+
+							// do the operation();
+			
+
+						node.post = cursor;
+						move_to_end_of_file
+						pos = get_current_file_pos;
+						write(history, node, sizeof node);
+						write(history, text, text_length);
+						head = get_current_file_pos;
+						write_head(head);
+		
+
+
+
+
+
+
+
+
+
+
+static const nat active = 0x01, saved = 0x02, selecting = 0x04;
+
+
+extern char** environ;
+
+static struct termios terminal;
+
+static struct winsize window;
+
+
+
+static char filename[4096] = {0}, directory[4096] = {0};
+
+static char* text = NULL, * clipboard = NULL;
+
+static struct action* actions = NULL;
+
+static nat mode = 0, 
+	
+	cursor = 0, origin = 0, anchor = 0, 
+
+	cursor_row = 0, cursor_column = 0, 
+
+	   count = 0, 
+
+	cliplength = 0, 
+
+
+	action_count = 0, head = 0, 
+
+
+previous_cursor = 0;
+
+
+
+
+		TODO: implement this:
+	---------------------------------------------------------------
+
+
+
+
+			- implementing the undo tree     create a .history file in the /histories/ dir,
+								 if none was supplied on command line.
+
+
+			- more efficient display logic:   multiple types of display updates:
+
+
+			x	0 means full refresh,	
+
+		 	x	1 means partial refresh after cursor, 
+
+			x	2 means just update cursor position, 
+
+			x	3 means scroll screen downwards, 
+
+			x	4 means scroll screen upwards. 
+
+
+	done:
+
+		x	- move up       on visual lines
+
+		x	- make it nonmodal, by using a input history system! i think.. 
+
+
+	
+			
+	
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+		*/
+
+
+
+
+
+
+
 #include <stdio.h>  // 202309074.165637:   
 #include <stdlib.h> //  another rewrite to make the editor simpler, and non-volatile- to never require saving. 
 #include <string.h> 
@@ -14,11 +308,12 @@
 #include <sys/ioctl.h>
 #include <sys/time.h>
 #include <sys/wait.h>
-typedef size_t nat;
+#include <stdint.h>
+typedef uint64_t nat;
 static const nat active = 0x01, inserting = 0x02, selecting = 0x04;
 extern char** environ;
 static struct winsize window = {0};
-static int file = -1, history = -1;
+static int file = -1;
 static off_t cursor = 0, origin = 0, count = 0, anchor = 0;
 static nat mode = 0;
 static nat cursor_row = 0, cursor_column = 0, desired_column = 0;
@@ -27,38 +322,15 @@ static nat screen_size = 0;
 static char* clipboard = NULL;
 static nat cliplength = 0;
 static nat display_mode = 0;
+static int history = -1;
+static off_t head = 0;
 
-/*
-
-		TODO: implement this:
-	---------------------------------------------------------------
-
-
-		x	- move up       on visual lines
-
-			- implementing the undo tree     create a .history file in the /histories/ dir,
-								 if none was supplied on command line.
-
-
-			- more efficient display logic:   multiple types of display updates:
-
-
-				0 means full refresh,	
-
-		 	x	1 means partial refresh after cursor, 
-
-				2 means just update cursor position, 
-
-			x	3 means scroll screen downwards, 
-
-			x	4 means scroll screen upwards. 
-
-
-		x	- make it nonmodal, by using a input history system! i think.. 
-
-			
-	*/
-
+struct action {                 //TODO: this struct shouldnt exist. delete it, write each element one by one. 
+	off_t parent;
+	off_t pre;
+	off_t post;
+	off_t length;
+};
 
 static void get_count(void) {
 	struct stat s;
@@ -74,13 +346,13 @@ static char next(void) {
 	return c;
 }
 
-static char at(off_t atc) {
-	lseek(file, atc, SEEK_SET);
+static char at(off_t a) {
+	lseek(file, a, SEEK_SET);
 	return next();
 }
 
-static void at_string(off_t atc, nat byte_count, char* destination) {
-	lseek(file, atc, SEEK_SET);
+static void at_string(off_t a, nat byte_count, char* destination) {
+	lseek(file, a, SEEK_SET);
 	ssize_t n = read(file, destination, byte_count);
 	if (n == 0) return;
 	if (n < 0) { perror("next read"); exit(1); }
@@ -101,14 +373,14 @@ static void display(void) {
 	const off_t begin = anchor < cursor ? anchor : cursor;
 	const off_t end = anchor < cursor ? cursor : anchor;
 	if ((mode & selecting) and anchor < origin) { memcpy(screen + length, "\033[7m", 4); length += 4; }
-	bool asht = false;
+	bool found_end = false;
 	while (1) {
 		if ((mode & selecting) and i == begin) { memcpy(screen + length, "\033[7m", 4); length += 4; }
 		if ((mode & selecting) and i == end) { memcpy(screen + length, "\033[0m", 4); length += 4; }
 		if (i == cursor) { cursor_row = row; cursor_column = column; }
 		if (row >= window.ws_row) break;
 		char k = next();
-		if (not k) { asht = true; break; }
+		if (not k) { found_end = true; break; }
 		i++;
 
 		if (k == 10) {
@@ -137,7 +409,7 @@ static void display(void) {
 		if (row < window.ws_row) screen[length++] = 10;
 	} 
 
-	if (	cursor == count and asht and
+	if (	cursor == count and found_end and
 		cursor_row == window.ws_row - 1 and 
 		not cursor_column
 	)
@@ -151,7 +423,7 @@ static void display(void) {
 	length += (nat) snprintf(
 		screen + length, 
 		screen_size - length, 
-		"\033[K\033[%lu;%luH\033[?25h", 
+		"\033[K\033[%llu;%lluH\033[?25h", 
 		cursor_row + 1, 
 		cursor_column + 1
 	);
@@ -288,152 +560,20 @@ static void backwards(void) {
 static void move_top(void) { cursor = 0; origin = 0; cursor_column = 0; cursor_row = 0; }
 static void move_bottom(void) { while (cursor < count) move_right(); }
 
-
-
-
-
-		/*
-
-		static void create_action(struct action new) {
-			new.post_cursor = cursor; 
-			new.post_origin = origin; 
-		//	new.post_saved = mode & saved;
-			new.parent = head;
-			actions[head].children = realloc(actions[head].children, sizeof(size_t) * (actions[head].count + 1));
-			actions[head].choice = actions[head].count;
-			actions[head].children[actions[head].count++] = action_count;
-			head = action_count;
-			actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
-			actions[action_count++] = new;
-		}
-
-		static void delete(bool should_record) {
-			if (not cursor) return;
-			struct action new = {
-				.pre_cursor = cursor, 
-				.pre_origin = origin, 
-		//		.pre_saved = mode & saved
-			};
-			const char c = text[cursor - 1];
-			memmove(text + cursor - 1, text + cursor, count - cursor);
-			count--;
-			text = realloc(text, count); 
-			mode &= ~saved; move_left();
-			if (not should_record) return;
-			new.insert = 0;
-			new.length = 1;
-			new.text = malloc(1);
-			new.text[0] = c;
-			create_action(new);
-		}
-
-		static void insert(char c, bool should_record) {
-			struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = mode & saved};
-			text = realloc(text, count + 1);
-			memmove(text + cursor + 1, text + cursor, count - cursor);
-			text[cursor] = c;
-			count++; mode &= ~saved;
-			move_right();
-			if (not should_record) return;
-			new.insert = 1;
-			new.length = 1;
-			new.text = malloc(1);
-			new.text[0] = c;
-			create_action(new);
-		}
-
-
-
-static void alternate(void) { if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0; }
-static void undo(void) {
-	if (not head) return;
-	struct action a = actions[head];
-	cursor = a.post_cursor; origin = a.post_origin; mode = (mode & ~saved) | a.post_saved; 
-	if (not a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
-	else for (nat i = 0; i < a.length; i++) delete(0);	
-	cursor = a.pre_cursor; origin = a.pre_origin; mode = (mode & ~saved) | a.pre_saved; anchor = cursor;
-	head = a.parent; a = actions[head];
-	if (a.count > 1) { 
-		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, a.choice); 
-		getchar(); 
-	}
+static void finish_action(struct action node, const char* string, nat length) {
+	node.post = cursor;
+	head = lseek(history, 0, SEEK_END);
+	write(history, &node, sizeof node);
+	write(history, string, length);
+	lseek(history, 0, SEEK_SET);
+	write(history, &head, sizeof head);
+	fsync(history);
 }
 
-static void redo(void) {
-	if (not actions[head].count) return;
-	head = actions[head].children[actions[head].choice];
-	const struct action a = actions[head];
-	cursor = a.pre_cursor; origin = a.pre_origin; mode = (mode & ~saved) | a.pre_saved; 
-	if (a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
-	else for (nat i = 0; i < a.length; i++) delete(0);
-	cursor = a.post_cursor; origin = a.post_origin; mode = (mode & ~saved) | a.post_saved; anchor = cursor;
-	if (a.count > 1) { 
-		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
-		getchar(); 
-	}
-}
-
-
-
-
-typedef size_t nat;
-struct action {
-	char* text;
-	nat* children;
-	nat parent, choice, count, length, insert,
-	pre_cursor, post_cursor, pre_origin, post_origin, pre_saved, post_saved;
-};
-
-
-static const nat active = 0x01, saved = 0x02, selecting = 0x04;
-
-
-extern char** environ;
-
-static struct termios terminal;
-
-static struct winsize window;
-
-
-
-static char filename[4096] = {0}, directory[4096] = {0};
-
-static char* text = NULL, * clipboard = NULL;
-
-static struct action* actions = NULL;
-
-static nat mode = 0, 
-	
-	cursor = 0, origin = 0, anchor = 0, 
-
-	cursor_row = 0, cursor_column = 0, 
-
-	   count = 0, 
-
-	cliplength = 0, 
-
-
-	action_count = 0, head = 0, 
-
-
-previous_cursor = 0;
-
-
-
-
-		*/
-
-
-
-
-
-
-
-
-
-
-
-static void insert(char* string, nat length) {
+static void insert(char* string, nat length, bool should_record) {
+	lseek(history, 0, SEEK_SET);
+	read(history, &head, sizeof head);
+	struct action node = { .parent = head, .pre = cursor, .length = (off_t) length };
 	get_count();
 	const size_t size = (size_t) (count - cursor);
 	char* rest = malloc(size + length); 
@@ -446,14 +586,21 @@ static void insert(char* string, nat length) {
 	fsync(file);
 	free(rest);
 	for (nat i = 0; i < length; i++) move_right();
+	if (should_record) finish_action(node, string, length);
 }
 
-static void delete(nat length) {
+static void delete(nat length, bool should_record) {
 	if (cursor < (off_t) length) return;
+	lseek(history, 0, SEEK_SET);
+	read(history, &head, sizeof head);
+	struct action node = { .parent = head, .pre = cursor, .length = - (off_t) length };
 	get_count();
 	const size_t size = (size_t) (count - cursor);
 	char* rest = malloc(size);
-	lseek(file, cursor, SEEK_SET);
+	char* string = malloc(length);
+	lseek(file, cursor - (off_t) length, SEEK_SET);
+	read(file, string, length);
+	lseek(file, cursor, SEEK_SET); //TODO: optimize this away!
 	read(file, rest, size);
 	lseek(file, cursor - (off_t) length, SEEK_SET);
 	write(file, rest, size);
@@ -462,6 +609,8 @@ static void delete(nat length) {
 	fsync(file);
 	free(rest);
 	for (nat i = 0; i < length; i++) move_left();
+	if (should_record) finish_action(node, string, length);
+	free(string);
 }
 
 static void cut(void) {
@@ -476,35 +625,60 @@ static void cut(void) {
 	cliplength = (size_t) length;
 	clipboard = realloc(clipboard, cliplength);
 	at_string(anchor, cliplength, clipboard);
-	const size_t size = (size_t) (count - cursor);
-	char* rest = malloc(size);
-	lseek(file, cursor, SEEK_SET);
-	read(file, rest, size);
-	lseek(file, cursor - length, SEEK_SET);
-	write(file, rest, size);
-	count -= length;
-	ftruncate(file, count);
-	fsync(file);
-	free(rest);
+	delete((nat) length, 1);
 	cursor = anchor;
 	mode &= ~selecting;
 }
 
 static bool is(const char* string, char c, char* past) {
-
 	nat length = strlen(string);
-
-	//printf("c0: comparing %d and %d\n", c, string[length - 1]);
-	//getchar();
 	if (c != string[length - 1]) return 0;
-	
 	for (nat h = 0, i = 1; i < length; i++, h++) {
-		//printf("c%lu: comparing %d and %d\n", h, past[h], string[length - 1 - i]);
-		//getchar();
 		if (past[h] != string[length - 1 - i]) return 0;
 	}
-
 	return 1;
+}
+
+static void undo(void) {
+	lseek(history, 0, SEEK_SET);
+	read(history, &head, sizeof head);
+	if (not head) return;
+	struct action node = {0};
+	lseek(history, head, SEEK_SET);
+	read(history, &node, sizeof node);
+	nat len = (nat) (node.length < 0 ? -node.length : node.length);
+	char* string = malloc(len);
+	read(history, string, len);
+	cursor = node.post;
+	if (node.length < 0) insert(string, len, 0); else delete(len, 0);
+	cursor = node.pre; 
+	anchor = node.pre;
+	head = node.parent; 
+	lseek(history, 0, SEEK_SET);
+	write(history, &head, sizeof head);
+}
+
+static void redo(void) {
+	if (not actions[head].count) return;
+
+	head = actions[head].children[actions[head].choice];
+
+	const struct action a = actions[head];
+
+	cursor = a.pre_cursor; 
+
+	if (a.insert) 
+		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	else 
+		for (nat i = 0; i < a.length; i++) delete(0);
+
+	cursor = a.post_cursor;
+	anchor = cursor;
+
+	//if (a.count > 1) { 
+	//	printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
+	//	getchar(); 
+	//}
 }
 
 int main(int argc, const char** argv) {
@@ -514,6 +688,7 @@ int main(int argc, const char** argv) {
 
 	int flags = O_RDWR;
 	mode_t permission = 0;
+
 	if (argc < 2) {
 		srand((unsigned)time(0)); rand();
 		char datetime[32] = {0};
@@ -524,10 +699,9 @@ int main(int argc, const char** argv) {
 		snprintf(filename, sizeof filename, "%x%x_%s.txt", rand(), rand(), datetime);
 		flags |= O_CREAT | O_EXCL;
 		permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-	}
 
-	else if (argc == 2) strlcpy(filename, argv[1], sizeof filename);
-	else exit(puts("usage error"));
+	} else strlcpy(filename, argv[1], sizeof filename);
+
 	const int dir = open(directory, O_RDONLY | O_DIRECTORY, 0);
 	if (dir < 0) { perror("read open directory"); exit(1); }
 	int df = openat(dir, filename, O_RDONLY | O_DIRECTORY);
@@ -535,16 +709,13 @@ int main(int argc, const char** argv) {
 	file = openat(dir, filename, flags, permission);
 	if (file < 0) { read_error: perror("read openat file"); exit(1); }
 
-
-
-
-
-
-
-	const char* history_directory = "/Users/dwrr/Documents/personal/histories/";
+	const char* history_directory = "./";  //  "/Users/dwrr/Documents/personal/histories/";
 	char history_filename[4096] = {0};
 
-	if (true) {
+	flags = O_RDWR;
+	permission = 0;
+
+	if (argc < 3) {
 		char datetime[32] = {0};
 		struct timeval t = {0};
 		gettimeofday(&t, NULL);
@@ -552,11 +723,13 @@ int main(int argc, const char** argv) {
 		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
 		snprintf(
 			history_filename, sizeof history_filename, 
-			"%x%x_%s.history.txt", rand(), rand(), datetime
+			"%x%x_%s.history", rand(), rand(), datetime
 		);
 		flags |= O_CREAT | O_EXCL;
 		permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-	}
+
+	} else if (argc == 3) strlcpy(history_filename, argv[2], sizeof history_filename);
+	else exit(puts("usage error"));
 
 	const int hdir = open(history_directory, O_RDONLY | O_DIRECTORY, 0);
 	if (hdir < 0) { perror("read open history directory"); exit(1); }
@@ -565,7 +738,9 @@ int main(int argc, const char** argv) {
 	history = openat(hdir, history_filename, flags, permission);
 	if (history < 0) { hread_error: perror("read openat history file"); exit(1); }
 
-
+	if (argc < 3) 
+		write(history, &head, sizeof head); 
+	else 	 read(history, &head, sizeof head);
 
 	struct termios terminal;
 	tcgetattr(0, &terminal);
@@ -584,10 +759,10 @@ int main(int argc, const char** argv) {
 loop:	display();
 	read(0, &c, 1);
 	if (mode & inserting) {
-		if (c == 127) delete(1);
+		if (c == 127) delete(1, 1);
 		else if (c == 27) mode &= ~inserting;
-		else if (is(exit_sequence, c, past)) { delete(strlen(exit_sequence) - 1); mode &= ~inserting; } 
-		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1);
+		else if (is(exit_sequence, c, past)) { delete(strlen(exit_sequence) - 1, 1); mode &= ~inserting; } 
+		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1, 1);
 	} else {
 		if (c == 'q') mode &= ~active;
 		
@@ -595,8 +770,8 @@ loop:	display();
 		else if (c == 's') { anchor = cursor; mode ^= selecting; }
 		else if (c == 'h') move_up_begin();
 		else if (c == 't') mode |= inserting;
-
-		else if (c == 'd') delete(1);
+		
+		else if (c == 'd') delete(1, 1);
 		else if (c == 'r') cut();
 		else if (c == 'm') move_down_end();
 
@@ -607,13 +782,16 @@ loop:	display();
 		else if (c == 'e') move_up();
 		else if (c == 'o') move_right();
 		else if (c == 'i') { }
-
+		
 		else if (c == 'u') move_word_left();
 		else if (c == 'p') move_word_right();
 		else if (c == 'l') move_down();
 
-		else if (c == 'c') move_top();
-		else if (c == 'v') move_bottom();
+		else if (c == 'g') move_top();
+		else if (c == 'y') move_bottom();
+
+		else if (c == 'c') undo();
+		else if (c == 'k') redo();
 	}
 	
 	nat i = 10; 
@@ -624,6 +802,7 @@ loop:	display();
 	if (mode & active) goto loop;
 	close(file);
 	close(dir);
+	close(history);
 	write(1, "\033[?1049l", 8);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
@@ -640,6 +819,42 @@ loop:	display();
 
 
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+
+
+
+/*static void alternate(void) { 
+
+	if (actions[head].choice + 1 < actions[head].count) 
+		actions[head].choice++; 
+	else 
+		actions[head].choice = 0; 
+}*/
+
+
+//if (actions[head].count > 1) { 
+	//	printf("\033[0;44m[%lu:%lu]\033[0m", actions[head].count, actions[head].choice); 
+	//	getchar(); 
+	//}
+
+	/*printf("head = %lld, node {.parent = %llx, .post = %llx, .pre = %llx, .length = %llx }\n", 
+		head, 	node.parent, node.post, node.pre, node.length
+	); 
+	fflush(stdout);
+	getchar();*/
+
+
+
+
+
+
+
+	//  argc == 1     ./editor          
+	//  argc == 2     ./editor file.txt
+	//  argc == 3     ./editor file.txt history.txt
 
 
 
@@ -657,6 +872,14 @@ loop:	display();
 
 
 
+
+
+		//printf("c%lu: comparing %d and %d\n", h, past[h], string[length - 1 - i]);
+		//getchar();
+
+
+	//printf("c0: comparing %d and %d\n", c, string[length - 1]);
+	//getchar();
 
 
 
