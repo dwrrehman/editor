@@ -659,6 +659,8 @@ static void undo(void) {
 }
 
 static void redo(void) {
+
+	/*
 	if (not actions[head].count) return;
 
 	head = actions[head].children[actions[head].choice];
@@ -679,6 +681,30 @@ static void redo(void) {
 	//	printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
 	//	getchar(); 
 	//}
+
+	*/
+}
+
+static void interpret_arrow_key(void) {
+	char c = 0; read(0, &c, 1);
+
+	     if (c == '.') mode &= ~inserting;
+
+	else if (c == 's') { anchor = cursor; mode ^= selecting; }
+	else if (c == 'r') cut();
+
+	else if (c == 'u') move_up_begin();
+	else if (c == 'd') move_down_end();
+	else if (c == 'b') move_word_left();
+	else if (c == 'f') move_word_right();
+	else if (c == '[') {
+		read(0, &c, 1); 
+		if (c == 'A') move_up(); 
+		else if (c == 'B') move_down();
+		else if (c == 'C') move_right();
+		else if (c == 'D') move_left();
+		else { printf("error: found escape seq: ESC [ #%d\n", c); getchar(); }
+	} else { printf("error found escape seq: ESC #%d\n", c); getchar(); }
 }
 
 int main(int argc, const char** argv) {
@@ -709,7 +735,7 @@ int main(int argc, const char** argv) {
 	file = openat(dir, filename, flags, permission);
 	if (file < 0) { read_error: perror("read openat file"); exit(1); }
 
-	const char* history_directory = "./";  //  "/Users/dwrr/Documents/personal/histories/";
+	const char* history_directory = "/Users/dwrr/Documents/personal/histories/";  // "./"
 	char history_filename[4096] = {0};
 
 	flags = O_RDWR;
@@ -760,7 +786,7 @@ loop:	display();
 	read(0, &c, 1);
 	if (mode & inserting) {
 		if (c == 127) delete(1, 1);
-		else if (c == 27) mode &= ~inserting;
+		else if (c == 27) interpret_arrow_key();
 		else if (is(exit_sequence, c, past)) { delete(strlen(exit_sequence) - 1, 1); mode &= ~inserting; } 
 		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1, 1);
 	} else {
@@ -771,7 +797,8 @@ loop:	display();
 		else if (c == 'h') move_up_begin();
 		else if (c == 't') mode |= inserting;
 		
-		else if (c == 'd') delete(1, 1);
+		else if (c == 27)  interpret_arrow_key();
+		else if (c == 'd' or c == 127) delete(1, 1);
 		else if (c == 'r') cut();
 		else if (c == 'm') move_down_end();
 
