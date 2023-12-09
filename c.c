@@ -7,7 +7,7 @@
 
 		if the line is exactly the wrap width, there is a bug where the cursor desyncs. fix this.
 
-
+		unicode: we currently don't handle it good at all, when deleting characters. its really bad actually. some unicode charcters are completely undeletable. its bad. fix this. 
 
 
 
@@ -771,6 +771,8 @@ static void insert_output(const char* input_command) {
 
 int main(int argc, const char** argv) {
 
+	srand((unsigned)time(0)); rand();
+
 	char filename[4096] = {0}, directory[4096] = {0};
 	getcwd(directory, sizeof directory);
 
@@ -778,13 +780,12 @@ int main(int argc, const char** argv) {
 	mode_t permission = 0;
 
 	if (argc < 2) {
-		srand((unsigned)time(0)); rand();
 		char datetime[32] = {0};
 		struct timeval t = {0};
 		gettimeofday(&t, NULL);
 		struct tm* tm = localtime(&t.tv_sec);
 		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-		snprintf(filename, sizeof filename, "%x%x_%s.txt", rand(), rand(), datetime);
+		snprintf(filename, sizeof filename, "%08x%08x_%s.txt", rand(), rand(), datetime);
 		flags |= O_CREAT | O_EXCL;
 		permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 
@@ -811,7 +812,7 @@ int main(int argc, const char** argv) {
 		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
 		snprintf(
 			history_filename, sizeof history_filename, 
-			"%x%x_%s.history", rand(), rand(), datetime
+			"%08x%08x_%s.history", rand(), rand(), datetime
 		);
 		flags |= O_CREAT | O_EXCL;
 		permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
@@ -884,8 +885,8 @@ loop:	display();
 		else if (c == 'g') move_top();
 		else if (c == 'y') move_bottom();
 
-		else if (c == 'c') { for (int i = 0; i < window.ws_row; i++) move_up_begin(); }
-		else if (c == 'k') { for (int i = 0; i < window.ws_row; i++) move_down_end(); }
+		else if (c == 'c') { for (int i = 0; i < window.ws_row; i++) move_up(); }
+		else if (c == 'k') { for (int i = 0; i < window.ws_row; i++) move_down(); }
 
 		else if (c == 'z') undo();
 		else if (c == 'x') redo();

@@ -1,0 +1,169 @@
+; firmware for the simple minimalist ultra-low-power solar computer!
+	.cdecls C, LIST, "msp430.h"
+	.def RESET
+	.text
+	.retain
+	.retainrefs
+_main
+RESET
+	mov.w #__STACK_END, SP
+	mov.w #WDTPW + WDTHOLD, &WDTCTL
+
+	mov.b #PMMPW_H, &PMMCTL0_H
+	bic.b #SVSHE, &PMMCTL0_L
+	clr.b &PMMCTL0_H
+
+	bis.b   #SYSRSTUP, &SFRRPCR  ; enable the pull up resistor on the RST pin.
+
+	mov.w   #0x03, &CSCTL4_L          ; use VLO as cpu/submain clock source.
+	mov.w   #0x1030 + 7, &CSCTL5          ;  dividers: {0001 0000  0011 0111}   smallest divider on VLO (+ 0),   up to /128 (+7)
+
+
+	mov.b   #0xFF,  &P1DIR          ; set all pins as an output, outputting 0.
+	clr.b   &P1OUT
+
+	mov.b   #0xFF,  &P2DIR
+	clr.b   &P2OUT
+
+	mov.b   #0xFF,  &P3DIR
+	clr.b   &P3OUT
+
+
+
+	;bic.b   #0x01, &P2DIR   ; set solar pin as input
+
+
+	bis.b   #0x01, &P3DIR   ; set LED output pin
+	bic.b   #0x01, &P3OUT   ; LED off
+
+	;clr.b &P2IES                  ; P2.0 trigger interrupt on rising edge of signal on input pin. (low -> high)
+        ;clr.b &P2IFG                  ; Clear all P2 interrupt flags
+        ;bis.b #0x01,&P2IE             ; P2.0 interrupt enabled
+
+
+
+        bic.w #LOCKLPM5,&PM5CTL0      ; unlock gpio.
+
+
+
+
+	;cmp.w   #SYSRSTIV_LPM5WU, SYSRSTIV 	; Determine whether we are coming out of an LPMx.5 or a regular RESET.
+	;jne     power_on
+
+
+
+lpm4_wakeup
+	; do stuff
+	bis.b #0x01,&P3OUT
+
+	mov.w #0x0001, R4
+delay	dec R4
+	jnz delay
+
+	bic.b #0x01, &P3OUT
+
+	jmp     sleep
+
+
+power_on
+	; do stuff
+
+sleep
+	;mov.b #PMMPW_H, &PMMCTL0_H
+	;bis.b #PMMREGOFF, &PMMCTL0_L
+	;clr.b &PMMCTL0_H
+
+	bis.w   #LPM4, SR
+
+
+
+	jmp lpm4_wakeup
+
+	nop
+
+
+
+CP_ISR
+	; clear comp int flag
+
+
+	reti
+
+
+
+
+
+
+
+RTC_ISR
+	; clear RTC INT FLAG
+
+	bis.b #0x01,&P3OUT
+
+
+	mov.w #0x00FF, R4
+delay_rtc
+	dec R4
+	jnz delay_rtc
+
+
+	bic.b #0x01, &P3OUT
+
+
+	mov.w #0x00FF, R4
+delay_rtc1
+	dec R4
+	jnz delay_rtc1
+
+
+	reti
+
+
+
+	.global __STACK_END
+	.sect   .stack
+
+	.sect   RESET_VECTOR
+	.short  RESET
+	.sect   RTC_VECTOR
+	.short  RTC_ISR
+	.sect   RTC_VECTOR
+	.short  RTC_ISR
+	.end
+
+
+
+;blink
+;	mov.w #0x0004, R5
+;
+;delay_total
+;	bis.b #0x01,&P3OUT
+;
+;	mov.w #0x0001, R4
+;delay1	dec R4
+;	jnz delay1
+;
+;	bic.b #0x01,&P3OUT
+;
+;	mov.w 	#0x001F, R4
+;delay2	dec R4
+;	jnz delay2
+;
+;	dec R5
+;	jnz delay_total
+;
+
+
+
+;	bis.b #0x01,&P3OUT
+
+;	mov.w #0x0001F, R4
+;delay0	dec R4
+;	jnz delay0
+
+	; bic.b #0x01, &P3OUT
+
+; random calculations:   1/ (10000/1024) * 1024 / 60       for rtc int freq
+
+
+

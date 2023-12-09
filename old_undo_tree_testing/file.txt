@@ -1,0 +1,16 @@
+this is a cool file, which i am using in order to test out the compression algorithm 
+that i am writing. 
+this file is meant to contain testing contents for testing, and has
+hopefully alot of duplication.
+
+
+
+i guess we'll see if it does have duplication. maybe not, idk.
+
+
+
+
+
+i hope you like it!
+
+dwrr
