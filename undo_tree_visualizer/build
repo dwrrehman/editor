@@ -1,0 +1,27 @@
+#!/bin/zsh
+
+if [ "release" = "$1" ]; then
+	clang -Weverything -Ofast c.c -o run
+
+
+elif [ "srelease" = "$1" ]; then
+	clang -Weverything -Os c.c -o run
+
+
+elif [ "clean" = "$1" ]; then
+	rm -rf run
+	rm -rf run.dSYM
+	rm -rf c.plist
+
+
+elif [ "" = "$1" ]; then 
+	clang -g -O0 -Weverything -Wno-declaration-after-statement -Wno-poison-system-directories -fsanitize=address,undefined c.c -o run -ferror-limit=2
+
+
+elif [ "check" = "$1" ]; then 
+	clang -Weverything --analyze -Wno-declaration-after-statement -Wno-poison-system-directories c.c
+
+
+else 
+	echo "build: unknown target: $1"
+fi

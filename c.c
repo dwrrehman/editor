@@ -377,7 +377,7 @@ static void display(void) {
 	while (1) {
 		if ((mode & selecting) and i == begin) { memcpy(screen + length, "\033[7m", 4); length += 4; }
 		if ((mode & selecting) and i == end) { memcpy(screen + length, "\033[0m", 4); length += 4; }
-		if (i == cursor) { cursor_row = row; cursor_column = column; }
+		if (i == cursor) { found_cursor = true; cursor_row = row; cursor_column = column; }
 		if (row >= window.ws_row) break;
 		char k = next();
 		if (not k) { found_end = true; break; }
@@ -400,7 +400,7 @@ static void display(void) {
 		}
 	}
 
-	if (i == cursor) { cursor_row = row; cursor_column = column; }
+	if (i == cursor) { found_cursor = true; cursor_row = row; cursor_column = column; }
 
 	while (row < window.ws_row) {
 		row++;
@@ -420,6 +420,12 @@ static void display(void) {
 			window.ws_row
 		);
 
+	if (not found_cursor) {
+		printf("\033[31mcursor not in the view while displaying the screen. [cursor=%lu, origin=%lu, count=%lu], abort?\033[0m", 
+			cursor, origin, count);
+		fflush(stdout);
+		getchar();
+	}
 	length += (nat) snprintf(
 		screen + length, 
 		screen_size - length, 
