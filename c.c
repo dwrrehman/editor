@@ -372,8 +372,11 @@ static void display(void) {
 
 	const off_t begin = anchor < cursor ? anchor : cursor;
 	const off_t end = anchor < cursor ? cursor : anchor;
+
 	if ((mode & selecting) and anchor < origin) { memcpy(screen + length, "\033[7m", 4); length += 4; }
-	bool found_end = false;
+
+	bool found_end = false, found_cursor = false;
+
 	while (1) {
 		if ((mode & selecting) and i == begin) { memcpy(screen + length, "\033[7m", 4); length += 4; }
 		if ((mode & selecting) and i == end) { memcpy(screen + length, "\033[0m", 4); length += 4; }
@@ -421,7 +424,7 @@ static void display(void) {
 		);
 
 	if (not found_cursor) {
-		printf("\033[31mcursor not in the view while displaying the screen. [cursor=%lu, origin=%lu, count=%lu], abort?\033[0m", 
+		printf("\033[31mcursor not in the view while displaying the screen. [cursor=%llu, origin=%llu, count=%llu], abort?\033[0m", 
 			cursor, origin, count);
 		fflush(stdout);
 		getchar();
@@ -632,7 +635,7 @@ static void cut(void) {
 	clipboard = realloc(clipboard, cliplength);
 	at_string(anchor, cliplength, clipboard);
 	delete((nat) length, 1);
-	cursor = anchor;
+	anchor = cursor;
 	mode &= ~selecting;
 }
 
@@ -713,6 +716,57 @@ static void interpret_arrow_key(void) {
 	} else { printf("error found escape seq: ESC #%d\n", c); getchar(); }
 }
 
+
+static inline void copy(void) {
+	if (not (mode & selecting)) return;
+	get_count();
+	FILE* globalclip = popen("pbcopy", "w");
+	if (not globalclip) {
+		perror("copy popen pbcopy");
+		getchar(); return;
+	}
+
+	if (anchor > count) anchor = count;
+	cliplength = (size_t) (anchor < cursor ? cursor - anchor : anchor - cursor);
+	clipboard = realloc(clipboard, cliplength);
+	if (anchor < cursor) at_string(anchor, cliplength, clipboard);
+	else at_string(cursor, cliplength, clipboard);
+	fwrite(clipboard, 1, cliplength, globalclip);
+	pclose(globalclip);
+	mode &= ~selecting;
+	anchor = cursor;
+}
+
+static void insert_output(const char* input_command) {
+
+	char command[4096] = {0};
+	strlcpy(command, input_command, sizeof command);
+	strlcat(command, " 2>&1", sizeof command);
+
+	FILE* f = popen(command, "r");
+	if (not f) {
+		printf("error: could not execute \"%s\"\n", command);
+		perror("insert_output popen");
+		getchar(); return;
+	}
+	char* string = NULL;
+	size_t length = 0;
+	char line[2048] = {0};
+	while (fgets(line, sizeof line, f)) {
+		size_t l = strlen(line);
+		string = realloc(string, length + l);
+		memcpy(string + length, line, l);
+		length += l;
+	}
+	pclose(f);
+	insert(string, length, 1);
+	free(string);
+}
+
+
+
+
+
 int main(int argc, const char** argv) {
 
 	char filename[4096] = {0}, directory[4096] = {0};
@@ -776,9 +830,9 @@ int main(int argc, const char** argv) {
 
 	struct termios terminal;
 	tcgetattr(0, &terminal);
-	struct termios copy = terminal; 
-	copy.c_lflag &= ~((size_t) ECHO | ICANON);
-	tcsetattr(0, TCSAFLUSH, &copy);
+	struct termios terminal_copy = terminal; 
+	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
+	tcsetattr(0, TCSAFLUSH, &terminal_copy);
 	write(1, "\033[?1049h", 8);
 
 	get_count();
@@ -797,20 +851,22 @@ loop:	display();
 		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1, 1);
 	} else {
 		if (c == 'q') mode &= ~active;
-		
-		else if (c == 'a') { }
+
+		else if (c == 32) {}
+		else if (c == 10) insert(&c, 1, 1);
+		else if (c == 9) insert(&c, 1, 1);
+		else if (c == 27) interpret_arrow_key();
+
+		else if (c == 'b') insert_output("pbpaste");
+		else if (c == 'a') copy();
 		else if (c == 's') { anchor = cursor; mode ^= selecting; }
 		else if (c == 'h') move_up_begin();
 		else if (c == 't') mode |= inserting;
 		
-		else if (c == 27)  interpret_arrow_key();
 		else if (c == 'd' or c == 127) delete(1, 1);
 		else if (c == 'r') cut();
 		else if (c == 'm') move_down_end();
 
-		else if (c == 'f') forwards();
-		else if (c == 'b') backwards();
-		
 		else if (c == 'n') move_left();
 		else if (c == 'e') move_up();
 		else if (c == 'o') move_right();
@@ -820,11 +876,17 @@ loop:	display();
 		else if (c == 'p') move_word_right();
 		else if (c == 'l') move_down();
 
+		else if (c == 'f') forwards();
+		else if (c == 'w') backwards();
+
 		else if (c == 'g') move_top();
 		else if (c == 'y') move_bottom();
 
-		else if (c == 'c') undo();
-		else if (c == 'k') redo();
+		else if (c == 'c') { for (int i = 0; i < window.ws_row; i++) move_up_begin(); }
+		else if (c == 'k') { for (int i = 0; i < window.ws_row; i++) move_down_end(); }
+
+		else if (c == 'z') undo();
+		else if (c == 'x') redo();
 	}
 	
 	nat i = 10; 
