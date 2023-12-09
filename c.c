@@ -373,13 +373,13 @@ static void display(void) {
 	const off_t begin = anchor < cursor ? anchor : cursor;
 	const off_t end = anchor < cursor ? cursor : anchor;
 
-	if ((mode & selecting) and anchor < origin) { memcpy(screen + length, "\033[7m", 4); length += 4; }
+	bool selection_started = 0, found_end = false, found_cursor = false;
 
-	bool found_end = false, found_cursor = false;
+	if ((mode & selecting) and anchor < origin) { selection_started = 1; memcpy(screen + length, "\033[7m", 4); length += 4; }
 
 	while (1) {
-		if ((mode & selecting) and i == begin) { memcpy(screen + length, "\033[7m", 4); length += 4; }
-		if ((mode & selecting) and i == end) { memcpy(screen + length, "\033[0m", 4); length += 4; }
+		if ((mode & selecting) and i == begin) { selection_started = 1; memcpy(screen + length, "\033[7m", 4); length += 4; }
+		if ((mode & selecting) and i == end)   { selection_started = 0; memcpy(screen + length, "\033[0m", 4); length += 4; }
 		if (i == cursor) { found_cursor = true; cursor_row = row; cursor_column = column; }
 		if (row >= window.ws_row) break;
 		char k = next();
@@ -402,6 +402,8 @@ static void display(void) {
 			screen[length++] = k;
 		}
 	}
+
+	if ((mode & selecting) and selection_started)   { selection_started = 0; memcpy(screen + length, "\033[0m", 4); length += 4; }
 
 	if (i == cursor) { found_cursor = true; cursor_row = row; cursor_column = column; }
 

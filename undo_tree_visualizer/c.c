@@ -9,7 +9,6 @@
 #include <ctype.h>
 
 int main(void) {
-
 	int fd = open("41a710d63af1_1202312052.154749.history", O_RDONLY);
 	int filepos = 0;
 
@@ -19,12 +18,9 @@ int main(void) {
 		if (n <= 0) break;	
 		printf("read c = %d (%c) at filepos = %d\n", c, isprint(c) ? c : '.', filepos);
 		filepos++;
-		// usleep(100000);
 	}
 
 	printf("finished reading file!\n");
-
-
 	close(fd);
 }
 
