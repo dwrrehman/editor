@@ -18,15 +18,16 @@ int main(int argc, const char** argv) {
 	terminal.c_cc[VWERASE] = _POSIX_VDISABLE;
 	tcsetattr(0, TCSAFLUSH, &terminal);
 
-	size_t page_size = 4096;
+	size_t page_size = 1024;
 	char* page = malloc(page_size);
-	const size_t max_input_string_size = 4096;
-	char string[max_input_string_size] = {0};
+	const size_t max_input_size = 4096;
+	char string[max_input_size] = {0};
 	size_t length = 0, found = 0;
 
 	loop:; char line[4096] = {0}, c = 0;
 	read(0, line, sizeof line);
 	if (not strcmp(line, "exit\n")) goto done;
+	if (not strcmp(line, "clear\n")) { for (int i = 0; i < 100; i++) puts(""); puts("\033[1;1H"); }
 	else if (not strcmp(line, "n\n")) {
 		if (not length) printf("%lld\n", lseek(file, 0, SEEK_CUR));
 		else {
@@ -38,17 +39,22 @@ int main(int argc, const char** argv) {
 			length = 0;
 		}
 
-	} else if (not strcmp(line, "f\n")) {
+	} else if (not strcmp(line, "t\n") or not strcmp(line, "r\n")) {
 		if (not length) goto print_page;
 		string[--length] = 0;
-		size_t i = 0;
-		search:; ssize_t n = read(file, &c, 1);
-		if (not n) { found = 0; goto clear; }
-		if (c == string[i]) i++; else i = 0;
-		if (i == length) {
+		const char d = *line == 't';
+		size_t i = d ? 0 : length;
+		search: if (not d) lseek(file, -1, SEEK_CUR);
+		ssize_t n = read(file, &c, 1);
+		if (not n) { this: found = 0; goto clear; }
+		if (not d) { off_t a = lseek(file, -1, SEEK_CUR); if (not a) goto this; }
+		if (d) { if (c == string[i]) i++; else i = 0; }
+		else { i--; if (c != string[i]) i = length; }
+		if (d ? i == length : not i) {
 			print_page:; ssize_t nn = read(file, page, page_size);
-			if (nn < 0) abort();
+			if (not nn) lseek(file, 0, SEEK_SET);
 			if (nn > 0) { write(1, page, (size_t) nn); write(1, "\033[7m/\033[0m", 9); }
+			lseek(file, -(off_t) nn, SEEK_CUR);
 			found = length;
 			clear: memset(string, 0, sizeof string); 
 			length = 0; goto loop;
