@@ -1,0 +1,76 @@
+// static struct winsize window = {0};
+// , anchor = 0;
+// origin = 0,
+// static int cursor_row = 0, cursor_column = 0, desired_column = 0;
+
+
+static void forwards(void) {
+	nat t = 0;
+	loop: if (t == cliplength or cursor >= count) return;
+	if (text[cursor] != clipboard[t]) t = 0; else t++;
+	move_right(); 
+	goto loop;
+}
+
+static void backwards(void) {
+	nat t = cliplength;
+	loop: if (not t or not cursor) return;
+	move_left(); t--; 
+	if (text[cursor] != clipboard[t]) t = cliplength;
+	goto loop;
+}
+
+
+static void get_count(void) {
+	
+}
+
+static void insert(char* string, nat length) {
+	struct stat s;
+	fstat(file, &s);
+	count = s.st_size;
+
+	const size_t size = (size_t) (count - cursor);
+	char* rest = malloc(size + length); 
+	memcpy(rest, string, length);
+	lseek(file, cursor, SEEK_SET);
+	read(file, rest + length, size);
+	lseek(file, cursor, SEEK_SET);
+	write(file, rest, size + length);
+	count += length;
+	fsync(file);
+	free(rest);
+	for (nat i = 0; i < length; i++) move_right();
+}
+
+static void delete(off_t length) {
+	if (cursor < length) return;
+
+	struct stat s;
+	fstat(file, &s);
+	count = s.st_size;
+
+	const size_t size = (size_t) (count - cursor);
+	char* rest = malloc(size);
+	lseek(file, cursor, SEEK_SET);
+	read(file, rest, size);
+	lseek(file, cursor - length, SEEK_SET);
+	write(file, rest, size);
+	count -= length;
+	ftruncate(file, count);
+	fsync(file);
+	free(rest);
+	for (nat i = 0; i < length; i++) move_left();
+}
+
+
+
+	} else if (n < (ssize_t) sizeof buffer) {
+		printf("[small line]\n");
+	} else if (n == (ssize_t) sizeof buffer) {
+		printf("[normal buffer read]\n");
+	}
+
+
+*/
+
