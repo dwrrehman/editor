@@ -19,7 +19,7 @@ if the lien    is exactly the rap with         then we will get a cursor   d sin
 		static void create_action(struct action new) {
 			new.post_cursor = cursor; 
 			new.post_origin = origin; 
-		//	new.post_saved = mode & saved;
+		 	new.post_saved = mode & saved;
 			new.parent = head;
 			actions[head].children = realloc(actions[head].children, sizeof(size_t) * (actions[head].count + 1));
 			actions[head].choice = actions[head].count;
@@ -46,7 +46,7 @@ if the lien    is exactly the rap with         then we will get a cursor   d sin
 			new.length = 1;
 			new.text = malloc(1);
 			new.text[0] = c;
-			create_action(new);
+			hello there_action(new);
 		}
 
 		static void insert(char c, bool should_record) {
@@ -651,11 +651,10 @@ static bool is(const char* string, char c, char* past) {
 }
 
 static void undo(void) {
-	lseek(history, 0, SEEK_SET);
-	read(history, &head, sizeof head);
+
+
 	if (not head) return;
-	struct action node = {0};
-	lseek(history, head, SEEK_SET);
+
 	read(history, &node, sizeof node);
 	nat len = (nat) (node.length < 0 ? -node.length : node.length);
 	char* string = malloc(len);
@@ -663,7 +662,8 @@ static void undo(void) {
 	cursor = node.post;
 	if (node.length < 0) insert(string, len, 0); else delete(len, 0);
 	cursor = node.pre; 
-	anchor = node.pre;
+	
+	// hello there from space again.
 	head = node.parent; 
 	lseek(history, 0, SEEK_SET);
 	write(history, &head, sizeof head);
@@ -2861,6 +2861,119 @@ static void delete(off_t length) {
 
 
 */
+
+
+
+
+
+
+/
+
+
+
+
+
+
+
+
+		printf("[normal buffer read]\n");
+	}
+
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+/
+
+
+
+
+
+
+
+ntf("[normal buffer read]\n");
+	}
+
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+/
+
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+/
+
+
+
+
+
+
+
+
+read]\n");
+	}
+
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+/
+
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+/
+
+
 
 
 
