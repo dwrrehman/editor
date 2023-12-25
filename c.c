@@ -1,296 +1,12 @@
 // editor source code. written on 202311201.014937 by dwrr
-
 /*
-
 202311245.115046:
 	BUG:
-
 		if the line is exactly the wrap width, there is a bug where the cursor desyncs. fix this.
 
 		unicode: we currently don't handle it good at all, when deleting characters. its really bad actually. some unicode charcters are completely undeletable. its bad. fix this. 
 
-
-
-
-
-
-if the lien    is exactly the rap with         then we will get a cursor   d sink
-
-		static void create_action(struct action new) {
-			new.post_cursor = cursor; 
-			new.post_origin = origin; 
-		//	new.post_saved = mode & saved;
-			new.parent = head;
-			actions[head].children = realloc(actions[head].children, sizeof(size_t) * (actions[head].count + 1));
-			actions[head].choice = actions[head].count;
-			actions[head].children[actions[head].count++] = action_count;
-			head = action_count;
-			actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
-			actions[action_count++] = new;
-		}
- 
-		static void delete(bool should_record) {
-			if (not cursor) return;
-			struct action new = {
-				.pre_cursor = cursor, 
-				.pre_origin = origin, 
-		//		.pre_saved = mode & saved
-			};
-			const char c = text[cursor - 1];
-			memmove(text + cursor - 1, text + cursor, count - cursor);
-			count--;
-			text = realloc(text, count); 
-			mode &= ~saved; move_left();
-			if (not should_record) return;
-			new.insert = 0;
-			new.length = 1;
-			new.text = malloc(1);
-			new.text[0] = c;
-			create_action(new);
-		}
-
-		static void insert(char c, bool should_record) {
-			struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = mode & saved};
-			text = realloc(text, count + 1);
-			memmove(text + cursor + 1, text + cursor, count - cursor);
-			text[cursor] = c;
-			count++; mode &= ~saved;
-			move_right();
-			if (not should_record) return;
-			new.insert = 1;
-			new.length = 1;
-			new.text = malloc(1);
-			new.text[0] = c;
-			create_action(new);
-		}
-
-
-
-static void alternate(void) { if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0; }
-static void undo(void) {
-	if (not head) return;
-	struct action a = actions[head];
-	cursor = a.post_cursor; origin = a.post_origin; mode = (mode & ~saved) | a.post_saved; 
-	if (not a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
-	else for (nat i = 0; i < a.length; i++) delete(0);	
-	cursor = a.pre_cursor; origin = a.pre_origin; mode = (mode & ~saved) | a.pre_saved; anchor = cursor;
-	head = a.parent; a = actions[head];
-	if (a.count > 1) { 
-		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, a.choice); 
-		getchar(); 
-	}
-}
-
-static void redo(void) {
-	if (not actions[head].count) return;
-	head = actions[head].children[actions[head].choice];
-	const struct action a = actions[head];
-	cursor = a.pre_cursor; origin = a.pre_origin; mode = (mode & ~saved) | a.pre_saved; 
-	if (a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
-	else for (nat i = 0; i < a.length; i++) delete(0);
-	cursor = a.post_cursor; origin = a.post_origin; mode = (mode & ~saved) | a.post_saved; anchor = cursor;
-	if (a.count > 1) { 
-		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
-		getchar(); 
-	}
-}
-
-
-
-
-typedef size_t nat;
-
-
-						struct action {
-							char* text;
-						//	nat* children;
-							nat parent, 
-							choice, 
-						//	count, 
-							length, 
-						//	insert,
-							pre_cursor, post_cursor, 
-						//	pre_origin, post_origin, 
-						//	pre_saved, post_saved;
-						};
-
-
-						struct action {
-							char* text;
-																//	nat* children;
-							nat parent, 
-				not	necc	--->	choice, 
-																//	count, 
-							length, 
-																//	insert,
-							pre_cursor, post_cursor, 
-															//	pre_origin, post_origin, 
-															//	pre_saved, post_saved;
-						};
-
-
-
-
-
-
-						struct action {
-							nat parent, pre_cursor, post_cursor, length;          4 * 4bytes (u32)  =  16 bytes + string.
-							char* text;
-						};
-
-
-
-
-				each of these will be uint32_t's, except for   length which is a   int32_t   i think  ie signed 
-				so yeah. yay
-
-
-						
-
-
-
-							oh, also head      which is the first 4 bytes of the file, 
-							is found at the beginning,  so all offsets   .parents       will be larger than 4. 
-
-									so yeah 
-
-
-								also .parents are file offsets of other node's .parent
-
-
-
-
-
-
-
-		struct action_header {
-			u32 parent;
-			u32 pre;
-			u32 post;
-			u32 length;
-		};
-
-
-	we will simply write a header, and then write the string .text  directly afterwards. 
-
-			using   
-
-				add new node in tree:
-
-				===================================
-
-		
-
-						struct action_header node = {
-							.parent = read_head(),
-							.pre = cursor,
-							.length = text_length,
-						};
-
-
-							// do the operation();
-			
-
-						node.post = cursor;
-						move_to_end_of_file
-						pos = get_current_file_pos;
-						write(history, node, sizeof node);
-						write(history, text, text_length);
-						head = get_current_file_pos;
-						write_head(head);
-		
-
-
-
-
-
-
-
-
-
-
-static const nat active = 0x01, saved = 0x02, selecting = 0x04;
-
-
-extern char** environ;
-
-static struct termios terminal;
-
-static struct winsize window;
-
-
-
-static char filename[4096] = {0}, directory[4096] = {0};
-
-static char* text = NULL, * clipboard = NULL;
-
-static struct action* actions = NULL;
-
-static nat mode = 0, 
-	
-	cursor = 0, origin = 0, anchor = 0, 
-
-	cursor_row = 0, cursor_column = 0, 
-
-	   count = 0, 
-
-	cliplength = 0, 
-
-
-	action_count = 0, head = 0, 
-
-
-previous_cursor = 0;
-
-
-
-
-		TODO: implement this:
-	---------------------------------------------------------------
-
-
-
-
-			- implementing the undo tree     create a .history file in the /histories/ dir,
-								 if none was supplied on command line.
-
-
-			- more efficient display logic:   multiple types of display updates:
-
-
-			x	0 means full refresh,	
-
-		 	x	1 means partial refresh after cursor, 
-
-			x	2 means just update cursor position, 
-
-			x	3 means scroll screen downwards, 
-
-			x	4 means scroll screen upwards. 
-
-
-	done:
-
-		x	- move up       on visual lines
-
-		x	- make it nonmodal, by using a input history system! i think.. 
-
-
-	
-			
-	
-
-
-
-
-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-		*/
-
-
-
-
-
-
+*/
 
 #include <stdio.h>  // 202309074.165637:   
 #include <stdlib.h> //  another rewrite to make the editor simpler, and non-volatile- to never require saving. 
@@ -309,6 +25,8 @@ previous_cursor = 0;
 #include <sys/time.h>
 #include <sys/wait.h>
 #include <stdint.h>
+#include <signal.h>
+
 typedef uint64_t nat;
 static const nat active = 0x01, inserting = 0x02, selecting = 0x04;
 extern char** environ;
@@ -442,6 +160,14 @@ static void display(void) {
 	write(1, screen, length);
 }
 
+static void window_resize_handler(int unused) {
+	display();
+}
+
+static void handler2(int unused) {
+	exit(1);
+}
+
 static void move_left_raw(void) {    
 	get_count();
 	if (not cursor) return;
@@ -516,6 +242,7 @@ static void move_word_left(void) {
 		char here = next();
 		if (not here) return;
 		if (not (not isalnum(here) or isalnum(behind))) break;
+		if (behind == 10) break;
 		move_left();
 	}
 }
@@ -528,6 +255,7 @@ static void move_word_right(void) {
 		char here = next();
 		if (not here) return;
 		if (not (isalnum(here) or not isalnum(behind))) break;
+		if (here == 10) break;
 		move_right();
 	}
 }
@@ -766,15 +494,18 @@ static void insert_output(const char* input_command) {
 }
 
 
-
-
-
 int main(int argc, const char** argv) {
 
 	srand((unsigned)time(0)); rand();
 
 	char filename[4096] = {0}, directory[4096] = {0};
 	getcwd(directory, sizeof directory);
+
+	struct sigaction action = {.sa_handler = window_resize_handler}; 
+	sigaction(SIGWINCH, &action, NULL);
+
+	struct sigaction action2 = {.sa_handler = handler2}; 
+	sigaction(SIGINT, &action2, NULL);
 
 	int flags = O_RDWR;
 	mode_t permission = 0;
@@ -2855,6 +2586,319 @@ static void delete(off_t length) {
 	}
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if the lien    is exactly the rap with         then we will get a cursor   d sink
+
+		static void create_action(struct action new) {
+			new.post_cursor = cursor; 
+			new.post_origin = origin; 
+		//	new.post_saved = mode & saved;
+			new.parent = head;
+			actions[head].children = realloc(actions[head].children, sizeof(size_t) * (actions[head].count + 1));
+			actions[head].choice = actions[head].count;
+			actions[head].children[actions[head].count++] = action_count;
+			head = action_count;
+			actions = realloc(actions, sizeof(struct action) * (size_t)(action_count + 1));
+			actions[action_count++] = new;
+		}
+ 
+		static void delete(bool should_record) {
+			if (not cursor) return;
+			struct action new = {
+				.pre_cursor = cursor, 
+				.pre_origin = origin, 
+		//		.pre_saved = mode & saved
+			};
+			const char c = text[cursor - 1];
+			memmove(text + cursor - 1, text + cursor, count - cursor);
+			count--;
+			text = realloc(text, count); 
+			mode &= ~saved; move_left();
+			if (not should_record) return;
+			new.insert = 0;
+			new.length = 1;
+			new.text = malloc(1);
+			new.text[0] = c;
+			create_action(new);
+		}
+
+		static void insert(char c, bool should_record) {
+			struct action new = {.pre_cursor = cursor, .pre_origin = origin, .pre_saved = mode & saved};
+			text = realloc(text, count + 1);
+			memmove(text + cursor + 1, text + cursor, count - cursor);
+			text[cursor] = c;
+			count++; mode &= ~saved;
+			move_right();
+			if (not should_record) return;
+			new.insert = 1;
+			new.length = 1;
+			new.text = malloc(1);
+			new.text[0] = c;
+			create_action(new);
+		}
+
+
+
+static void alternate(void) { if (actions[head].choice + 1 < actions[head].count) actions[head].choice++; else actions[head].choice = 0; }
+static void undo(void) {
+	if (not head) return;
+	struct action a = actions[head];
+	cursor = a.post_cursor; origin = a.post_origin; mode = (mode & ~saved) | a.post_saved; 
+	if (not a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	else for (nat i = 0; i < a.length; i++) delete(0);	
+	cursor = a.pre_cursor; origin = a.pre_origin; mode = (mode & ~saved) | a.pre_saved; anchor = cursor;
+	head = a.parent; a = actions[head];
+	if (a.count > 1) { 
+		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, a.choice); 
+		getchar(); 
+	}
+}
+
+static void redo(void) {
+	if (not actions[head].count) return;
+	head = actions[head].children[actions[head].choice];
+	const struct action a = actions[head];
+	cursor = a.pre_cursor; origin = a.pre_origin; mode = (mode & ~saved) | a.pre_saved; 
+	if (a.insert) for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	else for (nat i = 0; i < a.length; i++) delete(0);
+	cursor = a.post_cursor; origin = a.post_origin; mode = (mode & ~saved) | a.post_saved; anchor = cursor;
+	if (a.count > 1) { 
+		printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
+		getchar(); 
+	}
+}
+
+
+
+
+typedef size_t nat;
+
+
+						struct action {
+							char* text;
+						//	nat* children;
+							nat parent, 
+							choice, 
+						//	count, 
+							length, 
+						//	insert,
+							pre_cursor, post_cursor, 
+						//	pre_origin, post_origin, 
+						//	pre_saved, post_saved;
+						};
+
+
+						struct action {
+							char* text;
+																//	nat* children;
+							nat parent, 
+				not	necc	--->	choice, 
+																//	count, 
+							length, 
+																//	insert,
+							pre_cursor, post_cursor, 
+															//	pre_origin, post_origin, 
+															//	pre_saved, post_saved;
+						};
+
+
+
+
+
+
+						struct action {
+							nat parent, pre_cursor, post_cursor, length;          4 * 4bytes (u32)  =  16 bytes + string.
+							char* text;
+						};
+
+
+
+
+				each of these will be uint32_t's, except for   length which is a   int32_t   i think  ie signed 
+				so yeah. yay
+
+
+						
+
+
+
+							oh, also head      which is the first 4 bytes of the file, 
+							is found at the beginning,  so all offsets   .parents       will be larger than 4. 
+
+									so yeah 
+
+
+								also .parents are file offsets of other node's .parent
+
+
+
+
+
+
+
+		struct action_header {
+			u32 parent;
+			u32 pre;
+			u32 post;
+			u32 length;
+		};
+
+
+	we will simply write a header, and then write the string .text  directly afterwards. 
+
+			using   
+
+				add new node in tree:
+
+				===================================
+
+		
+
+						struct action_header node = {
+							.parent = read_head(),
+							.pre = cursor,
+							.length = text_length,
+						};
+
+
+							// do the operation();
+			
+
+						node.post = cursor;
+						move_to_end_of_file
+						pos = get_current_file_pos;
+						write(history, node, sizeof node);
+						write(history, text, text_length);
+						head = get_current_file_pos;
+						write_head(head);
+		
+
+
+
+
+
+
+
+
+
+
+static const nat active = 0x01, saved = 0x02, selecting = 0x04;
+
+
+extern char** environ;
+
+static struct termios terminal;
+
+static struct winsize window;
+
+
+
+static char filename[4096] = {0}, directory[4096] = {0};
+
+static char* text = NULL, * clipboard = NULL;
+
+static struct action* actions = NULL;
+
+static nat mode = 0, 
+	
+	cursor = 0, origin = 0, anchor = 0, 
+
+	cursor_row = 0, cursor_column = 0, 
+
+	   count = 0, 
+
+	cliplength = 0, 
+
+
+	action_count = 0, head = 0, 
+
+
+previous_cursor = 0;
+
+
+
+
+		TODO: implement this:
+	---------------------------------------------------------------
+
+
+
+
+			- implementing the undo tree     create a .history file in the /histories/ dir,
+								 if none was supplied on command line.
+
+
+			- more efficient display logic:   multiple types of display updates:
+
+
+			x	0 means full refresh,	
+
+		 	x	1 means partial refresh after cursor, 
+
+			x	2 means just update cursor position, 
+
+			x	3 means scroll screen downwards, 
+
+			x	4 means scroll screen upwards. 
+
+
+	done:
+
+		x	- move up       on visual lines
+
+		x	- make it nonmodal, by using a input history system! i think.. 
+
+
+	
+			
+	
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 
 

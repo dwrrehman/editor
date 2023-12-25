@@ -24,3 +24,12 @@ static inline void do_the_thing(void) {
 }
 
 i don't know if this works, but i guess we will see lol. yay. lets also add the global clipboard paste, actually, lets see if that works lol. yay. 
+
+
+
+
+
+
+
+
+
