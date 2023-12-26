@@ -26,12 +26,14 @@
 #include <sys/wait.h>
 #include <stdint.h>
 #include <signal.h>
+#include <copyfile.h>
 
 typedef uint64_t nat;
 static const nat active = 0x01, inserting = 0x02, selecting = 0x04;
 extern char** environ;
 static struct winsize window = {0};
-static int file = -1;
+static char filename[4096] = {0}, directory[4096] = {0};
+static int file = -1, directory_fd = -1;
 static off_t cursor = 0, origin = 0, count = 0, anchor = 0;
 static nat mode = 0;
 static nat cursor_row = 0, cursor_column = 0, desired_column = 0;
@@ -42,6 +44,10 @@ static nat cliplength = 0;
 static nat display_mode = 0;
 static int history = -1;
 static off_t head = 0;
+
+static int autosave_frequency = 5;
+static int autosave_counter = 0;
+
 
 struct action {                 //TODO: this struct shouldnt exist. delete it, write each element one by one. 
 	off_t parent;
@@ -75,6 +81,56 @@ static void at_string(off_t a, nat byte_count, char* destination) {
 	if (n == 0) return;
 	if (n < 0) { perror("next read"); exit(1); }
 }
+
+static void autosave(void) {
+
+	char autosave_filename[4096] = {0};
+	const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
+
+	char datetime[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+
+	snprintf(autosave_filename, sizeof autosave_filename, "%s_%08x%08x.txt", datetime, rand(), rand());
+	int flags = O_RDWR | O_CREAT | O_EXCL;
+	mode_t permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+
+	const int autosave_dir = open(autosave_directory, O_RDONLY | O_DIRECTORY, 0);
+	if (autosave_dir < 0) { perror("read open autosave_directory"); exit(1); }
+	int df = openat(autosave_dir, autosave_filename, O_RDONLY | O_DIRECTORY);
+	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
+	int autosave_file = openat(autosave_dir, autosave_filename, flags, permission);
+	if (autosave_file < 0) { read_error: perror("read openat autosave_filename"); exit(1); }
+
+	
+	close(file);
+	close(directory_fd);
+	
+	flags = O_RDWR;
+	permission = 0;
+
+	directory_fd = open(directory, O_RDONLY | O_DIRECTORY, 0);
+	if (directory_fd < 0) { perror("read open directory"); exit(1); }
+	df = openat(directory_fd, filename, O_RDONLY | O_DIRECTORY);
+	if (df >= 0) { close(df); errno = EISDIR; goto read_error2; }
+	file = openat(directory_fd, filename, flags, permission);
+	if (file < 0) { read_error2: perror("read openat file"); exit(1); }
+
+	if (fcopyfile(file, autosave_file, NULL, COPYFILE_ALL)) {
+		perror("fcopyfile autosave COPYFILE_ALL");
+		getchar();
+	}
+
+	close(autosave_file);
+	close(autosave_dir);
+
+	
+
+	autosave_counter = 0; 
+}
+
 
 static void display(void) {
 
@@ -160,13 +216,8 @@ static void display(void) {
 	write(1, screen, length);
 }
 
-static void window_resize_handler(int unused) {
-	display();
-}
-
-static void handler2(int unused) {
-	exit(1);
-}
+static void window_resize_handler(int unused) { display(); }
+static void interrupt_handler(int unused) { exit(1); }
 
 static void move_left_raw(void) {    
 	get_count();
@@ -310,6 +361,7 @@ static void finish_action(struct action node, const char* string, nat length) {
 }
 
 static void insert(char* string, nat length, bool should_record) {
+	if (++autosave_counter >= autosave_frequency) autosave();
 	lseek(history, 0, SEEK_SET);
 	read(history, &head, sizeof head);
 	struct action node = { .parent = head, .pre = cursor, .length = (off_t) length };
@@ -329,6 +381,7 @@ static void insert(char* string, nat length, bool should_record) {
 }
 
 static void delete(nat length, bool should_record) {
+	if (++autosave_counter >= autosave_frequency) autosave();
 	if (cursor < (off_t) length) return;
 	lseek(history, 0, SEEK_SET);
 	read(history, &head, sizeof head);
@@ -493,18 +546,15 @@ static void insert_output(const char* input_command) {
 	free(string);
 }
 
-
 int main(int argc, const char** argv) {
 
 	srand((unsigned)time(0)); rand();
-
-	char filename[4096] = {0}, directory[4096] = {0};
 	getcwd(directory, sizeof directory);
 
 	struct sigaction action = {.sa_handler = window_resize_handler}; 
 	sigaction(SIGWINCH, &action, NULL);
 
-	struct sigaction action2 = {.sa_handler = handler2}; 
+	struct sigaction action2 = {.sa_handler = interrupt_handler}; 
 	sigaction(SIGINT, &action2, NULL);
 
 	int flags = O_RDWR;
@@ -516,17 +566,17 @@ int main(int argc, const char** argv) {
 		gettimeofday(&t, NULL);
 		struct tm* tm = localtime(&t.tv_sec);
 		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-		snprintf(filename, sizeof filename, "%08x%08x_%s.txt", rand(), rand(), datetime);
+		snprintf(filename, sizeof filename, "%s_%08x%08x.txt", datetime, rand(), rand());
 		flags |= O_CREAT | O_EXCL;
 		permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 
 	} else strlcpy(filename, argv[1], sizeof filename);
 
-	const int dir = open(directory, O_RDONLY | O_DIRECTORY, 0);
-	if (dir < 0) { perror("read open directory"); exit(1); }
-	int df = openat(dir, filename, O_RDONLY | O_DIRECTORY);
+	directory_fd = open(directory, O_RDONLY | O_DIRECTORY, 0);
+	if (directory_fd < 0) { perror("read open directory"); exit(1); }
+	int df = openat(directory_fd, filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
-	file = openat(dir, filename, flags, permission);
+	file = openat(directory_fd, filename, flags, permission);
 	if (file < 0) { read_error: perror("read openat file"); exit(1); }
 
 	const char* history_directory = "/Users/dwrr/Documents/personal/histories/";  // "./"
@@ -543,7 +593,7 @@ int main(int argc, const char** argv) {
 		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
 		snprintf(
 			history_filename, sizeof history_filename, 
-			"%08x%08x_%s.history", rand(), rand(), datetime
+			"%s_%08x%08x.history", datetime, rand(), rand()
 		);
 		flags |= O_CREAT | O_EXCL;
 		permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
@@ -553,7 +603,7 @@ int main(int argc, const char** argv) {
 
 	const int hdir = open(history_directory, O_RDONLY | O_DIRECTORY, 0);
 	if (hdir < 0) { perror("read open history directory"); exit(1); }
-	df = openat(dir, history_filename, O_RDONLY | O_DIRECTORY);
+	df = openat(hdir, history_filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto hread_error; }
 	history = openat(hdir, history_filename, flags, permission);
 	if (history < 0) { hread_error: perror("read openat history file"); exit(1); }
@@ -588,7 +638,7 @@ loop:	display();
 
 		else if (c == 32) {}
 		else if (c == 10) insert(&c, 1, 1);
-		else if (c == 9) insert(&c, 1, 1);
+		else if (c == 9)  insert(&c, 1, 1);
 		else if (c == 27) interpret_arrow_key();
 
 		else if (c == 'b') insert_output("pbpaste");
@@ -630,7 +680,7 @@ loop:	display();
 
 	if (mode & active) goto loop;
 	close(file);
-	close(dir);
+	close(directory_fd);
 	close(history);
 	write(1, "\033[?1049l", 8);
 	tcsetattr(0, TCSAFLUSH, &terminal);
