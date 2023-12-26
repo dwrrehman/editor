@@ -29,6 +29,9 @@
 #include <copyfile.h>
 
 typedef uint64_t nat;
+static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
+static const nat autosave_frequency = 12; // every 12 edits, fcopyfile is called. 
+
 static const nat active = 0x01, inserting = 0x02, selecting = 0x04;
 extern char** environ;
 static struct winsize window = {0};
@@ -44,9 +47,8 @@ static nat cliplength = 0;
 static nat display_mode = 0;
 static int history = -1;
 static off_t head = 0;
+static nat autosave_counter = 0;
 
-static int autosave_frequency = 5;
-static int autosave_counter = 0;
 
 
 struct action {                 //TODO: this struct shouldnt exist. delete it, write each element one by one. 
@@ -85,7 +87,6 @@ static void at_string(off_t a, nat byte_count, char* destination) {
 static void autosave(void) {
 
 	char autosave_filename[4096] = {0};
-	const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
 
 	char datetime[32] = {0};
 	struct timeval t = {0};
