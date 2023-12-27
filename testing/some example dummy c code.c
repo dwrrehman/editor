@@ -23,7 +23,13 @@ static inline void do_the_thing(void) {
 	exit(1);	
 }
 
-i don't know if this works, but i guess we will see lol. yay. lets also add the global clipboard paste, actually, lets see if that works lol. yay. 
+
+	// 202312251.170634:
+	// i am quite hopeful that this editor will actually work out, and it will be the editor that i actually use full time from now on. i have to start using it, for coding at least. i think i am going to try to use it for some leetcode challenges. lets try that now. lol. yay. this is pretty cool. yayy. then i want to try writing a text document using i too lol. yay. one step at a time though. time for some leetcode! yay. 
+
+
+
+// i don't know if this works, but i guess we will see lol. yay. lets also add the global clipboard paste, actually, lets see if that works lol. yay. 
 
 
 

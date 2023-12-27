@@ -9,7 +9,7 @@ int main(void) {
 
 	for (int i = 0; i < n; i++) {
 		for (int j = 2; j < i; j++) {
-			if (i % j == 0) goto composite;
+		if (i % j == 0) goto composite;
 		}
 		printf("%d is prime!\n", i);
 		composite: continue;

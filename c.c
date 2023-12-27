@@ -547,6 +547,22 @@ static void insert_output(const char* input_command) {
 	free(string);
 }
 
+static void jump_index(void) {
+	char* string = strndup(clipboard, cliplength);	
+	const size_t n = (size_t) atoi(string);
+	for (size_t i = 0; i < n; i++) move_right();
+	free(string);
+}
+
+static void jump_line(void) {
+	char* string = strndup(clipboard, cliplength);	
+	const size_t n = (size_t) atoi(string);
+	move_top(); 
+	for (size_t i = 0; i < n; i++) move_down_end();
+	move_up_begin(); 
+	free(string);
+}
+
 int main(int argc, const char** argv) {
 
 	srand((unsigned)time(0)); rand();
@@ -655,7 +671,9 @@ loop:	display();
 		else if (c == 'n') move_left();
 		else if (c == 'e') move_up();
 		else if (c == 'o') move_right();
-		else if (c == 'i') { }
+		
+		else if (c == ';') jump_line();
+		else if (c == 'i') jump_index();
 		
 		else if (c == 'u') move_word_left();
 		else if (c == 'p') move_word_right();
