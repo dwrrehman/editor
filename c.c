@@ -1,12 +1,4 @@
 // editor source code. written on 202311201.014937 by dwrr
-/*
-202311245.115046:
-	BUG:
-		if the line is exactly the wrap width, there is a bug where the cursor desyncs. fix this.
-
-		unicode: we currently don't handle it good at all, when deleting characters. its really bad actually. some unicode charcters are completely undeletable. its bad. fix this. 
-
-*/
 
 #include <stdio.h>  // 202309074.165637:   
 #include <stdlib.h> //  another rewrite to make the editor simpler, and non-volatile- to never require saving. 
@@ -49,9 +41,7 @@ static int history = -1;
 static off_t head = 0;
 static nat autosave_counter = 0;
 
-
-
-struct action {                 //TODO: this struct shouldnt exist. delete it, write each element one by one. 
+struct action {
 	off_t parent;
 	off_t pre;
 	off_t post;
@@ -105,7 +95,6 @@ static void autosave(void) {
 	int autosave_file = openat(autosave_dir, autosave_filename, flags, permission);
 	if (autosave_file < 0) { read_error: perror("read openat autosave_filename"); exit(1); }
 
-	
 	close(file);
 	close(directory_fd);
 	
@@ -126,8 +115,6 @@ static void autosave(void) {
 
 	close(autosave_file);
 	close(autosave_dir);
-
-	
 
 	autosave_counter = 0; 
 }
@@ -478,29 +465,6 @@ static void redo(void) {
 	*/
 }
 
-static void interpret_arrow_key(void) {
-	char c = 0; read(0, &c, 1);
-
-	     if (c == '.') mode &= ~inserting;
-
-	else if (c == 's') { anchor = cursor; mode ^= selecting; }
-	else if (c == 'r') cut();
-
-	else if (c == 'u') move_up_begin();
-	else if (c == 'd') move_down_end();
-	else if (c == 'b') move_word_left();
-	else if (c == 'f') move_word_right();
-	else if (c == '[') {
-		read(0, &c, 1); 
-		if (c == 'A') move_up(); 
-		else if (c == 'B') move_down();
-		else if (c == 'C') move_right();
-		else if (c == 'D') move_left();
-		else { printf("error: found escape seq: ESC [ #%d\n", c); getchar(); }
-	} else { printf("error found escape seq: ESC #%d\n", c); getchar(); }
-}
-
-
 static inline void copy(void) {
 	if (not (mode & selecting)) return;
 	get_count();
@@ -563,6 +527,31 @@ static void jump_line(void) {
 	free(string);
 }
 
+static void interpret_arrow_key(void) {
+	char c = 0; read(0, &c, 1);
+
+	if (c == 'u') move_up_begin();
+	else if (c == 'd') move_down_end();
+	else if (c == 'b') move_word_left();
+	else if (c == 'f') move_word_right();
+
+	else if (c == XXX) forwards();
+	else if (c == XXX) backwards();
+	else if (c == XXX) move_top();
+	else if (c == XXX) move_bottom();
+	else if (c == XXX) { for (int i = 0; i < window.ws_row; i++) move_up(); }
+	else if (c == XXX) { for (int i = 0; i < window.ws_row; i++) move_down(); }
+
+	else if (c == '[') {
+		read(0, &c, 1); 
+		if (c == 'A') move_up(); 
+		else if (c == 'B') move_down();
+		else if (c == 'C') move_right();
+		else if (c == 'D') move_left();
+		else { printf("error: found escape seq: ESC [ #%d\n", c); getchar(); }
+	} else { printf("error found escape seq: ESC #%d\n", c); getchar(); }
+}
+
 int main(int argc, const char** argv) {
 
 	srand((unsigned)time(0)); rand();
@@ -570,7 +559,6 @@ int main(int argc, const char** argv) {
 
 	struct sigaction action = {.sa_handler = window_resize_handler}; 
 	sigaction(SIGWINCH, &action, NULL);
-
 	struct sigaction action2 = {.sa_handler = interrupt_handler}; 
 	sigaction(SIGINT, &action2, NULL);
 
@@ -608,10 +596,7 @@ int main(int argc, const char** argv) {
 		gettimeofday(&t, NULL);
 		struct tm* tm = localtime(&t.tv_sec);
 		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-		snprintf(
-			history_filename, sizeof history_filename, 
-			"%s_%08x%08x.history", datetime, rand(), rand()
-		);
+		snprintf(history_filename, sizeof history_filename, "%s_%08x%08x.history", datetime, rand(), rand());
 		flags |= O_CREAT | O_EXCL;
 		permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 
@@ -640,62 +625,21 @@ int main(int argc, const char** argv) {
 	char c = 0;
 	mode = active;
 
-	char past[10] = {0};
-	const char* exit_sequence = "rtun";
-
 loop:	display();
+	c = 0;
 	read(0, &c, 1);
-	if (mode & inserting) {
-		if (c == 127) delete(1, 1);
-		else if (c == 27) interpret_arrow_key();
-		else if (is(exit_sequence, c, past)) { delete(strlen(exit_sequence) - 1, 1); mode &= ~inserting; } 
-		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1, 1);
-	} else {
-		if (c == 'q') mode &= ~active;
 
-		else if (c == 32) {}
-		else if (c == 10) insert(&c, 1, 1);
-		else if (c == 9)  insert(&c, 1, 1);
-		else if (c == 27) interpret_arrow_key();
-
-		else if (c == 'b') insert_output("pbpaste");
-		else if (c == 'a') copy();
-		else if (c == 's') { anchor = cursor; mode ^= selecting; }
-		else if (c == 'h') move_up_begin();
-		else if (c == 't') mode |= inserting;
-		
-		else if (c == 'd' or c == 127) delete(1, 1);
-		else if (c == 'r') cut();
-		else if (c == 'm') move_down_end();
-
-		else if (c == 'n') move_left();
-		else if (c == 'e') move_up();
-		else if (c == 'o') move_right();
-		
-		else if (c == ';') jump_line();
-		else if (c == 'i') jump_index();
-		
-		else if (c == 'u') move_word_left();
-		else if (c == 'p') move_word_right();
-		else if (c == 'l') move_down();
-
-		else if (c == 'f') forwards();
-		else if (c == 'w') backwards();
-
-		else if (c == 'g') move_top();
-		else if (c == 'y') move_bottom();
-
-		else if (c == 'c') { for (int i = 0; i < window.ws_row; i++) move_up(); }
-		else if (c == 'k') { for (int i = 0; i < window.ws_row; i++) move_down(); }
-
-		else if (c == 'z') undo();
-		else if (c == 'x') redo();
-	}
-	
-	nat i = 10; 
-	while (i-- > 1) past[i] = past[i - 1];
-
-	*past = c;
+	     if (c == 1)   mode &= ~active;
+	else if (c == 27)  interpret_arrow_key();
+	else if (c == 127) delete(1, 1);
+	else if (c == XXX) insert_output("pbpaste");
+	else if (c == XXX) copy();
+	else if (c == XXX) { anchor = cursor; mode ^= selecting; }
+	else if (c == XXX) cut();
+	else if (c == XXX) jump_line();
+	else if (c == XXX) undo();
+	else if (c == XXX) redo();
+	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1, 1);
 
 	if (mode & active) goto loop;
 	close(file);
@@ -708,8 +652,67 @@ loop:	display();
 
 
 
+/*
+202311245.115046:
+	BUG:
+		if the line is exactly the wrap width, there is a bug where the cursor desyncs. fix this.
+
+		unicode: we currently don't handle it good at all, when deleting characters. its really bad actually. some unicode charcters are completely undeletable. its bad. fix this. 
+
+	tood:
+
+		- support unicode
+
+	x	- make the editor nonmodal.
+
+*/
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+//if (c == '.') mode &= ~inserting;
+	//else if (c == 's') { anchor = cursor; mode ^= selecting; }
+	//else if (c == 'r') cut();
+
+
+
+
+	//char past[10] = {0};
+	//const char* exit_sequence = "rtun";
+
+
+
+
+	//nat i = 10; 
+	//while (i-- > 1) past[i] = past[i - 1];
+	//*past = c;
+
+
+
+
+	//if (mode & inserting) {
+	//else if (is(exit_sequence, c, past)) { delete(strlen(exit_sequence) - 1, 1); mode &= ~inserting; } 
+	//} else {
+	//else if (c == ' ') mode |= inserting;
+	//else if (c == ' ') move_down_end();
+	//else if (c == ' ') move_up_begin();
+	//else if (c == 'n') move_left();
+	//else if (c == 'e') move_up();
+	//else if (c == 'o') move_right();
+	//else if (c == 'u') move_word_left();
+	//else if (c == 'p') move_word_right();
+	//else if (c == 'l') move_down();
+	//else if (c == XXX) jump_index();
 
 
 
