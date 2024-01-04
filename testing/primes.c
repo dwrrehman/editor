@@ -15,3 +15,14 @@ int main(void) {
 		composite: continue;
 	}
 }
+
+
+struct record {
+	int data;
+	const char* name;
+};
+
+static void myfunction(struct record* ) {
+
+	
+}

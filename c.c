@@ -410,6 +410,10 @@ static void cut(void) {
 	mode &= ~selecting;
 }
 
+static void delete_cut(void) {
+	if (mode & selecting) cut(); else delete(1, 1);
+}
+
 static bool is(const char* string, char c, char* past) {
 	nat length = strlen(string);
 	if (c != string[length - 1]) return 0;
@@ -481,8 +485,6 @@ static inline void copy(void) {
 	else at_string(cursor, cliplength, clipboard);
 	fwrite(clipboard, 1, cliplength, globalclip);
 	pclose(globalclip);
-	mode &= ~selecting;
-	anchor = cursor;
 }
 
 static void insert_output(const char* input_command) {
@@ -527,29 +529,64 @@ static void jump_line(void) {
 	free(string);
 }
 
+static void set_anchor(void) {
+	if (mode & selecting) return;
+	anchor = cursor; 
+	mode |= selecting;
+}
+
+
+static void clear_anchor(void) {
+	if (not (mode & selecting)) return;
+	anchor = cursor; 
+	mode &= ~selecting;
+}
+
 static void interpret_arrow_key(void) {
 	char c = 0; read(0, &c, 1);
 
-	if (c == 'u') move_up_begin();
-	else if (c == 'd') move_down_end();
-	else if (c == 'b') move_word_left();
-	else if (c == 'f') move_word_right();
+	if (c == 'q') mode &= ~active;
+	else if (c == 'u') { clear_anchor(); move_up_begin(); }
+	else if (c == 'd') { clear_anchor(); move_down_end(); }
+	else if (c == 'l') { clear_anchor(); move_word_left(); }
+	else if (c == 'r') { clear_anchor(); move_word_right(); }
 
-	else if (c == XXX) forwards();
-	else if (c == XXX) backwards();
-	else if (c == XXX) move_top();
-	else if (c == XXX) move_bottom();
-	else if (c == XXX) { for (int i = 0; i < window.ws_row; i++) move_up(); }
-	else if (c == XXX) { for (int i = 0; i < window.ws_row; i++) move_down(); }
+	else if (c == 'f') { clear_anchor(); forwards(); }
+	else if (c == 'b') { clear_anchor(); backwards(); }
+	else if (c == 't') { clear_anchor(); for (int i = 0; i < window.ws_row; i++) move_up(); }
+	else if (c == 'e') { clear_anchor(); for (int i = 0; i < window.ws_row; i++) move_down(); }
+
+	else if (c == 's') {
+		read(0, &c, 1); 
+		     if (c == 'u') { set_anchor(); move_up(); }
+		else if (c == 'd') { set_anchor(); move_down(); }
+		else if (c == 'r') { set_anchor(); move_right(); }
+		else if (c == 'l') { set_anchor(); move_left(); }
+
+		else if (c == 'b') { set_anchor(); move_up_begin(); }
+		else if (c == 'e') { set_anchor(); move_down_end(); }
+		else if (c == 'w') { set_anchor(); move_word_right(); }
+		else if (c == 'm') { set_anchor(); move_word_left(); }
+	}
 
 	else if (c == '[') {
 		read(0, &c, 1); 
-		if (c == 'A') move_up(); 
-		else if (c == 'B') move_down();
-		else if (c == 'C') move_right();
-		else if (c == 'D') move_left();
+		if (c == 'A') { clear_anchor(); move_up(); }
+		else if (c == 'B') { clear_anchor(); move_down(); }
+		else if (c == 'C') { clear_anchor(); move_right(); }
+		else if (c == 'D') { clear_anchor(); move_left(); }
 		else { printf("error: found escape seq: ESC [ #%d\n", c); getchar(); }
 	} else { printf("error found escape seq: ESC #%d\n", c); getchar(); }
+}
+
+static void paste(void) {
+	if (mode & selecting) cut();
+	insert_output("pbpaste");
+}
+
+static void insert_replace(char* s, nat l) {
+	if (mode & selecting) cut();
+	insert(s, l, 1);
 }
 
 int main(int argc, const char** argv) {
@@ -628,19 +665,13 @@ int main(int argc, const char** argv) {
 loop:	display();
 	c = 0;
 	read(0, &c, 1);
-
-	     if (c == 1)   mode &= ~active;
-	else if (c == 27)  interpret_arrow_key();
-	else if (c == 127) delete(1, 1);
-	else if (c == XXX) insert_output("pbpaste");
-	else if (c == XXX) copy();
-	else if (c == XXX) { anchor = cursor; mode ^= selecting; }
-	else if (c == XXX) cut();
-	else if (c == XXX) jump_line();
-	else if (c == XXX) undo();
-	else if (c == XXX) redo();
-	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1, 1);
-
+	if (c == 1) paste();
+	else if (c == 8) copy();
+	else if (c == 20) { copy(); cut(); }
+	else if (c == 24) undo();
+	else if (c == 27) interpret_arrow_key();
+	else if (c == 127) delete_cut();
+	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert_replace(&c, 1);
 	if (mode & active) goto loop;
 	close(file);
 	close(directory_fd);
@@ -648,6 +679,17 @@ loop:	display();
 	write(1, "\033[?1049l", 8);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+
+
+	////else if (c == XXX) { anchor = cursor; mode |= selecting; }
+
+	//else if (c == ) move_top();
+	//else if (c == ) move_bottom();
+
+	//else if (c == XXX) redo();
+	//else if (c == XXX) jump_line();
 
 
 
@@ -666,6 +708,35 @@ loop:	display();
 	x	- make the editor nonmodal.
 
 */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
