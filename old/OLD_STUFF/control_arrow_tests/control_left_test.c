@@ -17,14 +17,14 @@ static struct termios configure_terminal(void) {
 	struct termios terminal;
 	tcgetattr(0, &terminal);
 	struct termios copy = terminal; 
-	copy.c_lflag &= ~((size_t) ECHO | ICANON | IEXTEN | ISIG);
-	copy.c_iflag &= ~((size_t) BRKINT | IXON);
+	copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSAFLUSH, &copy);
 	return terminal;
 }
 
 int main(void) {
 	struct termios terminal = configure_terminal();
+	puts("type space to quit.");
 loop:;	char c = 0;
 	read(0, &c, 1);
 	printf("received: %d\n", c);
@@ -34,3 +34,4 @@ loop:;	char c = 0;
 	printf("\033[H\033[2J");
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+

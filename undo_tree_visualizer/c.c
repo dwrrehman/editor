@@ -21,7 +21,7 @@ struct entry {
 	int64_t inserting;
 };
 
-static const bool debug = false;
+static const bool debug = true;
 
 int main(int argc, const char** argv) {
 	if (argc != 1) exit(puts("usage: ./run"));

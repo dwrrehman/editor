@@ -1,5 +1,4 @@
 // editor source code. written on 202311201.014937 by dwrr
-
 #include <stdio.h>  // 202309074.165637:   
 #include <stdlib.h> //  another rewrite to make the editor simpler, and non-volatile- to never require saving. 
 #include <string.h> 
@@ -22,10 +21,10 @@
 
 typedef uint64_t nat;
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
-static const nat autosave_frequency = 12; // every 12 edits, fcopyfile is called. 
-
-static const nat active = 0x01, inserting = 0x02, selecting = 0x04;
+static const nat autosave_frequency = 12;
+static const nat active = 0x01, selecting = 0x04;
 extern char** environ;
+static struct termios terminal = {0};
 static struct winsize window = {0};
 static char filename[4096] = {0}, directory[4096] = {0};
 static int file = -1, directory_fd = -1;
@@ -188,8 +187,12 @@ static void display(void) {
 		);
 
 	if (not found_cursor) {
-		printf("\033[31mcursor not in the view while displaying the screen. [cursor=%llu, origin=%llu, count=%llu], abort?\033[0m", 
-			cursor, origin, count);
+		printf(
+			"\033[31mcursor not in the view while displaying the screen. "
+			"[cursor=%llu, origin=%llu, count=%llu], continue?\033[0m", 
+			
+			cursor, origin, count
+		);
 		fflush(stdout);
 		getchar();
 	}
@@ -205,7 +208,7 @@ static void display(void) {
 }
 
 static void window_resize_handler(int unused) { display(); }
-static void interrupt_handler(int unused) { exit(1); }
+static void interrupt_handler(int unused) { close(file); close(history); exit(3); }
 
 static void move_left_raw(void) {    
 	get_count();
@@ -336,7 +339,7 @@ static void backwards(void) {
 }
 
 static void move_top(void) { cursor = 0; origin = 0; cursor_column = 0; cursor_row = 0; }
-static void move_bottom(void) { while (cursor < count) move_right(); }
+//static void move_bottom(void) { while (cursor < count) move_right(); }
 
 static void finish_action(struct action node, const char* string, nat length) {
 	node.post = cursor;
@@ -403,8 +406,9 @@ static void cut(void) {
 	const off_t length = cursor - anchor;
 	get_count();
 	cliplength = (size_t) length;
-	clipboard = realloc(clipboard, cliplength);
+	clipboard = realloc(clipboard, cliplength + 1);
 	at_string(anchor, cliplength, clipboard);
+	clipboard[cliplength] = 0;
 	delete((nat) length, 1);
 	anchor = cursor;
 	mode &= ~selecting;
@@ -412,15 +416,6 @@ static void cut(void) {
 
 static void delete_cut(void) {
 	if (mode & selecting) cut(); else delete(1, 1);
-}
-
-static bool is(const char* string, char c, char* past) {
-	nat length = strlen(string);
-	if (c != string[length - 1]) return 0;
-	for (nat h = 0, i = 1; i < length; i++, h++) {
-		if (past[h] != string[length - 1 - i]) return 0;
-	}
-	return 1;
 }
 
 static void undo(void) {
@@ -480,9 +475,10 @@ static inline void copy(void) {
 
 	if (anchor > count) anchor = count;
 	cliplength = (size_t) (anchor < cursor ? cursor - anchor : anchor - cursor);
-	clipboard = realloc(clipboard, cliplength);
+	clipboard = realloc(clipboard, cliplength + 1);
 	if (anchor < cursor) at_string(anchor, cliplength, clipboard);
 	else at_string(cursor, cliplength, clipboard);
+	clipboard[cliplength] = 0;
 	fwrite(clipboard, 1, cliplength, globalclip);
 	pclose(globalclip);
 }
@@ -513,20 +509,16 @@ static void insert_output(const char* input_command) {
 	free(string);
 }
 
-static void jump_index(void) {
-	char* string = strndup(clipboard, cliplength);	
+static void jump_index(char* string) {
 	const size_t n = (size_t) atoi(string);
 	for (size_t i = 0; i < n; i++) move_right();
-	free(string);
 }
 
-static void jump_line(void) {
-	char* string = strndup(clipboard, cliplength);	
+static void jump_line(char* string) {
 	const size_t n = (size_t) atoi(string);
 	move_top(); 
 	for (size_t i = 0; i < n; i++) move_down_end();
 	move_up_begin(); 
-	free(string);
 }
 
 static void set_anchor(void) {
@@ -534,7 +526,6 @@ static void set_anchor(void) {
 	anchor = cursor; 
 	mode |= selecting;
 }
-
 
 static void clear_anchor(void) {
 	if (not (mode & selecting)) return;
@@ -587,6 +578,83 @@ static void paste(void) {
 static void insert_replace(char* s, nat l) {
 	if (mode & selecting) cut();
 	insert(s, l, 1);
+}
+
+
+
+
+static void change_directory(const char* d) {
+	if (chdir(d) < 0) {
+		perror("change directory chdir");
+		printf("directory=%s\n", d);
+		getchar(); return;
+	}
+	printf("changed to %s\n", d);
+	getchar();
+}
+
+static void create_process(char** args) {
+	pid_t pid = fork();
+	if (pid < 0) { perror("fork"); getchar(); return; }
+	if (not pid) {
+		if (execve(args[0], args, environ) < 0) { perror("execve"); exit(1); }
+	} else {
+		int status = 0;
+		do waitpid(pid, &status, WUNTRACED);
+		while (!WIFEXITED(status) && !WIFSIGNALED(status));
+	}
+}
+
+static void execute(char* command) {
+	printf("executing \"%s\"...\n", command);
+	const char* string = command;
+	const size_t length = strlen(command);
+	char** arguments = NULL;
+	size_t argument_count = 0;
+	size_t start = 0, argument_length = 0;
+	for (size_t index = 0; index < length; index++) {
+		if (string[index] != 10) {
+			if (not argument_length) start = index;
+			argument_length++; continue;
+		} else if (not argument_length) continue;
+	process_word:
+		arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+		arguments[argument_count++] = strndup(string + start, argument_length);
+		argument_length = 0;
+	}
+	if (argument_length) goto process_word;
+	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+	arguments[argument_count] = NULL;
+
+	tcsetattr(0, TCSAFLUSH, &terminal);	
+	printf("\033[2J\033[H");
+	//printf("argv(argc=%lu) {\n", argument_count);
+	//for (size_t i = 0; i < argument_count; i++) printf("\targv[%lu]: \"%s\"\n", i, arguments[i]);
+	//printf("} \n");
+	fflush(stdout);
+
+	create_process(arguments);
+
+	getchar();
+
+	tcgetattr(0, &terminal);
+	struct termios terminal_copy = terminal; 
+	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
+	tcsetattr(0, TCSAFLUSH, &terminal_copy);
+	
+	free(arguments);
+}
+
+static void sendc(void) {
+	if (not cliplength) return;
+	else if (not  strcmp(clipboard, "exit")) mode &= ~active;
+	else if (not  strcmp(clipboard, "quit")) mode &= ~active;
+	else if (not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
+	else if (not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
+	else if (not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
+	else if (not strncmp(clipboard, "index ", 6)) jump_index(clipboard + 6);	
+	else if (not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);	
+	else { printf("unknown command: %s\n", clipboard); getchar(); }
 }
 
 int main(int argc, const char** argv) {
@@ -651,7 +719,6 @@ int main(int argc, const char** argv) {
 		write(history, &head, sizeof head); 
 	else 	 read(history, &head, sizeof head);
 
-	struct termios terminal;
 	tcgetattr(0, &terminal);
 	struct termios terminal_copy = terminal; 
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
@@ -665,13 +732,66 @@ int main(int argc, const char** argv) {
 loop:	display();
 	c = 0;
 	read(0, &c, 1);
-	if (c == 1) paste();
-	else if (c == 8) copy();
-	else if (c == 20) { copy(); cut(); }
-	else if (c == 24) undo();
+
+	     if (c == 1/*A*/) sendc();
+	else if (c == 2/*B*/) {} 
+	// C
+	else if (c == 4/*D*/) sendc();
+	else if (c == 5/*E*/) {}
+	else if (c == 6/*F*/) {}
+	else if (c == 7/*G*/) {}
+	else if (c == 8/*H*/) copy();
+	// I
+	// J
+	else if (c == 11/*K*/) {}
+	else if (c == 12/*L*/) {}
+	// M
+	else if (c == 14/*N*/) {}
+	// O
+	else if (c == 16/*P*/) {/* redo(); */}
+	// Q
+	else if (c == 18/*R*/) paste();
+	// S
+	else if (c == 20/*T*/) {}
+	else if (c == 21/*U*/) undo();
+	// V
+	else if (c == 23/*W*/) {}
+	else if (c == 24/*X*/) { copy(); cut(); }
+	// Y
+	// Z
+	
+	//     d r
+	//   a   h
+	//      x     
+
+	//     u p 
+	//
+	//   
+
+
+/*
+	{ copy(); cut(); } // X
+	copy(); // H
+	paste(); // R
+
+	sendc(); // D
+	sendc(); // A
+
+	undo(); // U
+	redo(); // P	
+
+*/
+
+
+
 	else if (c == 27) interpret_arrow_key();
 	else if (c == 127) delete_cut();
+
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert_replace(&c, 1);
+
+
+
+
 	if (mode & active) goto loop;
 	close(file);
 	close(directory_fd);
@@ -679,6 +799,129 @@ loop:	display();
 	write(1, "\033[?1049l", 8);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+/*
+
+	{ copy(); cut(); }
+
+	copy();
+
+	paste();
+	
+	sendc();
+
+	jump_line();
+
+	jump_index();
+
+	undo();
+	
+
+
+*/
+
+
+//	     if (c == 1/*A*/) {}
+//	else if (c == 2/*B*/) {} 
+//	// C
+//	else if (c == 4/*D*/) {}
+//	else if (c == 5/*E*/) {}
+//	else if (c == 6/*F*/) {}
+//	else if (c == 7/*G*/) {}
+//	else if (c == 8/*H*/) {}
+//	// I
+//	// J
+//	else if (c == 11/*K*/) {}
+//	else if (c == 12/*L*/) {}
+//	// M
+//	else if (c == 14/*N*/) {}
+//	// O
+//	else if (c == 16/*P*/) {}
+//	// Q
+//	else if (c == 18/*R*/) {}
+//	// S
+//	else if (c == 20/*T*/) {}
+//	else if (c == 21/*U*/) {}
+//	// V
+//	else if (c == 23/*W*/) {}
+//	else if (c == 24/*X*/) {}
+//	// Y
+//	// Z
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+q d r w b j f u p ; 
+ a s h t g y n e o i 
+  z x m c v k l , . 
+
+
+
+
+
+  d r         u p   
+ a s h t     n e o i 
+      m c   k l     
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -3043,14 +3286,19 @@ previous_cursor = 0;
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+rtunrtun rtun
 
 
+
+static bool is(const char* string, char c, char* past) {
+	nat length = strlen(string);
+	if (c != string[length - 1]) return 0;
+	for (nat h = 0, i = 1; i < length; i++, h++) {
+		if (past[h] != string[length - 1 - i]) return 0;
+	}
+	return 1;
+}
 
 
 */
-
-
-
-
-
 
