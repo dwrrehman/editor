@@ -14,6 +14,36 @@ do ./a.out
 
 change strncmp_testing
 
+
+do nl
+-b
+a
+c.c
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 */
 
 #include <stdio.h>

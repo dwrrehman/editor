@@ -1,0 +1,219 @@
+i think this editor is actually working pretty well. its both a shell and a text editor actually, which is pretty cool lol. i like it alot. 
+
+i have insert, and do,     and do doesnt do path lookup, but insert does. which means that i can run   which using insert,    and do on the resultant file path of which.
+
+so yeah. works pretty well actually. 
+
+
+yay.
+
+
+
+
+
+
+
+
+
+
+     1	/*
+     2	
+     3	do b
+     4	
+     5	
+     6	do ls
+     7	
+     8	do clang
+     9	-Weverything
+    10	-Wno-declaration-after-statement
+    11	c.c
+    12	
+    13	do ./a.out
+    14	
+    15	change strncmp_testing
+    16	
+    17	
+    18	do nl
+    19	-b
+    20	a
+    21	c.c
+    22	
+    23	
+    24	
+    25	do ls
+    26	
+    27	
+    28	/bin/ls
+insert which ls
+    29	
+    30	
+    31	
+    32	do /usr/bin/nl
+-b
+a
+c.c
+
+
+do /usr/bin/file
+a.out
+
+
+
+
+
+
+
+
+
+    33	
+    34	
+    35	
+    36	
+    37	
+    38	
+    39	
+    40	
+    41	
+    42	
+    43	
+    44	
+    45	
+    46	
+    47	*/
+    48	
+    49	#include <stdio.h>
+    50	#include <string.h>
+    51	
+    52	int main(void) {
+    53	
+    54		printf("%d\n", !!strncmp("hello there", "hel", 3));            // 0     equal
+    55		printf("%d\n", !!strncmp("hello", "hello bub", 5 + 1 + 3));    // 1     not equal
+    56	
+    57		printf("%d\n", !!strncmp("", "", 0));     // 0       equal
+    58		printf("%d\n", !!strncmp("t", "", 1));    // 1       not equal
+    59	
+    60		printf("%d\n", !!strncmp("", "t", 1));    // 1       not equal
+    61		printf("%d\n", !!strncmp("f", "t", 1));   // 1       not equal
+    62	
+    63		printf("%d\n", !!strncmp("f ", "f", 1));   // 0      equal
+    64		printf("%d\n", !!strncmp("f ", "f", 2));   // 1      not equal
+    65	
+    66		printf("%d\n", !!strncmp("f", "f ", 1));   // 0      equal
+    67		printf("%d\n", !!strncmp("f", "f ", 2));   // 1      not equal
+    68	
+    69		printf("%d\n", !!strncmp("f ", "f ", 2));        // 0     equal
+    70		printf("%d\n", !!strncmp("f asht", "f ", 2));    // 0     equal
+    71	
+    72		puts("end of my cool program. what do you think? yay.");
+    73	
+    74	
+    75	
+    76	}
+    77	
+    78	
+    79	/*
+    80	0
+    81	1
+    82	0
+    83	1
+    84	1
+    85	1
+    86	0
+    87	1
+    88	0
+    89	1
+    90	0
+    91	0
+    92	end of my cool program. what do you think? yay.
+    93	*/
+    94	
+    95	// insert ./a.out
+    96	
+    97	// insert cal
+    98	
+    99	 /*
+   100	
+   101	    January 2024      
+   102	Su Mo Tu We Th Fr Sa  
+   103	    1  2  3  4  5  6  
+   104	 7 _ _8  9 10 11 12 13  
+   105	14 15 16 17 18 19 20  
+   106	21 22 23 24 25 26 27  
+   107	28 29 30 31           
+   108	
+   109	
+   110	
+   111	/Users/dwrr/Documents/projects/editor
+   112	
+   113	
+   114	
+   115	
+   116	
+   117	
+   118	
+   119	
+   120	*/
+   121	
+   122	
+   123	/*
+   124	output:
+   125	
+   126	
+   127	0
+   128	1
+   129	
+   130	0
+   131	1
+   132	
+   133	1
+   134	1
+   135	
+   136	0
+   137	1
+   138	
+   139	0
+   140	1
+   141	
+   142	0
+   143	0
+   144	
+   145	
+   146	
+   147	
+   148	
+   149	
+   150	
+   151	
+   152	
+   153	
+   154		change ..insert lsbuild
+   155	c.c
+   156	code_file_example.c
+   157	editor
+   158	editor.dSYM
+   159	example_file.txt
+   160	simple.txt
+   161	
+   162	
+   163	
+   164	
+   165	
+   166	
+   167	
+   168	
+   169	
+   170	
+   171	build
+   172	c.c
+   173	code_file_example.c
+   174	editor
+   175	editor.dSYM
+   176	example_file.txt
+   177	simple.txt
+   178	
+   179	
+   180	
+   181	
+   182	
+   183	
+   184	*/
