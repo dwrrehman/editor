@@ -1,10 +1,18 @@
 /*
 
-do /usr/bin/clang
+do b
+
+
+do ls
+
+do clang
 -Weverything
+-Wno-declaration-after-statement
 c.c
 
 do ./a.out
+
+change strncmp_testing
 
 */
 

@@ -628,11 +628,64 @@ static void execute(char* command) {
 
 	tcsetattr(0, TCSAFLUSH, &terminal);	
 	printf("\033[2J\033[H");
-	//printf("argv(argc=%lu) {\n", argument_count);
-	//for (size_t i = 0; i < argument_count; i++) printf("\targv[%lu]: \"%s\"\n", i, arguments[i]);
-	//printf("} \n");
-	fflush(stdout);
 
+
+	printf("searching for path string...\n");
+	size_t env_index = 0;	
+	for (; environ[env_index]; env_index++) {
+		if (not strncmp(environ[env_index], "PATH=", 5)) {
+			printf("found path! \"%s\"...\n", environ[env_index]);
+			break;
+		}
+	}
+
+
+
+
+	char executable[4096] = {0};
+
+	char* path_string = strdup(environ[env_index] + 5);
+	
+	printf("path strings: { \n");
+	size_t pre_index = 0; 
+
+	bool found = false;
+
+	while (1) {
+		if (not path_string[pre_index]) break;	
+		printf("\t\"");
+		char dir[4096] = {0};
+		size_t dir_count = 0;
+		for (; path_string[pre_index] != ':'; pre_index++) {
+			if (not path_string[pre_index]) break; 			
+			putchar(path_string[pre_index]);
+			dir[dir_count++] = path_string[pre_index];
+		}
+	
+		dir[dir_count++] = '/';
+		for (int ib = 0; arguments[0][ib]; ib++) {
+			dir[dir_count++] = arguments[0][ib];
+		}
+		if (not access(dir, F_OK) and not found) {
+			free(arguments[0]);
+			arguments[0] = strndup(dir, dir_count);
+			printf(" [\033[32m√\033[0m] " );
+			found = true;		
+		}
+
+		printf("\"\n");
+		if (not path_string[pre_index]) break;
+		pre_index++;
+	}
+
+	printf("} \n");
+
+	printf("\nargv(argc=%lu) {\n", argument_count);
+	for (size_t a = 0; a < argument_count; a++) printf("\targv[%lu]: \"%s\"\n", a, arguments[a]);
+	printf("} \n");
+	
+	fflush(stdout);
+	
 	create_process(arguments);
 
 	getchar();
