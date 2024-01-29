@@ -372,7 +372,9 @@ static void insert(char* string, nat length, bool should_record) {
 }
 
 static void delete(nat length, bool should_record) {
-	if (++autosave_counter >= autosave_frequency) autosave();
+
+	// if (++autosave_counter >= autosave_frequency) autosave();           // note:   no need to do this. 
+
 	if (cursor < (off_t) length) return;
 	lseek(history, 0, SEEK_SET);
 	read(history, &head, sizeof head);
@@ -684,13 +686,10 @@ static void execute(char* command) {
 	//printf("} \n");
 */
 
-
-
-
-	fflush(stdout);
-	
+	fflush(stdout);	
 	create_process(arguments);
-
+	puts("[continue]");
+	fflush(stdout);
 	getchar();
 
 	tcgetattr(0, &terminal);

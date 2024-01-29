@@ -1,3 +1,160 @@
 STUFF there from space!
 thats it.
 yay.
+but yeah, anyways, i think this way of doing things actually works rather well.. its just the saving data part that i am so uncertain about. hm. ill think about it. i know there should be a resolution. 
+
+
+			i am genuinely quite happy with how this text editor works with typing tb's,    its literally a version of sublime/Textedit that is like 100000x  more power efficient, and minimalist, and i love it alot actaully 
+
+
+						its working quite well lol
+
+
+
+	yay
+
+
+
+but yeah, i have to look into the whole     not saving the current line though. thats important. 
+or  actually, 
+
+	alot of text isnt saved,     all text until you say             u        on its own line,           
+
+			all the text until that point,                         isnt saved 
+
+
+
+			sooooo      i feel like we have bigger problems  actually       lol          this editor is kind of like   NOT nonvolatile at all lol
+	hmmm
+
+
+		i mean, its okayyyy
+				its not great... 
+
+
+			i would strongly prefer my own text editor, honestly. i just have to get comfortable using it, though. so yeah. hm.
+
+
+
+		interesting 
+
+
+
+		honestly, what if we just made a text editor, that had the best of both worlds?
+
+
+
+			one that had the brutal display simplicity of this system, 
+
+				but the nonvolatile  saving-ness      of the original editor, that we use to edit code and stuff 
+
+
+
+			like 
+
+						that should be a very attainable creation lol 
+
+
+
+
+			the display system is so simple with this editor, 
+
+			we just display the text lol. 
+
+
+						OH! and we don't even have to delete the VKILL and VWERASE commands anymore! becuase we won't even be using canonical mode!!!
+
+
+
+						basically, we are just going to kinda like         pipe a ton of read(10, &c, 1);    commands,   into the file that we are editing.   thats kinda the idea 
+
+
+
+					ohh, and we of course, KEEP    ECHO          ON            and turn ICANON off. 
+
+
+			at that point, we could even just use        stty       to turn canonical mode off!    that could work. hmm. interesting. 
+
+
+					becuase turning off canonical mode is like the only thing that we need to do at that point lo. 
+
+
+hi! this is me testing out this text editor, to see how it works.
+it seems to be pretty usable, actually.
+
+	like, shockingly usable lol. especially if you only need to type some text, and put it into a text file, like so much of my tb's need to do lol. and like its completely just using canonical mode, which is the crazy part lol. anyways.
+
+		idk. i actually might try to use this more lol. i just need to make sure that its like super safe, 
+
+			so like, it uses fcopyfile, every single key press, etc. 
+
+				and actaully, no, i don't think ill use this, becuase the current contents of the buffer arent actually saved, because the current line is still in memory, unfortunately... 
+
+			but i guess if the terminal gets restored, then its fine..?
+
+
+		hmm. idk. 
+
+
+	yeah, its kinda risky to use this, just because it doesnt save the current line.. hm.. 
+
+i mean, usually my lines arent thattttt long, 
+
+			but yeah, its still an issue lol. anyways. also correcting typos is more difficult, but i could live with that lol. 
+
+
+
+
+hmm
+
+yeah, ill think about it more. its quite dramatically simpler lol.
+
+
+oh!!! wait i know how we can fix this!!!!
+
+
+we can just make e also a thingy to terminate the read call!!! thats actaully so smart! lol. but yeah, when we do this, we restrict the amount that we can backspace. like, we can't backspace on a newline, because its the delimiter. if we add a delimiter, like e, then we can't backspace on it then. which is odd lol.
+
+
+			but yeah, i mean, that would solve the problem of not writing to disk the current line lol. hmmm..... 
+
+				hmmm idk. 
+
+
+					maybe we use tab instead, actually. that could work too. 
+
+
+					OHHHHH           ORRRR           SPACEEEEEE       lets use space.     that way at most one word
+
+
+								one english word       is left out 
+
+
+
+					YUSSS lets use space. that way, we can redo typos on the current word, but not other ones. ie, you have to be very  precise at typing using this lol. its kinda like a typewriter lol.
+
+
+				hmmm. actaully, yeah its now pretty apparent how many typos i make while typing lol. thats actaully kinda funny hmm.. 
+
+
+
+
+
+			interesting 
+
+
+
+	idk. ill think about it. it definitely seems like a trade off at this point, unless we wanted to implement our own canonical mode, 
+
+			which 
+
+
+
+									....is not actaully out of the question. 
+
+
+						its just. 
+									we might be lead down essentiallyyyy implementing our own text editor at that point lol. which isnt ideal lol. so yeah. hm. 
+
+
+								ill think about it. but.. yeah. 

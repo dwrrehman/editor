@@ -4,9 +4,10 @@
 // static int cursor_row = 0, cursor_column = 0, desired_column = 0;
 
 
-static void forwards(void) {
+static void my_cool_forwards_function(void) {
 	nat t = 0;
-	loop: if (t == cliplength or cursor >= count) return;
+	loop:
+ if (t == cliplength or cursor >= count) return;
 	if (text[cursor] != clipboard[t]) t = 0; else t++;
 	move_right(); 
 	goto loop;

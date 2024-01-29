@@ -7,7 +7,6 @@
 #include <termios.h>
 
 int main(int argc, const char** argv) {
-	typedef uint64_t nat;
 	if (argc > 2) exit(puts("usage ./editor <file>"));
 
 	int file = open(argv[1], O_RDWR, 0);
@@ -23,76 +22,120 @@ int main(int argc, const char** argv) {
 	terminal.c_cc[VWERASE] = _POSIX_VDISABLE;
 	tcsetattr(0, TCSAFLUSH, &terminal);
 
-	nat page_size = 1024, length = 0, selection = 0;
-	char string[4096] = {0};
-		
-	loop:; char line[4096] = {0};
+	size_t page_size = 1024, length = 0;
+	char* page = malloc(page_size);
+	const size_t max_input_size = 4096;
+	char string[max_input_size] = {0};
+	ssize_t selection = 0;
+
+	loop:; 
+	char line[4096] = {0};
 	read(0, line, sizeof line);
 
-	if (not strcmp(line, "n\n")) {
+	if (not strcmp(line, "q\n")) goto done;
+
+	if (not strcmp(line, "o\n")) { 
+		for (int i = 0; i < 100; i++) puts(""); 
+		puts("\033[1;1H"); 
+
+	} else if (not strcmp(line, "n\n")) {
 		if (not length) { 
-			printf("c%lld s%llu p%llu\n", lseek(file, 0, SEEK_CUR), selection, page_size); 
+			printf("%lld %ld\n", lseek(file, 0, SEEK_CUR), selection); 
 			goto loop; 
 		}
 
 		string[--length] = 0;
 		char c = *string;
-		const nat n = strtoull(string + 1, NULL, 10); 
+		const size_t n = strtoul(string + 1, NULL, 10); 
 
-		if (c == 'q') goto done;
-		else if (c == 'o') { for (int i = 0; i < 100; i++) puts(""); puts("\033[1;1H"); }
-		else if (c == 'p') page_size = n;
-		else if (c == 's') selection = n;
+		if (c == 'p') page = realloc(page, page_size = n);
+		else if (c == 's') selection = (ssize_t) n;
 		else if (c == 'l') lseek(file, (off_t) n, SEEK_SET);
 		else if (c == '+') lseek(file, (off_t) n, SEEK_CUR);
 		else if (c == '-') lseek(file, (off_t)-n, SEEK_CUR);
+		else if (c == 'i') { puts(string); goto loop; }
 		else puts("?");
 		goto clear;
 	
 	} else if (not strcmp(line, "u\n")) {
-
-		// todo: make a backup of the file, after every single edit. 
-
 		if (length) string[--length] = 0;
-		const off_t cursor = lseek(file, (off_t) -selection, SEEK_CUR);
+
+		off_t cursor = lseek(file, selection < 0 ? selection : 0, SEEK_CUR);
+		if (selection < 0) selection = -selection;
+
 		const off_t count = lseek(file, 0, SEEK_END);
-		const nat rest = (nat) (count - cursor - (off_t) selection);
+		const size_t rest = (size_t) (count - cursor - selection);
 		char* buffer = malloc(length + rest);
 		memcpy(buffer, string, length);
-		lseek(file, cursor + (off_t) selection, SEEK_SET);
+
+		lseek(file, cursor + selection, SEEK_SET);
 		read(file, buffer + length, rest);
 		lseek(file, cursor, SEEK_SET);
 		write(file, buffer, length + rest);
 		lseek(file, cursor, SEEK_SET);
-		ftruncate(file, count + (off_t) length - (off_t) selection);
-		fsync(file); free(buffer);
-		printf("+%llu -%llu\n", length, selection);
+		ftruncate(file, (off_t) ((off_t) count + (off_t) length - (off_t) selection));
+		fsync(file);
+
+		free(buffer);
+		printf("+%lu -%lu\n", length, selection);
 		goto clear;
- 	
+	
 	} else if (not strcmp(line, "t\n")) {
+
 		if (not length) {
-			char* page = malloc(page_size);			
 			ssize_t n = read(file, page, page_size);
-			if (n < 0) write(1, "read error\n", 11);
-			else { 
-				lseek(file, -n, SEEK_CUR);
+
+			if (not n) lseek(file, 0, SEEK_SET);
+			if (n > 0) { 
 				write(1, page, (size_t) n); 
-				write(1, "\033[7m/\033[0m", 9);
-			} free(page); goto loop;
+				write(1, "\033[7m/\033[0m", 9); 
+			}
+			lseek(file, -(off_t) n, SEEK_CUR);
+			goto loop;
 		}
+
 		string[--length] = 0;
 		size_t i = 0;
-		search:; char c = 0;
-		if (not read(file, &c, 1)) { write(1, "?\n", 2); selection = 0; goto clear; } 
-		if (c == string[i]) i++; else i = 0; 
+		char c = 0;
+
+		search: 
+		// if (not d) lseek(file, -1, SEEK_CUR);
+		if (not read(file, &c, 1)) { 
+			this: 
+			selection = 0; 
+			goto clear; 
+		}
+
+	//	if (not d) { 
+	//		off_t a = lseek(file, -1, SEEK_CUR); 
+	//		if (not a) goto this; 
+	//	}
+
+ 
+			if (c == string[i]) i++; else i = 0; 
+	//	} else { 
+	//		i--; 
+	//		if (c != string[i]) i = length; 
+	//	}
+
 		if (i != length) goto search;
 		selection = length;
-		printf("c%lld s%llu\n", lseek(file, 0, SEEK_CUR), selection); 
-		clear: memset(string, 0, sizeof string); 
-		length = 0; goto loop;
+		printf("%lld %ld\n", lseek(file, 0, SEEK_CUR), selection); 
+
+		clear: 
+		memset(string, 0, sizeof string); 
+		length = 0; 
+		goto loop;
+
 	} else length = strlcat(string, line, sizeof string);
-	goto loop; done: close(file);
+	goto loop;
+	done: 
+	tcsetattr(0, TCSAFLUSH, &original); 
+	close(file);
 }
+
+
+
 
 
 
