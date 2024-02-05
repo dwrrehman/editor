@@ -1,0 +1,29 @@
+hello there from space!
+
+	this is my new text document lol. i don't really know how it works, but it seems to work pretty well so far lol. lets letssee if saving works lol.
+
+	lets add some more text to this document! just to see if we can actually write text the way we want using this lol.
+	its actually shockingly usable! i am liking it more and more the more i use it, which is quite cool.
+
+
+i really want to try writing code with this though. thats the real test.
+
+
+char* toreplace = strndup(text + anchor, cursor - anchor);
+const nat toreplace_count = cursor - anchor;
+for (nat i = 0; i < toreplace_count; i++) delete();
+
+		cursor = selection_begin;
+		for (nat i = 0; i < selection_count; i++) delete();    // delete the current selection from a find call.
+		
+		// insert a series of characters equal to the current string. 
+
+		for (nat i = 0; i < toreplace_count; i++) {
+			insert(toreplace[i]);
+		}
+
+		printf("\033[7mreplaced at %llu, deleted %llu inserted %llu\033[0m\n", 
+			selection_begin, selection_count, toreplace_count
+		);
+
+

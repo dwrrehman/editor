@@ -3,11 +3,11 @@
 #include <stdlib.h> //  another rewrite to make the editor simpler, and non-volatile- to never require saving. 
 #include <string.h> 
 #include <fcntl.h>
-#include <unistd.h>   
-#include <iso646.h>   
-#include <stdbool.h>  
+#include <unistd.h>
+#include <iso646.h>
+#include <stdbool.h>
 #include <termios.h>
-#include <errno.h>    
+#include <errno.h>
 #include <ctype.h>
 #include <time.h>
 #include <sys/stat.h>

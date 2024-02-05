@@ -4,16 +4,9 @@
 #include <iso646.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <termios.h>
-#include <time.h>
-#include <stdio.h>  
-#include <stdlib.h> 
-#include <string.h> 
-#include <fcntl.h>
-#include <unistd.h>
-#include <iso646.h>
+#include <termios.h>     // rewrite to make this editor use this editor's display system, but a string ds internally, and have autosaving. 
+#include <time.h>        // and also make it less like a pager, and more an editor in some ways. 
 #include <stdbool.h>
-#include <termios.h>
 #include <errno.h>
 #include <ctype.h>
 #include <time.h>
@@ -26,6 +19,11 @@
 #include <signal.h>
 #include <copyfile.h>
 
+// 202402036.032044:   rewrite of editor to not make it perfectly nonvolatile, but still not require saving. 
+//  every 16 insertions,  we will do a full file autosave, i think. so yeah.   "xxxxxxxxxxxxxxxx" that many chars. so yeah.
+// we might be able to get away with only writing a portion of the document too, not sure though. ill think about it. 
+// string ds is used!!!    also printing is dfffff
+
 typedef uint64_t nat;
 
 struct action {
@@ -35,15 +33,22 @@ struct action {
 	off_t length;
 };
 
-static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
-static const nat autosave_frequency = 24;
 extern char** environ;
 static struct termios terminal = {0};
-static char filename[4096] = {0}, directory[4096] = {0};
-static int file = -1, directory_fd = -1;
-static int history = -1;
+
+//static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
+//static const nat autosave_frequency = 24;
+
+// static nat autosave_counter = 0;
+
+
+
+//static char filename[4096] = {0}, directory[4096] = {0};
+//static int file = -1, directory_fd = -1;
+// static int history = -1;
+
 static off_t head = 0;
-static nat autosave_counter = 0;
+
 
 static void autosave(void) {
 
@@ -199,7 +204,7 @@ int main(int argc, const char** argv) {
 
 	tcgetattr(0, &terminal);
 	struct termios terminal_copy = terminal; 
-	terminal_copy.c_lflag &= ~((size_t) ICANON);
+	terminal_copy.c_lflag &= ~((size_t) ICANON);             // only turn off canonical mode.....
 	tcsetattr(0, TCSAFLUSH, &terminal_copy);
 	
 
@@ -261,6 +266,17 @@ done:	close(file);
 	close(history);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+
+
+
+
+
+
+
+
+
 
 /*
 
@@ -527,14 +543,18 @@ like, literally the rest of this editor is so incredibly simple, and perfect so 
 
 
 
-*/
-
-
-
-
 // write(1, "\033[7m/\033[0m", 9);
 
-/*
+
+
+
+
+
+
+
+
+
+
 
 
 
