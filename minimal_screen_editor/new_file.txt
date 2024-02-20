@@ -1,0 +1,21 @@
+this works pretty well as a text editor, shockingly.
+like, its actually really shocking lol. like, all this just kinda came together instantly lol.
+i really like it so far! 
+
+i think i have some really good ways to try to mitigate the amount of origin switching we will need to do!
+firstly, i want to have a command to make the cursor the origin, basically. that will ease some stuff, 
+
+secondly, i want to have a really good find-forwards/backwards system. i am going to try implementing that now, i think. because thats really important. yay. gosh i actually love how useable this already is lol. its actually kinda ridiculous. yay.
+
+
+also, just for some testing, heres some unicode characters! lets try doing ∑, which seemed to work okay, 
+
+	displaying them is actually totally fine lol. its just the act of moving the cursor over them that is odd. but honstely, i am tempted to just say that is working as intended lol. like, its such a small tiny little detail lol. i basically rarelyyyyy use unicode. but its nice that it works this well already lol. gosh this is so cool lol. okay.
+
+
+
+okay, so this works great for small files, but we need to try displaying LONG text files, and see how it acts. thats the tricky part.  hm.. yeah.
+
+	anyways, lets try doing that now lol. yay. 
+
+

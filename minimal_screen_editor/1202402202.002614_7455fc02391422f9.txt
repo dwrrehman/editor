@@ -1,0 +1,20 @@
+hi! 
+
+	this is a new text document that i am actually making with my new text editor!
+
+		its not really supposed to be anything complex or anything, actually i am really just wanting to make a 
+		screen based editor that is like as simple as physically possible, basically.  i am not even going to implment any movement commands or unicode or anything, except for move right and move left lol. and of course, insert and delete. those are the only things i am going to implement really, as far as the basis for the editor. to navigate faster, i think i want to use find forwards and backwards primarily, actually, which will be amazing. yay! 
+
+
+		i am using it right now, and its acutally so usable, its crazy lol. i am going with a block cursor, instead of the built in cursor in the terimnal, which,         i have actually really began to love the block cursor now lol. i am kinda understanding how it works lol. i like it ALOT
+
+
+
+			anyways lets try writing this file out now lol
+
+
+
+	okay that seemed like it works lol
+
+
+		okay, also, lets try to make it so that the block cursor is displayed always, and the built in terminal cursor is displayed never. that will be cool lol. yay.  

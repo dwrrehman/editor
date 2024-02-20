@@ -1,11 +1,11 @@
-#include <stdio.h>        // nonvolatile ed-like editor,
-#include <stdlib.h>       // written on 202401103.023834 by dwrr
-#include <string.h>       // meant for tb's mainly. not writing code really.
-#include <iso646.h>
+#include <stdio.h>  // 202402191.234834: this version of the editor is trying to
+#include <stdlib.h> // make as simplest and robustful of minimalist screen based editor
+#include <string.h> // as possible, to make it not ever crash.
+#include <iso646.h> // it will probably also have an automatic saving and autosaving  system.
 #include <unistd.h>
 #include <fcntl.h>
-#include <termios.h>     // rewrite to make this editor use this editor's display system, but a string ds internally, and have autosaving. 
-#include <time.h>        // and also make it less like a pager, and more an editor in some ways. 
+#include <termios.h> 
+#include <time.h>
 #include <stdbool.h>
 #include <errno.h>
 #include <ctype.h>
@@ -13,16 +13,19 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
-#include <sys/time.h> // 202402036.032044:   rewrite of editor to not make it perfectly nonvolatile, but still not require saving. 
-#include <sys/wait.h> //  every 16 insertions,  we will do a full file autosave, i think. so yeah.   "xxxxxxxxxxxxxxxx" that many chars. so yeah.
-#include <stdint.h>   // we might be able to get away with only writing a portion of the document too, not sure though. ill think about it. 
-#include <signal.h>   // string ds is used!!!    printing will be very different from the original main editor. 
+#include <sys/time.h> 
+#include <sys/wait.h> 
+#include <stdint.h>
+#include <signal.h>
 #include <copyfile.h>
 
 typedef uint64_t nat;
 
-static nat cursor = 0, count = 0, anchor = 0;
-static char* text = NULL;
+static nat cursor = 0, count = 0, anchor = 0, origin = 0, cliplength = 0;
+static char* text = NULL, * clipboard = NULL;
+
+static void left(void) { if (cursor) cursor--; }
+static void right(void) { if (cursor < count) cursor++; }
 
 static void insert(char c) {
 	text = realloc(text, count + 1);
@@ -30,11 +33,48 @@ static void insert(char c) {
 	text[cursor] = c; cursor++; count++;
 }
 
-static char delete(void) {
-	count--; cursor--; char c = text[cursor];
+static char delete(void) { 				// cursor must be nonzero!!!
+	cursor--; count--; char c = text[cursor];
 	memmove(text + cursor, text + cursor + 1, count - cursor);
 	text = realloc(text, count);
 	return c;
+}
+
+static void searchf(void) {
+	nat t = 0;
+	loop: if (t == cliplength or cursor >= count) return;
+	if (text[cursor] != clipboard[t]) t = 0; else t++; 
+	cursor++; goto loop;
+}
+
+static void searchb(void) {
+	nat t = cliplength;
+	loop: if (not t or not cursor) return;
+	cursor--; t--; 
+	if (text[cursor] != clipboard[t]) t = cliplength;
+	goto loop;
+}
+
+static void cut(void) {
+	if (anchor > cursor) return;
+	free(clipboard);
+	clipboard = strndup(text + anchor, cursor - anchor);
+	cliplength = cursor - anchor;
+	for (nat i = 0; i < cliplength and cursor; i++) delete();
+	anchor = (nat) ~0;
+}
+
+static void display(void) {
+	printf("\033[H\033[2J");
+	printf("(len=%llu)clip=\"%s\":::", cliplength, clipboard);
+	nat i = origin;
+	for (; i < count; i++) {
+		if (i == cursor or i == anchor) { printf("\033[7m"); if (text[i] == 10) putchar(32); }
+		putchar(text[i]);
+		if (i == cursor or i == anchor) printf("\033[0m");
+	}
+	if (i == cursor) printf("\033[7m \033[0m"); 
+	fflush(stdout);
 }
 
 static void save(char* filename, nat sizeof_filename) {
@@ -55,12 +95,28 @@ static void save(char* filename, nat sizeof_filename) {
 	if (file < 0) { perror("load: read open file"); puts(filename); getchar(); }
 	write(file, text, count);
 	close(file);
-	printf("\033[7mwrote %llu\033[0m\n", count);
+
+	printf("\033[7meditor: wrote %llu bytes to file \"%s\"\033[0m\n", count, filename);
+	fflush(stdout);
+	getchar();
 }
 
+static void paste(void) {
+
+}
+
+static void copy(void) {
+	
+}
+
+static void window_resize_handler(int unused) { display(); }
+
 int main(int argc, const char** argv) {
+	struct sigaction action = {.sa_handler = window_resize_handler}; 
+	sigaction(SIGWINCH, &action, NULL);
 	char filename[4096] = {0};
 	if (argc < 2) goto new_file; 
+
 	strlcpy(filename, argv[1], sizeof filename);
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
@@ -71,22 +127,193 @@ int main(int argc, const char** argv) {
 	text = malloc(count);
 	read(file, text, count);
 	close(file);
-	new_file: cursor = 0; anchor = 0;
+new_file: 
+	origin = 0; cursor = 0; anchor = (nat) ~0;
 	struct termios terminal = {0};
 	tcgetattr(0, &terminal);
 	struct termios terminal_copy = terminal; 
-	terminal_copy.c_lflag &= ~((size_t) ICANON);
+	terminal_copy.c_iflag &= ~((size_t) IXON);
+	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSAFLUSH, &terminal_copy);
-	write(1, text, count);
-
-	const nat view_size = 512;
-
-	nat selection_begin = 0;
-	nat selection_count = 0;
+	write(1, "\033[?1049h\033[?25l", 14);
 
 loop:;	char c = 0;
+	display();
 	read(0, &c, 1);
-	if (0) {}
+	if (false) {}
+
+	else if (c == 17) 	goto done;	// Q
+	else if (c == 4) 	left(); 	// D
+	else if (c == 18) 	right(); 	// R
+	else if (c == 23) 	paste(); 	// W
+
+	else if (c == 1) 	anchor = cursor;// A
+	else if (c == 19) 	searchb();	// S
+	else if (c == 8) 	searchf();	// H
+	else if (c == 20)	copy(); 	// T
+	else if (c == 24)	cut(); 		// X
+	
+	else if (c == 14) 	save(filename, sizeof filename);   //todo: make this automatic!    // N
+
+	else if (c == 127) { if (cursor) delete(); }
+	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c);
+	goto loop;
+
+done:	save(filename, sizeof filename);
+	write(1, "\033[?25h\033[?1049l", 14);
+	tcsetattr(0, TCSAFLUSH, &terminal);
+}
+
+// --------------------------------------------------------------------------------------------------------------------------------------
+
+
+/*
+
+static void forwards(void) {
+	nat t = 0;
+	loop: if (t == cliplength or cursor >= count) return;
+	if (at(cursor) != clipboard[t]) t = 0; else t++;
+	move_right(); 
+	goto loop;
+}
+
+static void backwards(void) {
+	nat t = cliplength;
+	loop: if (not t or not cursor) return;
+	move_left(); t--; 
+	if (at(cursor) != clipboard[t]) t = cliplength;
+	goto loop;
+}
+
+*/
+
+
+
+
+
+
+//
+//   q d r w  
+//    a s h t  
+//       x     
+//
+
+
+//    how to use this editor:
+//
+//        CONTROL-Q      quit the editor.
+//
+//        CONTROL-D      move left
+//
+//        CONTROL-R      move right
+//
+//        CONTROL-A      set anchor
+//
+//        CONTROL-S
+
+// temporary:
+//
+//        CONTROL-X      save file      (temporary, this will be automatic soon.)
+//
+// obvious:
+//
+//        (character)    insert one char
+//
+//        (backspace)    delete one char
+//
+
+
+
+
+
+
+/*
+	we will only support insert(1), delete(1), left(1), and right(1) only. 
+	everything else is built around those. 
+
+	no "visually-complex" characters will be used, no tabs, no unicode.
+	and canonical mode screen updating is done in an interesting way maybe
+
+*/
+
+
+
+
+
+
+
+//	     if (c == 1/*A*/) sendc();
+//	else if (c == 2/*B*/) {} 
+//	// C
+//	else if (c == 4/*D*/) sendc();
+//	else if (c == 5/*E*/) {}
+//	else if (c == 6/*F*/) {}
+//	else if (c == 7/*G*/) {}
+//	else if (c == 8/*H*/) copy();
+//	// I
+//	// J
+//	else if (c == 11/*K*/) {}
+//	else if (c == 12/*L*/) {}
+//	// M
+//	else if (c == 14/*N*/) {}
+//	// O
+//	else if (c == 16/*P*/) {/* redo(); */}
+//	else if (c == 17/*Q*/) {}
+//	else if (c == 18/*R*/) paste();
+//	else if (c == 19/*S*/) {}
+//	else if (c == 20/*T*/) {}
+//	else if (c == 21/*U*/) undo();
+//	// V
+//	else if (c == 23/*W*/) {}
+//	else if (c == 24/*X*/) { copy(); cut(); }
+//	// Y
+//      // Z
+//
+//   C, I, J, M, O, Q, S, V, Y, Z   are all unavailable.
+//
+
+
+
+
+/*
+
+
+
+
+
+  //char* tofind = strndup(text + anchor, cursor - anchor);
+
+//write(1, text, count);
+
+
+if (cursor) { delete(); write(1, "\b\b\b   \b\b\b", 9); } else write(1, "\b\b  \b\b", 6);
+
+
+
+
+
+
+
+
+
+
+ioctl(0, TIOCGWINSZ, &window);
+	const nat new_size = 9 + 32 + window.ws_row * (window.ws_col + 5) * 4;
+	if (new_size != screen_size) { screen = realloc(screen, new_size); screen_size = new_size; display_mode = 0; }
+
+	memcpy(screen, "\033[?25l\033[H", 9);
+	nat length = 9;
+	nat row = 0, column = 0;
+	off_t i = origin;
+
+
+
+
+
+
+
+
+
 
 	else if (c == 1)  {
 		printf("\033[7m%llu\033[0m\n", cursor);
@@ -155,21 +382,9 @@ loop:;	char c = 0;
 		selection_count = 0;
 		free(toreplace);
 	}
-	else if (c == 14) save(filename, sizeof filename);   //N - temporary:  save the file.       (make this automatic!)
-	else if (c == 27) goto done;
-	else if (c == 127) { if (cursor) { delete(); write(1, "\b\b\b   \b\b\b", 9); } else write(1, "\b\b  \b\b", 6); }
-	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c);
-	goto loop;
-
-done:	save(filename, sizeof filename);
-	tcsetattr(0, TCSAFLUSH, &terminal);
-	write(1, "\n", 1);
-}
 
 
-
-
-
+*/
 
 
 

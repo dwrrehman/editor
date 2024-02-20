@@ -1,4 +1,4 @@
-hello there from space!
+hello there nice lol.from space!
 
 	this is my new text document lol. i don't really know how it works, 
 
@@ -6,7 +6,7 @@ hello there from space!
 
 
 	lets add some more text to this document! just to see if we can actually write text the way we want using this lol.
-	its actually shockingly usable! i am liking it more and more the more i use it, which is quite cool.
+	its actually shockingly usable! nice lol. i am liking it more and more the more i use it, which is quite cool.
 
 
 i really want to try writing code with this though. thats the real test.
@@ -14,9 +14,9 @@ i really want to try writing code with this though. thats the real test.
 
 char* toreplace = strndup(text + anchor, cursor - anchor);
 const nat toreplace_count = cursor - bubbles;
-for (nat i = 0; i < toreplace_count; i++) delete();
+for (nat i = 0; i < toreplace_count; i++) delete(); // find this 
 
-cursor = selection_begin;
+cursor = selection_begin / window_sizing * 8 * sizeof(nat);
 for (nat i = 0; i < selection_count; i++) delete();    // delete the current selection from a find call.
 
 // insert a series of characters equal to the current string. 
