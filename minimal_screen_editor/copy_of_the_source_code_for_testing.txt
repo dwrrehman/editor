@@ -1,5 +1,5 @@
 #include <stdio.h>  // 202402191.234834: this version of the editor is trying to
-#include <stdlib.h> // make as simplest and robustful of minimalist screen based editor
+#include <stdlib.h> // make as simplest and robustful of minimalist screen based editor 
 #include <string.h> // as possible, to make it not ever crash.
 #include <iso646.h> // it will probably also have an automatic saving and autosaving  system.
 #include <unistd.h>
@@ -20,100 +20,37 @@
 #include <copyfile.h>
 
 typedef uint64_t nat;
-static nat cursor = 0, count = 0, anchor = 0, origin = 0, finish = 0, cliplength = 0, screen_size = 0;
-static char* text = NULL, * clipboard = NULL, * screen = NULL;
-static struct winsize window = {0};
-extern char** environ;
 
-static void display(void) {
-	ioctl(0, TIOCGWINSZ, &window);
-	const nat new_size = 9 + 32 + window.ws_row * (window.ws_col + 5) * 4;
-	if (new_size != screen_size) { screen = realloc(screen, new_size); screen_size = new_size; }
-	
-	memcpy(screen, "\033[H", 3);
-	nat length = 3;
-	nat i = origin, row = 0, column = 0;
+static nat cursor = 0, count = 0, anchor = 0, origin = 0, cliplength = 0;
+static char* text = NULL, * clipboard = NULL;
 
-	for (; i < count; i++) {
-		if (row >= window.ws_row - 1) break;
-
-		if (text[i] == 10) {
-			if (i == cursor or i == anchor) { memcpy(screen + length, "\033[7m \033[0m", 9); length += 9; }
-		nl:	memcpy(screen + length, "\033[K", 3); length += 3; 
-			if (row < window.ws_row - 1) screen[length++] = 10;
-			row++; column = 0;
-
-		} else if (text[i] == 9) {
-			nat amount = 8 - column % 8;
-			column += amount;
-			if (i == cursor or i == anchor) { memcpy(screen + length, "\033[7m \033[0m", 9); length += 9; amount--; }
-			memcpy(screen + length, "        ", amount); length += amount;
-
-		} else {
-			if (i == cursor or i == anchor) { memcpy(screen + length, "\033[7m", 4); length += 4; }
-			screen[length++] = text[i];
-			if (i == cursor or i == anchor) { memcpy(screen + length, "\033[0m", 4); length += 4; }
-			if (column >= window.ws_col - 2) goto nl;
-			else if ((unsigned char) text[i] >> 6 != 2 and text[i] >= 32) column++;
-		}
-	}
-	finish = i;
-	if (i == cursor) { memcpy(screen + length, "\033[7m \033[0m", 9); length += 9; }
-
-	while (row < window.ws_row - 1) {
-		memcpy(screen + length, "\033[K", 3);
-		length += 3; 
-		if (row < window.ws_row - 1) screen[length++] = 10;
-		row++;
-	} 
-
-	write(1, screen, length);
-}
-
-static void left(void) { 
-	if (cursor) cursor--; 
-	if (cursor < origin) {
-		if (origin) origin--;
-		if (origin) origin--;
-		while (origin and text[origin] != 10) origin--;
-		if (origin and origin < count) origin++;
-		display();
-	}
-}
-
-static void right(void) { 
-	if (cursor < count) cursor++;
-	if (cursor > finish and cursor < count) {
-		while (origin < count and text[origin] != 10) origin++;
-		if (origin < count) origin++;
-		display();
-	}
-}
+static void left(void) { if (cursor) cursor--; }
+static void right(void) { if (cursor < count) cursor++; }
 
 static void insert(char c) {
 	text = realloc(text, count + 1);
 	memmove(text + cursor + 1, text + cursor, count - cursor);
-	text[cursor] = c; count++; right();
+	text[cursor] = c; cursor++; count++;
 }
 
 static char delete(void) { 				// cursor must be nonzero!!!
-	left(); count--; char c = text[cursor];
+	cursor--; count--; char c = text[cursor];
 	memmove(text + cursor, text + cursor + 1, count - cursor);
 	text = realloc(text, count);
-	return c;
+	return c;// hi there lol this is kinda interesting lol. ir think this is okay though lol. hmmmmmm... ...interestingggg
 }
-
+// lol
 static void searchf(void) {
 	nat t = 0;
 	loop: if (t == cliplength or cursor >= count) return;
 	if (text[cursor] != clipboard[t]) t = 0; else t++; 
-	right(); goto loop;
+	cursor++; goto loop;
 }
 
 static void searchb(void) {
 	nat t = cliplength;
 	loop: if (not t or not cursor) return;
-	left(); t--; 
+	cursor--; t--; 
 	if (text[cursor] != clipboard[t]) t = cliplength;
 	goto loop;
 }
@@ -125,6 +62,19 @@ static void cut(void) {
 	cliplength = cursor - anchor;
 	for (nat i = 0; i < cliplength and cursor; i++) delete();
 	anchor = (nat) ~0;
+}
+
+static void display(void) {
+	printf("\033[H\033[2J");
+	printf("(len=%llu)clip=\"%s\":::", cliplength, clipboard);
+	nat i = origin;
+	for (; i < count; i++) {
+		if (i == cursor or i == anchor) { printf("\033[7m"); if (text[i] == 10) putchar(32); }
+		putchar(text[i]);
+		if (i == cursor or i == anchor) printf("\033[0m");
+	}
+	if (i == cursor) printf("\033[7m \033[0m"); 
+	fflush(stdout);
 }
 
 static void save(char* filename, nat sizeof_filename) {
@@ -145,11 +95,22 @@ static void save(char* filename, nat sizeof_filename) {
 	if (file < 0) { perror("load: read open file"); puts(filename); getchar(); }
 	write(file, text, count);
 	close(file);
-	//printf("\033[7meditor: wrote %llu bytes to file \"%s\"\033[0m\n", count, filename);
+
+	printf("\033[7meditor: wrote %llu bytes to file \"%s\"\033[0m\n", count, filename);
 	fflush(stdout);
+	getchar();
 }
 
 static void paste(void) {
+	// this is going to be my implementation of the paste function lol. 
+
+		lets draft out how it will work exactly:
+
+			0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 
+			              ^
+			0 1 1 1 1 0 1 1 1 1 0 1 1 1 0 1 1 1 1 1 0 1        <------------ this one is the interesting one lol
+
+	// this is all just example stuff to test the editor- not actual stuff lol
 
 }
 
@@ -163,7 +124,8 @@ int main(int argc, const char** argv) {
 	struct sigaction action = {.sa_handler = window_resize_handler}; 
 	sigaction(SIGWINCH, &action, NULL);
 	char filename[4096] = {0};
-	if (argc < 2) goto new_file;
+	if (argc < 2) goto new_file; 
+
 	strlcpy(filename, argv[1], sizeof filename);
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
@@ -188,19 +150,24 @@ loop:;	char c = 0;
 	display();
 	read(0, &c, 1);
 	if (false) {}
+
 	else if (c == 17) 	goto done;	// Q
 	else if (c == 4) 	left(); 	// D
 	else if (c == 18) 	right(); 	// R
 	else if (c == 23) 	paste(); 	// W
+
 	else if (c == 1) 	anchor = cursor;// A
 	else if (c == 19) 	searchb();	// S
 	else if (c == 8) 	searchf();	// H
 	else if (c == 20)	copy(); 	// T
 	else if (c == 24)	cut(); 		// X
+	
 	else if (c == 14) 	save(filename, sizeof filename);   //todo: make this automatic!    // N
+
 	else if (c == 127) { if (cursor) delete(); }
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c);
 	goto loop;
+
 done:	save(filename, sizeof filename);
 	write(1, "\033[?25h\033[?1049l", 14);
 	tcsetattr(0, TCSAFLUSH, &terminal);
@@ -210,26 +177,6 @@ done:	save(filename, sizeof filename);
 
 
 /*
-
-
-        i think the todo for the editor to replace sublime will be:
-
-
-       x         - implment up/down and word movement                  // not strictly neccessary... technicallyyyyyyyyyy
-       x         - bind all arrow key + modifiers to movement            // maybe we add move up and move down and arrow keys though?... hmmm.. idk...
-        
-                - make the autosave system
-
-                - implement copy/paste fully
-
-                - implement a simple undo-tree system!
-
-                - implement the automatic saving system.   yay 
-
-
-
-
-
 
 static void forwards(void) {
 	nat t = 0;
@@ -359,7 +306,7 @@ if (cursor) { delete(); write(1, "\b\b\b   \b\b\b", 9); } else write(1, "\b\b  \
 
 
 
-	ioctl(0, TIOCGWINSZ, &window);
+ioctl(0, TIOCGWINSZ, &window);
 	const nat new_size = 9 + 32 + window.ws_row * (window.ws_col + 5) * 4;
 	if (new_size != screen_size) { screen = realloc(screen, new_size); screen_size = new_size; display_mode = 0; }
 
@@ -1149,12 +1096,31 @@ like, literally the rest of this editor is so incredibly simple, and perfect so 
 
 
 
+		202402202.033822:
+
+			 i just got softwrapping displaying to work i think!!!
+
+
+			i actually love  how i implemented the whole thing lol. its so cool lol. yayyy!! coollllllll
 
 
 
 
 
 
+	i think the todo for the editor to replace sublime will be:
+
+
+		- implment up/down and word movement
+		- bind all arrow key + modifiers to movement
+	
+		- make the autosave system
+
+		- implement copy/paste fully
+
+		- implement a simple undo-tree system!
+
+		- implement the automatic saving system.   yay
 
 
 
@@ -1297,5 +1263,3 @@ int main(int argc, const char** argv) {
 
 
 */
-
-
