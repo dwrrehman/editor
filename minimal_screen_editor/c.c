@@ -20,20 +20,16 @@
 #include <copyfile.h>
 
 typedef uint64_t nat;
-static nat cursor = 0, count = 0, anchor = 0, origin = 0, finish = 0, cliplength = 0, screen_size = 0;
+static bool moved = false, selecting = false;
+static nat cursor = 0, count = 0, anchor = 0, origin = 0, finish = 0, desired = 0, cliplength = 0, screen_size = 0;
 static char* text = NULL, * clipboard = NULL, * screen = NULL;
 static struct winsize window = {0};
 extern char** environ;
 
-static nat desired = 0;
-static bool moved = false;
-static bool selecting = false;
-
-static void display(void) {
+static void display(bool should_write) {
 	ioctl(0, TIOCGWINSZ, &window);
 	const nat new_size = 9 + 32 + window.ws_row * (window.ws_col + 5) * 4;
 	if (new_size != screen_size) { screen = realloc(screen, new_size); screen_size = new_size; }
-	
 	memcpy(screen, "\033[H", 3);
 	nat length = 3;
 	nat i = origin, row = 0, column = 0;
@@ -71,7 +67,7 @@ static void display(void) {
 		row++;
 	} 
 
-	write(1, screen, length);
+	if (should_write) write(1, screen, length);
 }
 
 static void left(void) { 
@@ -81,7 +77,7 @@ static void left(void) {
 		if (origin) origin--;
 		while (origin and text[origin] != 10) origin--;
 		if (origin and origin < count) origin++;
-		display();
+		display(false);
 	}
 	moved = true;
 }
@@ -91,7 +87,7 @@ static void right(void) {
 	if (cursor >= finish) {
 		while (origin < count and text[origin] != 10) origin++;
 		if (origin < count) origin++;
-		display();
+		display(false);
 	}
 	moved = true;
 }
@@ -109,7 +105,7 @@ static nat compute_current_visual_cursor_column(void) {
 	return column;
 }
 
-static void move_cursor_to_visual_position(nat target) { // cursor must be looking at a character that is after a newline, or file beginning.
+static void move_cursor_to_visual_position(nat target) {
 	nat column = 0;
 	while (cursor < count and text[cursor] != 10) {
 		if (column >= target) return;
@@ -143,24 +139,27 @@ static void down(void) {
 static void up_begin(void) {
 	while (cursor) {
 		left();
-		char c = text[cursor - 1];
-		if (cursor and c == 10) break;
+		if (cursor) {
+			char c = text[cursor - 1];
+			if (c == 10) break;
+		} else break;
 	}
 }
 
 static void down_end(void) {
 	while (cursor < count) {
 		right();
-		char c = text[cursor];
-		if (cursor < count and c == 10) break;
+		if (cursor < count) {
+			char c = text[cursor];
+			if (c == 10) break;
+		} else break;
 	}
 }
 
 static void word_left(void) {
 	left();
 	while (cursor) {
-		char behind = text[cursor - 1];
-		char here = text[cursor];
+		char behind = text[cursor - 1], here = text[cursor];
 		if (not (not isalnum(here) or isalnum(behind))) break;
 		if (behind == 10) break;
 		left();
@@ -170,8 +169,7 @@ static void word_left(void) {
 static void word_right(void) {
 	right();
 	while (cursor < count) {
-		char behind = text[cursor - 1];
-		char here = text[cursor];
+		char behind = text[cursor - 1], here = text[cursor];
 		if (not (isalnum(here) or not isalnum(behind))) break;
 		if (here == 10) break;
 		right();
@@ -184,7 +182,7 @@ static void insert(char c) {
 	text[cursor] = c; count++; right();
 }
 
-static char delete(void) { 				// cursor must be nonzero!!!
+static char delete(void) {
 	left(); count--; char c = text[cursor];
 	memmove(text + cursor, text + cursor + 1, count - cursor);
 	text = realloc(text, count);
@@ -313,7 +311,7 @@ static void interpret_arrow_key(void) {
 }
 
 
-static void window_resize_handler(int unused) { display(); }
+static void window_resize_handler(int unused) { display(true); }
 
 int main(int argc, const char** argv) {
 	struct sigaction action = {.sa_handler = window_resize_handler}; 
@@ -341,23 +339,23 @@ new_file:
 	write(1, "\033[?1049h\033[?25l", 14);
 
 loop:;	char c = 0;
-	display();
+	display(true);
 	read(0, &c, 1);
 	if (false) {}
-	else if (c == 17) 	goto done;	// Q
-	else if (c == 23) 	paste(); 	// W
-	else if (c == 1) 	anchor = cursor;// A
-	else if (c == 19) 	searchb();	// S
-	else if (c == 8) 	searchf();	// H
-	else if (c == 20)	copy(); 	// T
+	else if (c == 17) 	goto done;	// Q     // this is fine i think.
+	else if (c == 23) 	paste(); 	// W     // make this control-t
+	else if (c == 1) 	anchor = cursor;// A     // delete this one? ..... yeah.... 
+	else if (c == 19) 	searchb();	// S     // make this control-f 
+	else if (c == 8) 	searchf();	// H     // make this control-w
+	else if (c == 20)	copy(); 	// T     // make this control h  i think 
 	else if (c == 24)	cut(); 		// X
 	
-	else if (c == 5) 	up();		// E
+	else if (c == 5) 	up();		// E     // delete these 4 ones.
 	else if (c == 12) 	down();		// L
 	else if (c == 4) 	left(); 	// D
 	else if (c == 18) 	right(); 	// R
 
-	else if (c == 14) 	save(filename, sizeof filename);   //todo: make this automatic!    // N
+	else if (c == 14) 	save(filename, sizeof filename);   //todo: make this automatic!    // N       // make this control-S ????
 	else if (c == 27) 	interpret_arrow_key();
 	else if (c == 127) 	{ if (selecting) cut(); else { if (cursor) delete(); } }
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c); }
@@ -386,96 +384,6 @@ done:	save(filename, sizeof filename);
 
 
 
-
-
-
-
-/*
-
-
-
-
-
-static inline void copy(void) {
-	if (not (mode & selecting)) return;
-	get_count();
-	FILE* globalclip = popen("pbcopy", "w");
-	if (not globalclip) {
-		perror("copy popen pbcopy");
-		getchar(); return;
-	}
-
-	if (anchor > count) anchor = count;
-	cliplength = (size_t) (anchor < cursor ? cursor - anchor : anchor - cursor);
-	clipboard = realloc(clipboard, cliplength + 1);
-	if (anchor < cursor) at_string(anchor, cliplength, clipboard);
-	else at_string(cursor, cliplength, clipboard);
-	clipboard[cliplength] = 0;
-	fwrite(clipboard, 1, cliplength, globalclip);
-	pclose(globalclip);
-}
-
-static void insert_output(const char* input_command) {
-
-	char command[4096] = {0};
-	strlcpy(command, input_command, sizeof command);
-	strlcat(command, " 2>&1", sizeof command);
-
-	FILE* f = popen(command, "r");
-	if (not f) {
-		printf("error: could not execute \"%s\"\n", command);
-		perror("insert_output popen");
-		getchar(); return;
-	}
-	char* string = NULL;
-	size_t length = 0;
-	char line[2048] = {0};
-	while (fgets(line, sizeof line, f)) {
-		size_t l = strlen(line);
-		string = realloc(string, length + l);
-		memcpy(string + length, line, l);
-		length += l;
-	}
-	pclose(f);
-	insert(string, length, 1);
-	free(string);
-}
-
-
-
-
-
-
-
-
-
-
-
-
-*/
-
-//	down impl
-
-	// step 0. move to the beginning of this line.
-	// step 1. compute the current line length, in terminal characters. call it x.
-	// step 2. move to the next line's beginning.
-	// step 3. move x characters over to the right.
-
-//	up impl
-
-	// step 0. move to the beginning of this line.
-	// step 1. compute the current line length, in terminal characters. call it x.
-	// step 2. move to the previous line's beginning.
-	// step 3. move x characters over to the right.
-
-
-
-
-	
-// if (moved) { desired = x; moved = false; }
-
-
-// static nat desired = 0;
 
 
 /*
@@ -550,7 +458,7 @@ static void backwards(void) {
 
 // temporary:
 //
-//        CONTROL-X      save file      (temporary, this will be automatic soon.)
+//        CONTROL-N      save file      (temporary, this will be automatic soon.)
 //
 // obvious:
 //
@@ -564,7 +472,107 @@ static void backwards(void) {
 
 
 
+
+
+
+
+
 /*
+
+
+
+
+
+
+
+
+
+
+
+static inline void copy(void) {
+	if (not (mode & selecting)) return;
+	get_count();
+	FILE* globalclip = popen("pbcopy", "w");
+	if (not globalclip) {
+		perror("copy popen pbcopy");
+		getchar(); return;
+	}
+
+	if (anchor > count) anchor = count;
+	cliplength = (size_t) (anchor < cursor ? cursor - anchor : anchor - cursor);
+	clipboard = realloc(clipboard, cliplength + 1);
+	if (anchor < cursor) at_string(anchor, cliplength, clipboard);
+	else at_string(cursor, cliplength, clipboard);
+	clipboard[cliplength] = 0;
+	fwrite(clipboard, 1, cliplength, globalclip);
+	pclose(globalclip);
+}
+
+static void insert_output(const char* input_command) {
+
+	char command[4096] = {0};
+	strlcpy(command, input_command, sizeof command);
+	strlcat(command, " 2>&1", sizeof command);
+
+	FILE* f = popen(command, "r");
+	if (not f) {
+		printf("error: could not execute \"%s\"\n", command);
+		perror("insert_output popen");
+		getchar(); return;
+	}
+	char* string = NULL;
+	size_t length = 0;
+	char line[2048] = {0};
+	while (fgets(line, sizeof line, f)) {
+		size_t l = strlen(line);
+		string = realloc(string, length + l);
+		memcpy(string + length, line, l);
+		length += l;
+	}
+	pclose(f);
+	insert(string, length, 1);
+	free(string);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+//	down impl
+
+	// step 0. move to the beginning of this line.
+	// step 1. compute the current line length, in terminal characters. call it x.
+	// step 2. move to the next line's beginning.
+	// step 3. move x characters over to the right.
+
+//	up impl
+
+	// step 0. move to the beginning of this line.
+	// step 1. compute the current line length, in terminal characters. call it x.
+	// step 2. move to the previous line's beginning.
+	// step 3. move x characters over to the right.
+
+
+
+
+	
+// if (moved) { desired = x; moved = false; }
+
+
+// static nat desired = 0;
+
+
+
+
+
+
 	we will only support insert(1), delete(1), left(1), and right(1) only. 
 	everything else is built around those. 
 
