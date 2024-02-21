@@ -12,4 +12,65 @@ okay lol. yay.
 hello there, 
 this is my cool thingy lol.
 
-	okay, so it finally seems like i figured it out lol. nice. lol... yay! okay now, i want to see what it looks like for the border to get maxed out when we make a line that is too long lol. it seems like its doing okay so far lol. hmm. okay cool lol. 	yay. 
+	okay, so it finally seems like i figured it out lol. nice. lol... yay! okay now, i want to see what it looks like for the border to get maxed out when we make a line that is too long lol. it seems like its doing okay so far lol. hmm. okay cool lol. yay. hello there from space lol.
+
+
+
+
+
+
+
+
+
+		this is some text that has tabs in it!!!
+
+			lots of tabs!!! yay!!!
+
+
+
+
+
+
+okay
+
+now
+
+
+we are going to 
+
+
+
+
+start 
+yyyyy
+typing after
+aht
+the page
+break
+and we are 
+going to
+see if we
+can reach
+the hello
+to there from space. nice.
+hello nice. yay.
+okay cool. okay, so it seems like 
+typing text actually does work at the end
+of the document, its just... it doesnt quiteeee work
+because like, we still have one more line to go, basically.
+or like, the origin doesnt shift when we press enter, basically.
+its kinda stupid lol. i feel like there should be an easy fix to this. we are 
+implementing it in a really cool way though lol. yay. 
+i really like this version of the editor though. its literally so cool. yay! very happy with it. 
+
+
+
+
+
+
+
+
+
+yeah, typing actual characers always fixes it, but its definitely something that i need tofix though. anyways. 
+lets solve this problem later i think lol. yay. 
+

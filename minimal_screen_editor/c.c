@@ -25,6 +25,10 @@ static char* text = NULL, * clipboard = NULL, * screen = NULL;
 static struct winsize window = {0};
 extern char** environ;
 
+static nat desired = 0;
+static bool moved = false;
+static bool selecting = false;
+
 static void display(void) {
 	ioctl(0, TIOCGWINSZ, &window);
 	const nat new_size = 9 + 32 + window.ws_row * (window.ws_col + 5) * 4;
@@ -33,9 +37,9 @@ static void display(void) {
 	memcpy(screen, "\033[H", 3);
 	nat length = 3;
 	nat i = origin, row = 0, column = 0;
-
+	finish = (nat) ~0;
 	for (; i < count; i++) {
-		if (row >= window.ws_row - 1) break;
+		if (row >= window.ws_row) { finish = i; break; }
 
 		if (text[i] == 10) {
 			if (i == cursor or i == anchor) { memcpy(screen + length, "\033[7m \033[0m", 9); length += 9; }
@@ -57,10 +61,10 @@ static void display(void) {
 			else if ((unsigned char) text[i] >> 6 != 2 and text[i] >= 32) column++;
 		}
 	}
-	finish = i;
-	if (i == cursor) { memcpy(screen + length, "\033[7m \033[0m", 9); length += 9; }
+	
+	if (i == cursor or i == anchor) { memcpy(screen + length, "\033[7m \033[0m", 9); length += 9; }
 
-	while (row < window.ws_row - 1) {
+	while (row < window.ws_row) {
 		memcpy(screen + length, "\033[K", 3);
 		length += 3; 
 		if (row < window.ws_row - 1) screen[length++] = 10;
@@ -79,14 +83,98 @@ static void left(void) {
 		if (origin and origin < count) origin++;
 		display();
 	}
+	moved = true;
 }
 
 static void right(void) { 
 	if (cursor < count) cursor++;
-	if (cursor > finish and cursor < count) {
+	if (cursor >= finish) {
 		while (origin < count and text[origin] != 10) origin++;
 		if (origin < count) origin++;
 		display();
+	}
+	moved = true;
+}
+
+static nat compute_current_visual_cursor_column(void) {
+	nat i = cursor;
+	while (i and text[i - 1] != 10) i--;
+	nat column = 0;
+	while (i < cursor and text[i] != 10) {
+		if (text[i] == 9) { nat amount = 8 - column % 8; column += amount; }
+		else if (column >= window.ws_col - 2) column = 0;
+		else if ((unsigned char) text[i] >> 6 != 2 and text[i] >= 32) column++;
+		i++;
+	}
+	return column;
+}
+
+static void move_cursor_to_visual_position(nat target) { // cursor must be looking at a character that is after a newline, or file beginning.
+	nat column = 0;
+	while (cursor < count and text[cursor] != 10) {
+		if (column >= target) return;
+		if (text[cursor] == 9) { nat amount = 8 - column % 8; column += amount; }
+		else if (column >= window.ws_col - 2) column = 0;
+		else if ((unsigned char) text[cursor] >> 6 != 2 and text[cursor] >= 32) column++;
+		right();
+	}
+}
+
+static void up(void) {
+	const bool m = moved; 
+	const nat column = compute_current_visual_cursor_column();
+	while (cursor and text[cursor - 1] != 10) left(); left();
+	while (cursor and text[cursor - 1] != 10) left();
+	move_cursor_to_visual_position(not m ? desired : column);
+	if (m) desired = column;
+	moved = false;
+}
+
+static void down(void) {
+	const bool m = moved; 
+	const nat column = compute_current_visual_cursor_column();
+	while (cursor < count and text[cursor] != 10) right(); right();
+	move_cursor_to_visual_position(not m ? desired : column);
+	if (m) desired = column;
+	moved = false;
+}
+
+
+static void up_begin(void) {
+	while (cursor) {
+		left();
+		char c = text[cursor - 1];
+		if (cursor and c == 10) break;
+	}
+}
+
+static void down_end(void) {
+	while (cursor < count) {
+		right();
+		char c = text[cursor];
+		if (cursor < count and c == 10) break;
+	}
+}
+
+static void word_left(void) {
+	left();
+	while (cursor) {
+		char behind = text[cursor - 1];
+		char here = text[cursor];
+		if (not (not isalnum(here) or isalnum(behind))) break;
+		if (behind == 10) break;
+		left();
+	}
+}
+
+static void word_right(void) {
+	right();
+	while (cursor < count) {
+		char behind = text[cursor - 1];
+		char here = text[cursor];
+		if (not (isalnum(here) or not isalnum(behind))) break;
+		if (here == 10) break;
+		right();
 	}
 }
 
@@ -119,12 +207,14 @@ static void searchb(void) {
 }
 
 static void cut(void) {
-	if (anchor > cursor) return;
+	if (not selecting or anchor == (nat) ~0) return;
+	if (anchor > cursor) { nat t = anchor; anchor = cursor; cursor = t; }
 	free(clipboard);
 	clipboard = strndup(text + anchor, cursor - anchor);
 	cliplength = cursor - anchor;
 	for (nat i = 0; i < cliplength and cursor; i++) delete();
 	anchor = (nat) ~0;
+	selecting = false;
 }
 
 static void save(char* filename, nat sizeof_filename) {
@@ -149,13 +239,79 @@ static void save(char* filename, nat sizeof_filename) {
 	fflush(stdout);
 }
 
-static void paste(void) {
-
-}
-
 static void copy(void) {
 	
 }
+
+static void paste(void) {
+	if (selecting) cut();
+
+	// insert_output("pbpaste");
+	for (nat i = 0; i < 9; i++) insert("clipboard"[i]);
+}
+
+static void jump_index(char* string) {
+	const size_t n = (size_t) atoi(string);
+	for (size_t i = 0; i < n; i++) right();
+}
+
+static void jump_line(char* string) {
+	const size_t n = (size_t) atoi(string);
+	cursor = 0; origin = 0;
+	for (size_t i = 0; i < n; i++) down_end();
+	up_begin(); 
+}
+
+static void set_anchor(void) {
+	if (selecting) return;
+	anchor = cursor; 
+	selecting = true;
+}
+
+static void clear_anchor(void) {
+	if (not selecting) return;
+	anchor = (nat) ~0;
+	selecting = false;
+}
+
+
+static void interpret_arrow_key(void) {
+	char c = 0; read(0, &c, 1);
+
+	if (false) {}
+	else if (c == 'u') { clear_anchor(); up_begin(); }
+	else if (c == 'd') { clear_anchor(); down_end(); }
+	else if (c == 'l') { clear_anchor(); word_left(); }
+	else if (c == 'r') { clear_anchor(); word_right(); }
+
+	else if (c == 'f') { clear_anchor(); searchf(); }
+	else if (c == 'b') { clear_anchor(); searchb(); }
+	else if (c == 't') { clear_anchor(); for (int i = 0; i < window.ws_row - 1; i++) up(); }
+	else if (c == 'e') { clear_anchor(); for (int i = 0; i < window.ws_row - 1; i++) down(); }
+
+	else if (c == 's') {
+		read(0, &c, 1); 
+		     if (c == 'u') { set_anchor(); up(); }
+		else if (c == 'd') { set_anchor(); down(); }
+		else if (c == 'r') { set_anchor(); right(); }
+		else if (c == 'l') { set_anchor(); left(); }
+
+		else if (c == 'b') { set_anchor(); up_begin(); }
+		else if (c == 'e') { set_anchor(); down_end(); }
+		else if (c == 'w') { set_anchor(); word_right(); }
+		else if (c == 'm') { set_anchor(); word_left(); }
+	}
+
+	else if (c == '[') {
+		read(0, &c, 1); 
+		if (c == 'A') { clear_anchor(); up(); }
+		else if (c == 'B') { clear_anchor(); down(); }
+		else if (c == 'C') { clear_anchor(); right(); }
+		else if (c == 'D') { clear_anchor(); left(); }
+		else { printf("error: found escape seq: ESC [ #%d\n", c); getchar(); }
+	} else { printf("error found escape seq: ESC #%d\n", c); getchar(); }
+}
+
 
 static void window_resize_handler(int unused) { display(); }
 
@@ -189,17 +345,22 @@ loop:;	char c = 0;
 	read(0, &c, 1);
 	if (false) {}
 	else if (c == 17) 	goto done;	// Q
-	else if (c == 4) 	left(); 	// D
-	else if (c == 18) 	right(); 	// R
 	else if (c == 23) 	paste(); 	// W
 	else if (c == 1) 	anchor = cursor;// A
 	else if (c == 19) 	searchb();	// S
 	else if (c == 8) 	searchf();	// H
 	else if (c == 20)	copy(); 	// T
 	else if (c == 24)	cut(); 		// X
+	
+	else if (c == 5) 	up();		// E
+	else if (c == 12) 	down();		// L
+	else if (c == 4) 	left(); 	// D
+	else if (c == 18) 	right(); 	// R
+
 	else if (c == 14) 	save(filename, sizeof filename);   //todo: make this automatic!    // N
-	else if (c == 127) { if (cursor) delete(); }
-	else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c);
+	else if (c == 27) 	interpret_arrow_key();
+	else if (c == 127) 	{ if (selecting) cut(); else { if (cursor) delete(); } }
+	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c); }
 	goto loop;
 done:	save(filename, sizeof filename);
 	write(1, "\033[?25h\033[?1049l", 14);
@@ -207,6 +368,114 @@ done:	save(filename, sizeof filename);
 }
 
 // --------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+
+
+
+static inline void copy(void) {
+	if (not (mode & selecting)) return;
+	get_count();
+	FILE* globalclip = popen("pbcopy", "w");
+	if (not globalclip) {
+		perror("copy popen pbcopy");
+		getchar(); return;
+	}
+
+	if (anchor > count) anchor = count;
+	cliplength = (size_t) (anchor < cursor ? cursor - anchor : anchor - cursor);
+	clipboard = realloc(clipboard, cliplength + 1);
+	if (anchor < cursor) at_string(anchor, cliplength, clipboard);
+	else at_string(cursor, cliplength, clipboard);
+	clipboard[cliplength] = 0;
+	fwrite(clipboard, 1, cliplength, globalclip);
+	pclose(globalclip);
+}
+
+static void insert_output(const char* input_command) {
+
+	char command[4096] = {0};
+	strlcpy(command, input_command, sizeof command);
+	strlcat(command, " 2>&1", sizeof command);
+
+	FILE* f = popen(command, "r");
+	if (not f) {
+		printf("error: could not execute \"%s\"\n", command);
+		perror("insert_output popen");
+		getchar(); return;
+	}
+	char* string = NULL;
+	size_t length = 0;
+	char line[2048] = {0};
+	while (fgets(line, sizeof line, f)) {
+		size_t l = strlen(line);
+		string = realloc(string, length + l);
+		memcpy(string + length, line, l);
+		length += l;
+	}
+	pclose(f);
+	insert(string, length, 1);
+	free(string);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+*/
+
+//	down impl
+
+	// step 0. move to the beginning of this line.
+	// step 1. compute the current line length, in terminal characters. call it x.
+	// step 2. move to the next line's beginning.
+	// step 3. move x characters over to the right.
+
+//	up impl
+
+	// step 0. move to the beginning of this line.
+	// step 1. compute the current line length, in terminal characters. call it x.
+	// step 2. move to the previous line's beginning.
+	// step 3. move x characters over to the right.
+
+
+
+
+	
+// if (moved) { desired = x; moved = false; }
+
+
+// static nat desired = 0;
 
 
 /*
@@ -227,6 +496,12 @@ done:	save(filename, sizeof filename);
                 - implement the automatic saving system.   yay 
 
 
+
+
+
+// printf("[[[i=%llu]]]", i); fflush(stdout); getchar();
+
+	// printf("[[[x=%llu]]]", x); fflush(stdout); getchar();
 
 
 

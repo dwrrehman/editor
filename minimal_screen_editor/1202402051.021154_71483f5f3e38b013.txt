@@ -1,4 +1,7 @@
 hello there nice lol.from space!
+this is a line after the first line.
+for testing lol. don't mind this one. 
+yay. cool beans. 
 
 	this is my new text document lol. i don't really know how it works, 
 
@@ -12,7 +15,7 @@ hello there nice lol.from space!
 i really want to try writing code with this though. thats the real test.
 
 
-char* toreplace = strndup(text + anchor, cursor - anchor);
+char* toreplace = strndup(text +  anchor, cursor - anchor);
 const nat toreplace_count = cursor - bubbles;
 for (nat i = 0; i < toreplace_count; i++) delete(); // find this 
 
@@ -31,9 +34,15 @@ printf("\033[7mreplaced at %llu, deleted %llu inserted %llu\033[0m\n",
 
 int main(int argc, char** argv) {
 
+
+
+
 	printf("%d: argv[0]: %s\n", argc, argv[0]);
 	exit(0);
 }
 
-
-
+hello
+there from space
+hello there from space
+ioaeshtoienasht
+hello there from space hello therefrom space.
