@@ -22,7 +22,7 @@ for (nat i = 0; i < toreplace_count; i++) delete(); // find this
 cursor = selection_begin / window_sizing * 8 * sizeof(nat);
 for (nat i = 0; i < selection_count; i++) delete();    // delete the current selection from a find call.
 
-// insert a series of characters equal to the current string. 
+// insert a series of characters equal to the current string. else if (c == 's')
 
 for (nat i = 0; i < toreplace_count; i++) {
 	insert(toreplace[i]);
@@ -34,9 +34,20 @@ printf("\033[7mreplaced at %llu, deleted %llu inserted %llu\033[0m\n",
 
 int main(int argc, char** argv) {
 
+	int c = 's';
 
+	if (c == 's') {
+		int count = 45; 
 
-
+		for (int i = 0; i < count; i++) {
+			for (int j = 2; j < i / 2; j++) {
+				if (i % j == 0) goto composite;
+			}
+			printf("%d\n", i);
+			composite: continue;
+		}
+	}
+	
 	printf("%d: argv[0]: %s\n", argc, argv[0]);
 	exit(0);
 }
@@ -45,4 +56,22 @@ hello
 there from space
 hello there from space
 ioaeshtoienasht
-hello there from space hello therefrom space.
+hello there from space hello there from space.
+
+
+
+syscall(STDOUT, SYS_WRITE);
+
+
+
+
+
+
+
+
+
+
+
+
+
+

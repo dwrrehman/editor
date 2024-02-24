@@ -1,0 +1,14 @@
+202402246.015644: 
+=================================
+	current bugs:
+=================================
+
+
+[visual bug]:
+
+	- cursor not displayed, and origin not shifted enough when we press enter to end up on a new line, a the bottom of the screen. 
+
+
+[features]:
+
+	- add the undo-tree system:  only in memory though. 

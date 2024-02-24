@@ -20,11 +20,23 @@
 #include <copyfile.h>
 
 typedef uint64_t nat;
+struct action {
+	nat parent;
+	nat pre;
+	nat post;
+	nat length;
+	uint8_t* text;
+};
+
 static bool moved = false, selecting = false;
 static nat cursor = 0, count = 0, anchor = 0, origin = 0, finish = 0, desired = 0, cliplength = 0, screen_size = 0;
 static char* text = NULL, * clipboard = NULL, * screen = NULL;
+
 static struct winsize window = {0};
 extern char** environ;
+
+static nat head = 0;
+static struct action* actions = NULL;
 
 static void display(bool should_write) {
 	ioctl(0, TIOCGWINSZ, &window);
@@ -135,7 +147,6 @@ static void down(void) {
 	moved = false;
 }
 
-
 static void up_begin(void) {
 	while (cursor) {
 		left();
@@ -206,11 +217,12 @@ static void searchb(void) {
 
 static void cut(void) {
 	if (not selecting or anchor == (nat) ~0) return;
+	if (anchor > count) anchor = count;
 	if (anchor > cursor) { nat t = anchor; anchor = cursor; cursor = t; }
 	free(clipboard);
 	clipboard = strndup(text + anchor, cursor - anchor);
 	cliplength = cursor - anchor;
-	for (nat i = 0; i < cliplength and cursor; i++) delete();
+	for (nat i = 0; i < cliplength and cursor; i++) delete(1);
 	anchor = (nat) ~0;
 	selecting = false;
 }
@@ -233,19 +245,53 @@ static void save(char* filename, nat sizeof_filename) {
 	if (file < 0) { perror("load: read open file"); puts(filename); getchar(); }
 	write(file, text, count);
 	close(file);
-	//printf("\033[7meditor: wrote %llu bytes to file \"%s\"\033[0m\n", count, filename);
-	fflush(stdout);
 }
 
-static void copy(void) {
-	
+static inline void copy(void) {
+	if (not selecting or anchor == (nat) ~0) return;
+	if (anchor > count) anchor = count;
+	if (anchor > cursor) { nat t = anchor; anchor = cursor; cursor = t; }
+	cliplength = cursor - anchor;
+	clipboard = strndup(text + anchor, cliplength);
+
+	FILE* globalclip = popen("pbcopy", "w");
+	if (not globalclip) {
+		perror("copy popen pbcopy");
+		getchar(); return;
+	}	
+	fwrite(clipboard, 1, cliplength, globalclip);
+	pclose(globalclip);
+}
+
+static void insert_output(const char* input_command) {
+
+	char command[4096] = {0};
+	strlcpy(command, input_command, sizeof command);
+	strlcat(command, " 2>&1", sizeof command);
+
+	FILE* f = popen(command, "r");
+	if (not f) {
+		printf("error: could not execute \"%s\"\n", command);
+		perror("insert_output popen");
+		getchar(); return;
+	}
+	char* string = NULL;
+	size_t length = 0;
+	char line[2048] = {0};
+	while (fgets(line, sizeof line, f)) {
+		size_t l = strlen(line);
+		string = realloc(string, length + l);
+		memcpy(string + length, line, l);
+		length += l;
+	}
+	pclose(f);
+	for (nat i = 0; i < length; i++) insert(string[i]);
+	free(string);
 }
 
 static void paste(void) {
 	if (selecting) cut();
-
-	// insert_output("pbpaste");
-	for (nat i = 0; i < 9; i++) insert("clipboard"[i]);
+	insert_output("pbpaste");
 }
 
 static void jump_index(char* string) {
@@ -272,7 +318,6 @@ static void clear_anchor(void) {
 	selecting = false;
 }
 
-
 static void interpret_arrow_key(void) {
 	char c = 0; read(0, &c, 1);
 
@@ -298,9 +343,8 @@ static void interpret_arrow_key(void) {
 		else if (c == 'e') { set_anchor(); down_end(); }
 		else if (c == 'w') { set_anchor(); word_right(); }
 		else if (c == 'm') { set_anchor(); word_left(); }
-	}
 
-	else if (c == '[') {
+	} else if (c == '[') {
 		read(0, &c, 1); 
 		if (c == 'A') { clear_anchor(); up(); }
 		else if (c == 'B') { clear_anchor(); down(); }
@@ -310,8 +354,7 @@ static void interpret_arrow_key(void) {
 	} else { printf("error found escape seq: ESC #%d\n", c); getchar(); }
 }
 
-
-static void window_resize_handler(int unused) { display(true); }
+static void window_resize_handler(int _) { display(true); if (_) {} }
 
 int main(int argc, const char** argv) {
 	struct sigaction action = {.sa_handler = window_resize_handler}; 
@@ -341,25 +384,28 @@ new_file:
 loop:;	char c = 0;
 	display(true);
 	read(0, &c, 1);
-	if (false) {}
-	else if (c == 17) 	goto done;	// Q     // this is fine i think.
-	else if (c == 23) 	paste(); 	// W     // make this control-t
-	else if (c == 1) 	anchor = cursor;// A     // delete this one? ..... yeah.... 
-	else if (c == 19) 	searchb();	// S     // make this control-f 
-	else if (c == 8) 	searchf();	// H     // make this control-w
-	else if (c == 20)	copy(); 	// T     // make this control h  i think 
+	if (c == 4) {
+		if (not cliplength) goto loop;
+		else if (not strcmp(clipboard, "exit")) goto done;
+		else if (not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
+	//	else if (not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
+	//	else if (not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
+		else if (not strncmp(clipboard, "index ", 6)) jump_index(clipboard + 6);
+		else if (not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);	
+		else { printf("unknown command: %s\n", clipboard); getchar(); }
+	}
+	else if (c == 17) 	goto done;	// Q
+	else if (c == 20) 	paste(); 	// T
+	else if (c == 8)	copy(); 	// H
 	else if (c == 24)	cut(); 		// X
-	
-	else if (c == 5) 	up();		// E     // delete these 4 ones.
-	else if (c == 12) 	down();		// L
-	else if (c == 4) 	left(); 	// D
-	else if (c == 18) 	right(); 	// R
 
-	else if (c == 14) 	save(filename, sizeof filename);   //todo: make this automatic!    // N       // make this control-S ????
+	else if (c == 19) 	save(filename, sizeof filename);   //todo: make this automatic! 
+
 	else if (c == 27) 	interpret_arrow_key();
 	else if (c == 127) 	{ if (selecting) cut(); else { if (cursor) delete(); } }
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c); }
 	goto loop;
+
 done:	save(filename, sizeof filename);
 	write(1, "\033[?25h\033[?1049l", 14);
 	tcsetattr(0, TCSAFLUSH, &terminal);
@@ -368,13 +414,20 @@ done:	save(filename, sizeof filename);
 // --------------------------------------------------------------------------------------------------------------------------------------
 
 
+//	else if (c == 1) 	anchor = cursor;// A     // delete this one? ..... yeah.... 
+//	else if (c == 19) 	searchb();	// S     // make this control-f 
+//	else if (c == 23) 	searchf();	// W     // make this control-r
+//	else if (c == 5) 	up();		// E     // delete these 4 ones.
+//	else if (c == 12) 	down();		// L
+//	else if (c == 4) 	left(); 	// D
+//	else if (c == 18) 	right(); 	// R
 
 
 
 
 
-
-
+//printf("\033[7meditor: wrote %llu bytes to file \"%s\"\033[0m\n", count, filename);
+	//fflush(stdout);
 
 
 
