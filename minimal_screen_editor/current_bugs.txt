@@ -12,3 +12,11 @@
 [features]:
 
 	- add the undo-tree system:  only in memory though. 
+
+	- add the autosaving feature.   (copying into a save directory)
+
+	- add the automatic saving feature. (save the file automatically, every 24 insertions/deletions!)
+
+	- 
+
+

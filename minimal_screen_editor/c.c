@@ -24,18 +24,29 @@ struct action {
 	nat parent;
 	nat pre;
 	nat post;
-	nat length;
-	uint8_t* text;
+	uint32_t _padding0_;
+	uint16_t _padding1_;
+	bool inserting;
+	char c;
 };
+
+static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
+static const nat autosave_frequency = 100;
+// nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
+// hello there from space! this is my cool text i am really interesting and cool, and bubbles and beans
+
+static nat autosave_counter = 0;
 
 static bool moved = false, selecting = false;
 static nat cursor = 0, count = 0, anchor = 0, origin = 0, finish = 0, desired = 0, cliplength = 0, screen_size = 0;
 static char* text = NULL, * clipboard = NULL, * screen = NULL;
 
+static char filename[4096] = {0};
 static struct winsize window = {0};
 extern char** environ;
 
-static nat head = 0;
+static nat head = 0, action_count = 0;
+
 static struct action* actions = NULL;
 
 static void display(bool should_write) {
@@ -187,16 +198,76 @@ static void word_right(void) {
 	}
 }
 
-static void insert(char c) {
+static void save(void) {
+	int flags = O_WRONLY | O_TRUNC;
+	mode_t permission = 0;
+	if (not *filename) {
+		srand((unsigned)time(0)); rand();
+		char datetime[32] = {0};
+		struct timeval t = {0};
+		gettimeofday(&t, NULL);
+		struct tm* tm = localtime(&t.tv_sec);
+		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+		snprintf(filename, sizeof filename, "%s_%08x%08x.txt", datetime, rand(), rand());
+		flags |= O_CREAT | O_EXCL;
+		permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+	}
+	int file = open(filename, flags, permission);
+	if (file < 0) { perror("save: open file"); puts(filename); getchar(); }
+	write(file, text, count);
+	close(file);
+}
+
+static void autosave(void) {
+	autosave_counter = 0;
+	save(); 
+	
+	char datetime[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+	char autosave_filename[4096] = {0};
+	snprintf(autosave_filename, sizeof autosave_filename, "%s%s_%08x%08x.txt", autosave_directory, datetime, rand(), rand());
+
+	int autosave_file = open(autosave_filename, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+	if (autosave_file < 0) { perror("autosave: open autosave_file"); puts(autosave_filename); getchar(); }
+	
+	int file = open(filename, O_RDWR, 0);
+	if (file < 0) { perror("autosave: open file"); puts(filename); getchar(); }
+
+	if (fcopyfile(file, autosave_file, NULL, COPYFILE_ALL)) {
+		perror("autosave: fcopyfile COPYFILE_ALL");
+		getchar();
+	}
+
+	close(autosave_file);
+	close(file);
+}
+
+static void finish_action(struct action node, char c) {
+	node.post = cursor; node.c = c;
+	head = action_count;
+	actions = realloc(actions, sizeof(struct action) * (action_count + 1));
+	actions[action_count++] = node;
+}
+
+static void insert(char c, bool should_record) {
+	if (++autosave_counter >= autosave_frequency) autosave();
+	struct action node = { .parent = head, .pre = cursor, .inserting = true };
 	text = realloc(text, count + 1);
 	memmove(text + cursor + 1, text + cursor, count - cursor);
 	text[cursor] = c; count++; right();
+	if (should_record) finish_action(node, c);
 }
 
-static char delete(void) {
+static char delete(bool should_record) {
+	if (++autosave_counter >= autosave_frequency) autosave();
+	struct action node = { .parent = head, .pre = cursor, .inserting = false };
 	left(); count--; char c = text[cursor];
 	memmove(text + cursor, text + cursor + 1, count - cursor);
 	text = realloc(text, count);
+	if (should_record) finish_action(node, c);
 	return c;
 }
 
@@ -225,26 +296,6 @@ static void cut(void) {
 	for (nat i = 0; i < cliplength and cursor; i++) delete(1);
 	anchor = (nat) ~0;
 	selecting = false;
-}
-
-static void save(char* filename, nat sizeof_filename) {
-	int flags = O_WRONLY | O_TRUNC;
-	mode_t permission = 0;
-	if (not *filename) {
-		srand((unsigned)time(0)); rand();
-		char datetime[32] = {0};
-		struct timeval t = {0};
-		gettimeofday(&t, NULL);
-		struct tm* tm = localtime(&t.tv_sec);
-		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-		snprintf(filename, sizeof_filename, "%s_%08x%08x.txt", datetime, rand(), rand());
-		flags |= O_CREAT | O_EXCL;
-		permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
-	}
-	int file = open(filename, flags, permission);
-	if (file < 0) { perror("load: read open file"); puts(filename); getchar(); }
-	write(file, text, count);
-	close(file);
 }
 
 static inline void copy(void) {
@@ -285,7 +336,7 @@ static void insert_output(const char* input_command) {
 		length += l;
 	}
 	pclose(f);
-	for (nat i = 0; i < length; i++) insert(string[i]);
+	for (nat i = 0; i < length; i++) insert(string[i], 1);
 	free(string);
 }
 
@@ -359,7 +410,6 @@ static void window_resize_handler(int _) { display(true); if (_) {} }
 int main(int argc, const char** argv) {
 	struct sigaction action = {.sa_handler = window_resize_handler}; 
 	sigaction(SIGWINCH, &action, NULL);
-	char filename[4096] = {0};
 	if (argc < 2) goto new_file;
 	strlcpy(filename, argv[1], sizeof filename);
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
@@ -399,14 +449,14 @@ loop:;	char c = 0;
 	else if (c == 8)	copy(); 	// H
 	else if (c == 24)	cut(); 		// X
 
-	else if (c == 19) 	save(filename, sizeof filename);   //todo: make this automatic! 
+	else if (c == 19) 	save();   //todo: make this automatic! 
 
 	else if (c == 27) 	interpret_arrow_key();
-	else if (c == 127) 	{ if (selecting) cut(); else { if (cursor) delete(); } }
-	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c); }
+	else if (c == 127) 	{ if (selecting) cut(); else { if (cursor) delete(1); } }
+	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c, 1); }
 	goto loop;
 
-done:	save(filename, sizeof filename);
+done:	save();
 	write(1, "\033[?25h\033[?1049l", 14);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
@@ -431,6 +481,65 @@ done:	save(filename, sizeof filename);
 
 
 
+
+/*
+static void finish_action(struct action node, const char* string, nat length) {
+	node.post = cursor;
+	head = lseek(history, 0, SEEK_END);
+	write(history, &node, sizeof node);
+	write(history, string, length);
+	lseek(history, 0, SEEK_SET);
+	write(history, &head, sizeof head);
+	fsync(history);
+}
+
+static void insert(char* string, nat length, bool should_record) {
+	if (++autosave_counter >= autosave_frequency) autosave();
+	lseek(history, 0, SEEK_SET);
+	read(history, &head, sizeof head);
+	struct action node = { .parent = head, .pre = cursor, .length = (off_t) length };
+	get_count();
+	const size_t size = (size_t) (count - cursor);
+	char* rest = malloc(size + length); 
+	memcpy(rest, string, length);
+	lseek(file, cursor, SEEK_SET);
+	read(file, rest + length, size);
+	lseek(file, cursor, SEEK_SET);
+	write(file, rest, size + length);
+	count += length;
+	fsync(file);
+	free(rest);
+	for (nat i = 0; i < length; i++) move_right();
+	if (should_record) finish_action(node, string, length);
+}
+
+static void delete(nat length, bool should_record) {
+
+	           // note:   no need to do this. 
+
+	if (cursor < (off_t) length) return;
+	lseek(history, 0, SEEK_SET);
+	read(history, &head, sizeof head);
+	struct action node = { .parent = head, .pre = cursor, .length = - (off_t) length };
+	get_count();
+	const size_t size = (size_t) (count - cursor);
+	char* rest = malloc(size);
+	char* string = malloc(length);
+	lseek(file, cursor - (off_t) length, SEEK_SET);
+	read(file, string, length);
+	lseek(file, cursor, SEEK_SET); //TODO: optimize this away!
+	read(file, rest, size);
+	lseek(file, cursor - (off_t) length, SEEK_SET);
+	write(file, rest, size);
+	count -= length;
+	ftruncate(file, count);
+	fsync(file);
+	free(rest);
+	for (nat i = 0; i < length; i++) move_left();
+	if (should_record) finish_action(node, string, length);
+	free(string);
+}
+*/
 
 
 
