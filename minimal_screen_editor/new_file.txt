@@ -59,6 +59,40 @@ static void down_end(void) {
 
 
 
+// heres the general sudo code for the undo tree implementation:
+
+static void undo() {
+
+	// look at current head:
+
+	//       actions[head]
+
+
+	first instantiate the pre condition:    ie,   cursor = node.post
+
+	then perform the inverse of the action: 
+		if inserting, delete(c)
+		else insert(c)
+	
+	then instaniate the post condition    ie,     cursor = node.pre
+
+	then move to the nodes parent:
+
+	head = actions[head].parent;
+
+	return;
+
+}
+
+
+
+
+
+}
+
+
+
+
 /*
 
 	wow, okay this is actually surprisingly effective at writing code... 

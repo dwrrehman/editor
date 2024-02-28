@@ -1,0 +1,74 @@
+hello!
+
+	this is a text document to test the editor! duing a ua journal!
+
+		its working pretty well!
+
+
+w
+
+static void display(bool should_write) {
+	ioctl(0, TIOCGWINSZ, &window);
+	const nat new_size = 9 + 32 + window.ws_row * (window.ws_col + 5) * 4;
+	if (new_size != screen_size) { screen = realloc(screen, new_size); screen_size = new_size; }
+	memcpy(screen, "\033[H", 3);
+	nat length = 3;
+	nat i = origin, row = 0, column = 0;  // screen + length
+	finish = (nat) ~0;
+	for (; i < count; i++) {
+		if (row >= window.ws_row) { finish = i; break; }
+
+		if (text[i] == 10) {
+			if (i == cursor or i == anchor) { memcpy(screen + length, "\033[7m \033[0m", 9); length += 9; }
+		nl:	memcpy(screen + length, "\033[K", 3); length += 3; 
+			if (row < window.ws_row - 1) screen[length++] = 10;
+			row++; column = 0;
+
+		} else if (text[i] == 9) {
+			nat amount = 8 - column % 8;
+			column += amount;
+			if (i == cursor or i == anchor) { memcpy(screen + length, "\033[7m \033[0m", 9); length += 9; amount--; }
+			memcpy(screen + length, "        ", amount); length += amount;
+
+		} else {
+		}
+	}
+
+
+	if (i == cursor or i == anchor) { memcpy(screen + length, "\033[7m", 4); length += 4; }
+	screen[length++] = text[i];
+	if (i == cursor or i == anchor) { memcpy(screen + length, "\033[0m", 4); length += 4; }
+	if (column >= window.ws_col - 2) goto nl;
+	else if ((unsigned char) text[i] >> 6 != 2 and text[i] >= 32) column++;
+
+
+	if (i == cursor or i == anchor) { memcpy(screen + length, "\033[7m \033[0m", 9); length += 9; }
+
+	while (row < window.ws_row) {
+		memcpy(screen + length, "\033[K", 3);
+		length += 3; 
+		if (row < window.ws_row - 1) screen[length++] = 10;
+		row++;
+	} 
+
+	if (should_write) write(1, screen, length);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

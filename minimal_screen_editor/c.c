@@ -46,7 +46,6 @@ static struct winsize window = {0};
 extern char** environ;
 
 static nat head = 0, action_count = 0;
-
 static struct action* actions = NULL;
 
 static void display(bool should_write) {
@@ -218,7 +217,13 @@ static void save(void) {
 	close(file);
 }
 
-static void autosave(void) {
+
+static void autosave(void) {    
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// todo: IMPORTANT]:   make this function overwrite the previously existing file, if we did an autosave in this editing session.  ie, keep a global  autosave_filename,   which we set here, if empty, and we use, if nonempty. also, don't require that its {creat+exclusive}-access if its nonempty, and wasnt created here. cuz it won't work lol 
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 	autosave_counter = 0;
 	save(); 
 	
@@ -448,9 +453,7 @@ loop:;	char c = 0;
 	else if (c == 20) 	paste(); 	// T
 	else if (c == 8)	copy(); 	// H
 	else if (c == 24)	cut(); 		// X
-
-	else if (c == 19) 	save();   //todo: make this automatic! 
-
+	else if (c == 19) 	save();         // S
 	else if (c == 27) 	interpret_arrow_key();
 	else if (c == 127) 	{ if (selecting) cut(); else { if (cursor) delete(1); } }
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c, 1); }
@@ -460,6 +463,47 @@ done:	save();
 	write(1, "\033[?25h\033[?1049l", 14);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // --------------------------------------------------------------------------------------------------------------------------------------
 
