@@ -1,0 +1,85 @@
+hello?
+
+
+	if (child_count > 1) {
+		//printf("error: found %llu children of head=%llu!!! please pick one.\n", 
+		//	child_count, head
+		//);
+		//fflush(stdout); getchar();
+
+		printf("\033[7m[%u:%llu]\033[0m", actions[head].choice, child_count); 
+		getchar(); 
+		actions[head].choice = (actions[head].choice + 1) % child_count;
+	}
+	
+
+
+	if (child_count > 1) {
+		//printf("error: found %llu children of head=%llu!!! please pick one.\n", 
+		//	child_count, head
+		//);
+		//fflush(stdout); getchar();
+
+		printf("\033[7m[%u:%llu]\033[0m", actions[head].choice, child_count); 
+		getchar(); 
+		actions[head].choice = (actions[head].choice + 1) % child_count;
+	}
+	
+
+
+	if (child_count > 1) {
+		//printf("error: found %llu children of head=%llu!!! please pick one.\n", 
+		//	child_count, head
+		//);
+		//fflush(stdout); getchar();
+
+		printf("\033[7m[%u:%llu]\033[0m", actions[head].choice, child_count); 
+		getchar(); 
+		actions[head].choice = (actions[head].choice + 1) % child_count;
+	}
+	
+
+
+	if (child_count > 1) {
+		//printf("error: found %llu children of head=%llu!!! please pick one.\n", 
+		//	child_count, head
+		//);
+		//fflush(stdout); getchar();  // lets do some code editing with this code! lets say it was real code lol.
+
+		for (int i = 0; i < count; i++) {
+			printf("this is the hello world program that i am writing! nothing special. %d\n", count);
+		}
+
+		// okay, cool, i think this editor is actually working very well. thats actually so cool. yay. i love this so much. 
+
+		// i am kindaaaa warry about how i made the undo tree system per character. but i mean, i guess its fine lol. i think its okay generally speaking. 
+
+	/*
+		like, we still get all the functionality we need lol. its just not as... easy to use lol. it can be very slow lol. but it is quite safe though. 
+
+		so yeah, thats actually okay i think. its good. yay. 
+	*/
+
+			// the undo tree system isnt even something that i really use that often, either lol.
+			// okay cool. now lets tidy up the code a ton!!!! thats probably smart lol. yay
+
+
+		printf("\033[7m[%u:%llu]\033[0m", actions[head].choice, child_count); 
+		getchar(); 
+		actions[head].choice = (actions[head].choice + 1) % child_count;
+	}
+	
+
+
+	
+
+
+// end of the text document!
+
+// yay
+
+
+// the undo tree system actually works really well! yay
+
+
+

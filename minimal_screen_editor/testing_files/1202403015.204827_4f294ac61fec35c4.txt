@@ -1,0 +1,7 @@
+node[0]:{^18446744073709551615,p@0,@p1,insert['104']}
+node[1]:{^0,p@1,@p2,insert['101']}
+node[2]:{^1,p@2,@p3,insert['108']}
+node[3]:{^2,p@3,@p4,insert['108']}
+node[4]:{^3,p@4,@p5,insert['111']}
+node[5]:{^4,p@5,@p6,insert['10']}
+count=6,head=5

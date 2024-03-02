@@ -20,13 +20,11 @@
 
 typedef uint64_t nat;
 struct action {
-	nat parent;
-	nat pre;
-	nat post;
-	uint32_t _padding0_;
-	uint16_t _padding1_;
+	nat parent, pre, post;
+	uint32_t choice;
 	bool inserting;
 	char c;
+	uint16_t _padding_;
 };
 
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
@@ -228,8 +226,8 @@ static void finish_action(struct action node, char c) {
 }
 
 static void insert(char c, bool should_record) {
-	if (++autosave_counter >= autosave_frequency) save();
-	struct action node = { .parent = head, .pre = cursor, .inserting = 1 };
+	if (++autosave_counter >= autosave_frequency and should_record) save();
+	struct action node = { .parent = head, .pre = cursor, .inserting = 1, .choice = 0 };
 	text = realloc(text, count + 1);
 	memmove(text + cursor + 1, text + cursor, count - cursor);
 	text[cursor] = c; count++; right();
@@ -237,7 +235,7 @@ static void insert(char c, bool should_record) {
 }
 
 static char delete(bool should_record) {
-	struct action node = { .parent = head, .pre = cursor, .inserting = 0 };
+	struct action node = { .parent = head, .pre = cursor, .inserting = 0, .choice = 0 };
 	left(); count--; char c = text[cursor];
 	memmove(text + cursor, text + cursor + 1, count - cursor);
 	text = realloc(text, count);
@@ -272,12 +270,132 @@ static void cut(void) {
 	selecting = false;
 }
 
+
+
+/*
+
 static void undo(void) {
-	puts("still a work in progress");
-	fflush(stdout); getchar();
+	lseek(history, 0, SEEK_SET);
+	read(history, &head, sizeof head);
+	if (not head) return;
+	struct action node = {0};
+	lseek(history, head, SEEK_SET);
+	read(history, &node, sizeof node);
+	nat len = (nat) (node.length < 0 ? -node.length : node.length);
+	char* string = malloc(len);
+	read(history, string, len);
+	cursor = node.post;
+	if (node.length < 0) insert(string, len, 0); else delete(len, 0);
+	cursor = node.pre; 
+	anchor = node.pre;
+	head = node.parent; 
+	lseek(history, 0, SEEK_SET);
+	write(history, &head, sizeof head);
 }
 
+static void redo(void) {
+
+	if (not actions[head].count) return;
+
+	head = actions[head].children[actions[head].choice];
+
+	const struct action a = actions[head];
+
+	cursor = a.pre_cursor; 
+
+	if (a.insert) 
+		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	else 
+		for (nat i = 0; i < a.length; i++) delete(0);
+
+	cursor = a.post_cursor;
+	anchor = cursor;
+
+	//if (a.count > 1) { 
+	//	printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
+	//	getchar(); 
+	//}	
+}
+*/
+
+static void redo(void) {
+	nat chosen_child = 0, child_count = 0; 
+	// last_child = 0, 
+	for (nat i = 0; i < action_count; i++) {
+		if (actions[i].parent == head) {
+			if (child_count == actions[head].choice) {
+				// printf("found the chosen child!\n");
+				chosen_child = i;
+			}
+			//last_child = i;
+			child_count++;
+
+			//printf("child_count=%llu : last_child=%llu : "
+			//	"node#%llu is the child of head=%llu.\n", 
+			//	child_count, last_child, i, head
+			//);
+			//fflush(stdout); getchar();
+		}
+	}
+	if (not child_count) return;
+
+
+	//	//printf("redo: error: could not find any children of head=%llu.\n", head);
+	//	//fflush(stdout); getchar();
+	//	return;
+	//}
+
+
+/*	
+//	if (child_count == 1) {
+//
+//		//printf("single: last_child=node#%llu is the sole child of head=%llu.\n", last_child, head);
+//		//fflush(stdout); getchar();
+//
+//		head = last_child;
+//	}
+*/
+
+	if (child_count > 1) {
+		//printf("error: found %llu children of head=%llu!!! please pick one.\n", 
+		//	child_count, head
+		//);
+		//fflush(stdout); getchar();
+
+		printf("\n\033[7m[      %u  :  %llu      ]\033[0m\n", actions[head].choice, child_count); 
+		getchar(); 
+		actions[head].choice = (actions[head].choice + 1) % child_count;
+	}
+	
+	head = chosen_child;
+
+	const struct action node = actions[head];
+	cursor = node.pre; 
+	if (node.inserting) insert(node.c, 0); else delete(0);
+	cursor = node.post;
+}
+
+
+
+// head = actions[head].children[actions[head].choice];
+
+
+
+static void undo(void) {
+	if (head == 0) return;
+	const struct action node = actions[head];
+	cursor = node.post;
+	if (node.inserting) delete(0); else insert(node.c, 0); 
+	cursor = node.pre;
+	head = node.parent;
+}
+
+
 static void paste_undotree(void) {
+
+	puts("undo tree is still a work in progress");
+	fflush(stdout); getchar();
+
 	char* string = NULL;
 	size_t length = 0;
 	char line[2048] = {0};
@@ -301,12 +419,8 @@ static void paste_undotree(void) {
 	memcpy(string + length, line, len);
 	length += len;
 
-	for (nat i = 0; i < length; i++) insert(string[i], 1);
+	for (nat i = 0; i < length; i++) insert(string[i], 0);
 	free(string);
-}
-
-static void redo(void) {
-	paste_undotree();
 }
 
 static inline void copy(bool should_delete) {
@@ -476,7 +590,7 @@ static void window_resized(int _){if(_){} display(1); }
 static void interrupted(int _){if(_){} 
 	write(1, "\033[?25h\033[?1049l", 14);
 	tcsetattr(0, TCSAFLUSH, &terminal);
-	save(); exit(1); 
+	save(); exit(0); 
 }
 
 int main(int argc, const char** argv) {
@@ -495,8 +609,9 @@ int main(int argc, const char** argv) {
 	text = malloc(count);
 	read(file, text, count);
 	close(file);
-new: 
-	origin = 0; cursor = 0; anchor = (nat) ~0;
+
+new: 	origin = 0; cursor = 0; anchor = (nat) ~0;
+	finish_action((struct action){.parent = (nat) ~0}, 0);
 	tcgetattr(0, &terminal);
 	struct termios terminal_copy = terminal; 
 	terminal_copy.c_iflag &= ~((size_t) IXON);
@@ -514,6 +629,9 @@ loop:;	char c = 0;
 	else if (c == 8)  copy(0); 	// H
 	else if (c == 24) copy(1); 	// X
 	else if (c == 1)  paste();	// A
+
+	else if (c == 20) paste_undotree();	// T 	// temporary, debugging tool.
+
 	else if (c == 27) interpret_arrow_key();
 	else if (c == 127) 	{ if (selecting) cut(); else if (cursor) delete(1); }
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c, 1); }
