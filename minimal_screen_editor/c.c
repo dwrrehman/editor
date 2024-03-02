@@ -16,8 +16,8 @@
 #include <sys/time.h> 
 #include <sys/wait.h> 
 #include <stdint.h>
-#include <signal.h>
-#include <stdnoreturn.h>
+#include <signal.h>       //       alias pbpaste="xclip -selection clipboard -o" 
+#include <stdnoreturn.h>  //       alias pbcopy="xclip -selection c"
 typedef uint64_t nat;
 struct action {
 	nat parent, pre, post;
@@ -41,7 +41,7 @@ extern char** environ;
 
 static void display(bool should_write) {
 	ioctl(0, TIOCGWINSZ, &window);
-	const nat new_size = 9 + 32 + window.ws_row * (window.ws_col + 5) * 4;
+	const nat new_size = 128 + window.ws_row * (window.ws_col + 8) * 8;
 	if (new_size != screen_size) { screen = realloc(screen, new_size); screen_size = new_size; }
 	memcpy(screen, "\033[H", 3);
 	nat length = 3;
@@ -104,7 +104,7 @@ static nat compute_current_visual_cursor_column(void) {
 	while (i and text[i - 1] != 10) i--;
 	while (i < cursor and text[i] != 10) {
 		if (text[i] == 9) { nat amount = 8 - column % 8; column += amount; }
-		else if (column >= window.ws_col - 2) column = 0;
+		else if (column >= window.ws_col - 2 - 1) column = 0;
 		else if ((unsigned char) text[i] >> 6 != 2 and text[i] >= 32) column++;
 		i++;
 	}
@@ -116,7 +116,7 @@ static void move_cursor_to_visual_position(nat target) {
 	while (cursor < count and text[cursor] != 10) {
 		if (column >= target) return;
 		if (text[cursor] == 9) { nat amount = 8 - column % 8; column += amount; }
-		else if (column >= window.ws_col - 2) column = 0;
+		else if (column >= window.ws_col - 2 - 1) column = 0;
 		else if ((unsigned char) text[cursor] >> 6 != 2 and text[cursor] >= 32) column++;
 		right();
 	}
@@ -322,7 +322,7 @@ static void insert_output(const char* input_command) {
 	free(string);
 }
 
-static void window_resized(int _) {if(_){} display(1); }
+static void window_resized(int _) {if(_){} ioctl(0, TIOCGWINSZ, &window); }
 static noreturn void interrupted(int _) {if(_){} 
 	write(1, "\033[?25h\033[?1049l", 14);
 	tcsetattr(0, TCSAFLUSH, &terminal);
@@ -359,15 +359,6 @@ static void create_process(char** args) {
 	fflush(stdout);
 	getchar();
 }
-
-//	struct sigaction default0 = {.sa_handler = SIG_DFL}, 
-//			 action0 = {.sa_handler = window_resized},
-//			 action1 = {.sa_handler = interrupted};
-//	sigaction(SIGWINCH, &default0, NULL);
-//	sigaction(SIGINT,   &default0, NULL);
-//
-//	sigaction(SIGWINCH, &action0, NULL);
-//	sigaction(SIGINT,   &action1, NULL);
 
 static void execute(char* command) {
 	const char* string = command;
@@ -415,6 +406,7 @@ static void jump_line(char* string) {
 static void set_anchor(void) { if (selecting) return; anchor = cursor;  selecting = 1; }
 static void clear_anchor(void) { if (not selecting) return; anchor = (nat) ~0; selecting = 0; }
 static void paste(void) { if (selecting) cut(); insert_output("pbpaste"); }
+static void local_paste(void) { for (nat i = 0; i < cliplength; i++) insert(clipboard[i], 1); }
 
 static void interpret_arrow_key(void) {
 	char c = 0; 
@@ -467,11 +459,11 @@ new: 	origin = 0; cursor = 0; anchor = (nat) ~0;
 	finish_action((struct action){.parent = (nat) ~0}, 0);
 	tcgetattr(0, &terminal);
 	struct termios terminal_copy = terminal; 
+	terminal_copy.c_cc[VMIN] = 1; terminal_copy.c_cc[VTIME] = 0;
 	terminal_copy.c_iflag &= ~((size_t) IXON);
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSAFLUSH, &terminal_copy);
 	write(1, "\033[?1049h\033[?25l", 14);
-
 loop:;	char c = 0;
 	display(1);
 	read(0, &c, 1);
@@ -482,7 +474,7 @@ loop:;	char c = 0;
 	else if (c == 8)  copy(0); 	// H
 	else if (c == 24) copy(1); 	// X
 	else if (c == 1)  paste();	// A
-	else if (c == 20) {}		// T
+	else if (c == 20) local_paste();// T
 	else if (c == 27) interpret_arrow_key();
 	else if (c == 127) { if (selecting) cut(); else if (cursor) delete(1); }
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c, 1); }
@@ -539,9 +531,45 @@ done:	write(1, "\033[?25h\033[?1049l", 14);
 
 
 
+/*
+202403026.014938:
+	just found a crashing bug, where the zero charcter was continually sent, while fullscreen, 
+	and then when i resized the window with control-+   the editor crashed, segfaulting on 
+		the screen*   buffer access. in the write call, in display. 
+
+	so yeah. this still has a lot of bugtesting to go, i think. crap. 
+
+
+
+
+*/
+
+
+
+
+
+
 
 // --------------------------------------------------------------------------------------------------------------------------------------
 
+
+
+
+//printf("screen_size = %llu, length = %llu\n", screen_size, length);
+	//fflush(stdout); getchar();
+
+
+
+
+
+//	struct sigaction default0 = {.sa_handler = SIG_DFL}, 
+//			 action0 = {.sa_handler = window_resized},
+//			 action1 = {.sa_handler = interrupted};
+//	sigaction(SIGWINCH, &default0, NULL);
+//	sigaction(SIGINT,   &default0, NULL);
+//
+//	sigaction(SIGWINCH, &action0, NULL);
+//	sigaction(SIGINT,   &action1, NULL);
 
 
 

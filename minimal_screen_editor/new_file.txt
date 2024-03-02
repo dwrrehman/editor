@@ -2,7 +2,7 @@ this works pretty well as a text editor, shockingly.
 like, its actually really shocking lol. like, all this just kinda came together instantly lol.
 i really like it so far! 
 
-i think i have some really good ways to try to mitigate the amount of origin switching we will need to do!
+i thtink i have some really good ways to try to mitigate the amount of origin switching we will need to do!
 firstly, i want to have a command to make the cursor the origin, basically. that will ease some stuff, 
 
 secondly, i want to have a really good find-forwards/backwards system. i am going to try implementing that now, i think. because thats really important. yay. gosh i actually love how useable this already is lol. its actually kinda ridiculous. yay.
@@ -118,3 +118,657 @@ ashitoeanshtoieanshtoiaesnhtoiaesnhtoieasht
 ashitoeanshtoieanshtoieasnhtoienashotienasihoten
 oiaesnhtoiaenshtoiaesnhtioaesntoiaesnhtioasenhtoiaesnhtoas
 ashtioeanshtioaensht
+
+
+
+
+
+
+
+
+
+this works pretty well as a text editor, shockingly.
+like, its actually really shocking lol. like, all this just kinda came together instantly lol.
+i really like it so far! 
+
+i thtink i have some really good ways to try to mitigate the amount of origin switching we will need to do!
+firstly, i want to have a command to make the cursor the origin, basically. that will ease some stuff, 
+
+secondly, i want to have a really good find-forwards/backwards system. i am going to try implementing that now, i think. because thats really important. yay. gosh i actually love how useable this already is lol. its actually kinda ridiculous. yay.
+
+
+also, just for some testing, heres some unicode characters! lets try doing ∑, which seemed to work okay, 
+
+	displaying them is actually totally fine lol. its just the act of moving the cursor over them that is odd. but honstely, i am tempted to just say that is working as intended lol. like, its such a small tiny little detail lol. i basically rarelyyyyy use unicode. but its nice that it works this well already lol. gosh this is so cool lol. okay.
+
+
+
+okay, so this works great for small files, but we need to try displaying LONG text files, and see how it acts. thats the tricky part.  hm.. yeah.
+
+	anyways, lets try doing that now lol. yay. 
+
+
+this will be deleted
+
+
+static void up_begin(void) {
+	while (cursor) {
+		left();
+		if (cursor) {
+			char c = text[cursor - 1];
+			if (c == 10) break;
+		} else break;
+	}
+}
+
+static void down_end(void) {
+	while (cursor < count) {
+		right();
+		if (cursor < count) {
+			char c = text[cursor];
+			if (c == 10) break;
+		} else {}/*don't break please*/
+	}
+
+	for (nat i = 0; i < count; i++) {
+		putchar(text[i]);
+		const char c = text[i];
+		if (c == 9) {
+			const nat amount = 8 - column_width % 8;
+			if (amount == 10) {
+				printf("[[[%llu:%s:%055d]]]\n", 
+					column_width, 
+					amount
+				);
+			}
+
+		}
+	}
+}
+
+
+
+// heres the general sudo code for the undo tree implementation:
+
+static void undo() {
+
+	// look at current head:
+
+	//       actions[head]
+
+
+	first instantiate the pre condition:    ie,   cursor = node.post
+
+	then perform the inverse of the action: 
+		if inserting, delete(c)
+		else insert(c)
+	
+	then instaniate the post condition    ie,     cursor = node.pre
+
+	then move to the nodes parent:
+
+	head = actions[head].parent;
+
+	return;
+
+}
+
+
+
+
+
+}
+
+
+
+
+/*
+
+	wow, okay this is actually surprisingly effective at writing code... 
+
+
+			like, wow, i am actually really impressed lol. 
+
+			its like literally so easy to use... 
+
+		wow. this is actually so cool!
+
+				yay 
+
+
+		202402213.154056:
+
+			okay, heres the current thing. lets save this document now, lol. it shouldnt be too hard to do that lol.
+
+*/
+
+ashiotenashoitenasihotnea
+ashitoeanshtoieanshtoiaesnhtoiaesnhtoieasht
+ashitoeanshtoieanshtoieasnhtoienashotienasihoten
+oiaesnhtoiaenshtoiaesnhtioaesntoiaesnhtioasenhtoiaesnhtoas
+ashtioeanshtioaensht
+
+
+
+
+
+
+
+
+
+this works pretty well as a text editor, shockingly.
+like, its actually really shocking lol. like, all this just kinda came together instantly lol.
+i really like it so far! 
+
+i thtink i have some really good ways to try to mitigate the amount of origin switching we will need to do!
+firstly, i want to have a command to make the cursor the origin, basically. that will ease some stuff, 
+
+secondly, i want to have a really good find-forwards/backwards system. i am going to try implementing that now, i think. because thats really important. yay. gosh i actually love how useable this already is lol. its actually kinda ridiculous. yay.
+
+
+also, just for some testing, heres some unicode characters! lets try doing ∑, which seemed to work okay, 
+
+	displaying them is actually totally fine lol. its just the act of moving the cursor over them that is odd. but honstely, i am tempted to just say that is working as intended lol. like, its such a small tiny little detail lol. i basically rarelyyyyy use unicode. but its nice that it works this well already lol. gosh this is so cool lol. okay.
+
+
+
+okay, so this works great for small files, but we need to try displaying LONG text files, and see how it acts. thats the tricky part.  hm.. yeah.
+
+	anyways, lets try doing that now lol. yay. 
+
+
+this will be deleted
+
+
+static void up_begin(void) {
+	while (cursor) {
+		left();
+		if (cursor) {
+			char c = text[cursor - 1];
+			if (c == 10) break;
+		} else break;
+	}
+}
+
+static void down_end(void) {
+	while (cursor < count) {
+		right();
+		if (cursor < count) {
+			char c = text[cursor];
+			if (c == 10) break;
+		} else {}/*don't break please*/
+	}
+
+	for (nat i = 0; i < count; i++) {
+		putchar(text[i]);
+		const char c = text[i];
+		if (c == 9) {
+			const nat amount = 8 - column_width % 8;
+			if (amount == 10) {
+				printf("[[[%llu:%s:%055d]]]\n", 
+					column_width, 
+					amount
+				);
+			}
+
+		}
+	}
+}
+
+
+
+// heres the general sudo code for the undo tree implementation:
+
+static void undo() {
+
+	// look at current head:
+
+	//       actions[head]
+
+
+	first instantiate the pre condition:    ie,   cursor = node.post
+
+	then perform the inverse of the action: 
+		if inserting, delete(c)
+		else insert(c)
+	
+	then instaniate the post condition    ie,     cursor = node.pre
+
+	then move to the nodes parent:
+
+	head = actions[head].parent;
+
+	return;
+
+}
+
+
+
+
+
+}
+
+
+
+
+/*
+
+	wow, okay this is actually surprisingly effective at writing code... 
+
+
+			like, wow, i am actually really impressed lol. 
+
+			its like literally so easy to use... 
+
+		wow. this is actually so cool!
+
+				yay 
+
+
+		202402213.154056:
+
+			okay, heres the current thing. lets save this document now, lol. it shouldnt be too hard to do that lol.
+
+*/
+
+ashiotenashoitenasihotnea
+ashitoeanshtoieanshtoiaesnhtoiaesnhtoieasht
+ashitoeanshtoieanshtoieasnhtoienashotienasihoten
+oiaesnhtoiaenshtoiaesnhtioaesntoiaesnhtioasenhtoiaesnhtoas
+ashtioeanshtioaensht
+
+
+
+
+
+
+
+
+
+this works pretty well as a text editor, shockingly.
+like, its actually really shocking lol. like, all this just kinda came together instantly lol.
+i really like it so far! 
+
+i thtink i have some really good ways to try to mitigate the amount of origin switching we will need to do!
+firstly, i want to have a command to make the cursor the origin, basically. that will ease some stuff, 
+
+secondly, i want to have a really good find-forwards/backwards system. i am going to try implementing that now, i think. because thats really important. yay. gosh i actually love how useable this already is lol. its actually kinda ridiculous. yay.
+
+
+also, just for some testing, heres some unicode characters! lets try doing ∑, which seemed to work okay, 
+
+	displaying them is actually totally fine lol. its just the act of moving the cursor over them that is odd. but honstely, i am tempted to just say that is working as intended lol. like, its such a small tiny little detail lol. i basically rarelyyyyy use unicode. but its nice that it works this well already lol. gosh this is so cool lol. okay.
+
+
+
+okay, so this works great for small files, but we need to try displaying LONG text files, and see how it acts. thats the tricky part.  hm.. yeah.
+
+	anyways, lets try doing that now lol. yay. 
+
+
+this will be deleted
+
+
+static void up_begin(void) {
+	while (cursor) {
+		left();
+		if (cursor) {
+			char c = text[cursor - 1];
+			if (c == 10) break;
+		} else break;
+	}
+}
+
+static void down_end(void) {
+	while (cursor < count) {
+		right();
+		if (cursor < count) {
+			char c = text[cursor];
+			if (c == 10) break;
+		} else {}/*don't break please*/
+	}
+
+	for (nat i = 0; i < count; i++) {
+		putchar(text[i]);
+		const char c = text[i];
+		if (c == 9) {
+			const nat amount = 8 - column_width % 8;
+			if (amount == 10) {
+				printf("[[[%llu:%s:%055d]]]\n", 
+					column_width, 
+					amount
+				);
+			}
+
+		}
+	}
+}
+
+
+
+// heres the general sudo code for the undo tree implementation:
+
+static void undo() {
+
+	// look at current head:
+
+	//       actions[head]
+
+
+	first instantiate the pre condition:    ie,   cursor = node.post
+
+	then perform the inverse of the action: 
+		if inserting, delete(c)
+		else insert(c)
+	
+	then instaniate the post condition    ie,     cursor = node.pre
+
+	then move to the nodes parent:
+
+	head = actions[head].parent;
+
+	return;
+
+}
+
+
+
+
+
+}
+
+
+
+
+/*
+
+	wow, okay this is actually surprisingly effective at writing code... 
+
+
+			like, wow, i am actually really impressed lol. 
+
+			its like literally so easy to use... 
+
+		wow. this is actually so cool!
+
+				yay 
+
+
+		202402213.154056:
+
+			okay, heres the current thing. lets save this document now, lol. it shouldnt be too hard to do that lol.
+
+*/
+
+ashiotenashoitenasihotnea
+ashitoeanshtoieanshtoiaesnhtoiaesnhtoieasht
+ashitoeanshtoieanshtoieasnhtoienashotienasihoten
+oiaesnhtoiaenshtoiaesnhtioaesntoiaesnhtioasenhtoiaesnhtoas
+ashtioeanshtioaensht
+
+
+
+
+
+
+
+
+
+this works pretty well as a text editor, shockingly.
+like, its actually really shocking lol. like, all this just kinda came together instantly lol.
+i really like it so far! 
+
+i thtink i have some really good ways to try to mitigate the amount of origin switching we will need to do!
+firstly, i want to have a command to make the cursor the origin, basically. that will ease some stuff, 
+
+secondly, i want to have a really good find-forwards/backwards system. i am going to try implementing that now, i think. because thats really important. yay. gosh i actually love how useable this already is lol. its actually kinda ridiculous. yay.
+
+
+also, just for some testing, heres some unicode characters! lets try doing ∑, which seemed to work okay, 
+
+	displaying them is actually totally fine lol. its just the act of moving the cursor over them that is odd. but honstely, i am tempted to just say that is working as intended lol. like, its such a small tiny little detail lol. i basically rarelyyyyy use unicode. but its nice that it works this well already lol. gosh this is so cool lol. okay.
+
+
+
+okay, so this works great for small files, but we need to try displaying LONG text files, and see how it acts. thats the tricky part.  hm.. yeah.
+
+	anyways, lets try doing that now lol. yay. 
+
+
+this will be deleted
+
+
+static void up_begin(void) {
+	while (cursor) {
+		left();
+		if (cursor) {
+			char c = text[cursor - 1];
+			if (c == 10) break;
+		} else break;
+	}
+}
+
+static void down_end(void) {
+	while (cursor < count) {
+		right();
+		if (cursor < count) {
+			char c = text[cursor];
+			if (c == 10) break;
+		} else {}/*don't break please*/
+	}
+
+	for (nat i = 0; i < count; i++) {
+		putchar(text[i]);
+		const char c = text[i];
+		if (c == 9) {
+			const nat amount = 8 - column_width % 8;
+			if (amount == 10) {
+				printf("[[[%llu:%s:%055d]]]\n", 
+					column_width, 
+					amount
+				);
+			}
+
+		}
+	}
+}
+
+
+
+// heres the general sudo code for the undo tree implementation:
+
+static void undo() {
+
+	// look at current head:
+
+	//       actions[head]
+
+
+	first instantiate the pre condition:    ie,   cursor = node.post
+
+	then perform the inverse of the action: 
+		if inserting, delete(c)
+		else insert(c)
+	
+	then instaniate the post condition    ie,     cursor = node.pre
+
+	then move to the nodes parent:
+
+	head = actions[head].parent;
+
+	return;
+
+}
+
+
+
+
+
+}
+
+
+
+
+/*
+
+	wow, okay this is actually surprisingly effective at writing code... 
+
+
+			like, wow, i am actually really impressed lol. 
+
+			its like literally so easy to use... 
+
+		wow. this is actually so cool!
+
+				yay 
+
+
+		202402213.154056:
+
+			okay, heres the current thing. lets save this document now, lol. it shouldnt be too hard to do that lol.
+
+*/
+
+ashiotenashoitenasihotnea
+ashitoeanshtoieanshtoiaesnhtoiaesnhtoieasht
+ashitoeanshtoieanshtoieasnhtoienashotienasihoten
+oiaesnhtoiaenshtoiaesnhtioaesntoiaesnhtioasenhtoiaesnhtoas
+ashtioeanshtioaensht
+
+
+
+
+
+
+
+
+
+this works pretty well as a text editor, shockingly.
+like, its actually really shocking lol. like, all this just kinda came together instantly lol.
+i really like it so far! 
+
+i thtink i have some really good ways to try to mitigate the amount of origin switching we will need to do!
+firstly, i want to have a command to make the cursor the origin, basically. that will ease some stuff, 
+
+secondly, i want to have a really good find-forwards/backwards system. i am going to try implementing that now, i think. because thats really important. yay. gosh i actually love how useable this already is lol. its actually kinda ridiculous. yay.
+
+
+also, just for some testing, heres some unicode characters! lets try doing ∑, which seemed to work okay, 
+
+	displaying them is actually totally fine lol. its just the act of moving the cursor over them that is odd. but honstely, i am tempted to just say that is working as intended lol. like, its such a small tiny little detail lol. i basically rarelyyyyy use unicode. but its nice that it works this well already lol. gosh this is so cool lol. okay.
+
+
+
+okay, so this works great for small files, but we need to try displaying LONG text files, and see how it acts. thats the tricky part.  hm.. yeah.
+
+	anyways, lets try doing that now lol. yay. 
+
+
+this will be deleted
+
+
+static void up_begin(void) {
+	while (cursor) {
+		left();
+		if (cursor) {
+			char c = text[cursor - 1];
+			if (c == 10) break;
+		} else break;
+	}
+}
+
+static void down_end(void) {
+	while (cursor < count) {
+		right();
+		if (cursor < count) {
+			char c = text[cursor];
+			if (c == 10) break;
+		} else {}/*don't break please*/
+	}
+
+	for (nat i = 0; i < count; i++) {
+		putchar(text[i]);
+		const char c = text[i];
+		if (c == 9) {
+			const nat amount = 8 - column_width % 8;
+			if (amount == 10) {
+				printf("[[[%llu:%s:%055d]]]\n", 
+					column_width, 
+					amount
+				);
+			}
+
+		}
+	}
+}
+
+
+
+// heres the general sudo code for the undo tree implementation:
+
+static void undo() {
+
+	// look at current head:
+
+	//       actions[head]
+
+
+	first instantiate the pre condition:    ie,   cursor = node.post
+
+	then perform the inverse of the action: 
+		if inserting, delete(c)
+		else insert(c)
+	
+	then instaniate the post condition    ie,     cursor = node.pre
+
+	then move to the nodes parent:
+
+	head = actions[head].parent;
+
+	return;
+
+}
+
+
+
+
+
+}
+
+
+
+
+/*
+
+	wow, okay this is actually surprisingly effective at writing code... 
+
+
+			like, wow, i am actually really impressed lol. 
+
+			its like literally so easy to use... 
+
+		wow. this is actually so cool!
+
+				yay 
+
+
+		202402213.154056:
+
+			okay, heres the current thing. lets save this document now, lol. it shouldnt be too hard to do that lol.
+
+*/
+
+ashiotenashoitenasihotnea
+ashitoeanshtoieanshtoiaesnhtoiaesnhtoieasht
+ashitoeanshtoieanshtoieasnhtoienashotienasihoten
+oiaesnhtoiaenshtoiaesnhtioaesntoiaesnhtioasenhtoiaesnhtoas
+ashtioeanshtioaensht
+
+
+
+
+
+
+
+
+
