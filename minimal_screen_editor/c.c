@@ -1,10 +1,10 @@
-#include <stdio.h>  // 202402191.234834: this version of the editor is trying to
-#include <stdlib.h> // make as simplest and robustful of minimalist screen based editor
-#include <string.h> // as possible, to make it not ever crash.
-#include <iso646.h> // it will probably also have an automatic saving and autosaving  system.
+#include <stdio.h>   // 202402191.234834: this version of the editor is trying to
+#include <stdlib.h>  // make as simplest and robustful of minimalist screen based editor
+#include <string.h>  // as possible, to make it not ever crash.
+#include <iso646.h>  // it will probably also have an automatic saving and autosaving  system.
 #include <unistd.h>
 #include <fcntl.h>
-#include <termios.h> 
+#include <termios.h> // finished main implementation on 202403015.223257.
 #include <time.h>
 #include <stdbool.h>
 #include <errno.h>
@@ -26,7 +26,6 @@ struct action {
 	char c;
 	uint16_t _;
 };
-
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
 static const nat autosave_frequency = 100;
 static bool moved = 0, selecting = 0;
@@ -50,7 +49,6 @@ static void display(bool should_write) {
 	finish = (nat) ~0;
 	for (; i < count; i++) {
 		if (row >= window.ws_row) { finish = i; break; }
-
 		if (text[i] == 10) {
 			if (i == cursor or i == anchor) { memcpy(screen + length, "\033[7m \033[0m", 9); length += 9; }
 		nl:	memcpy(screen + length, "\033[K", 3); length += 3; 
@@ -71,16 +69,13 @@ static void display(bool should_write) {
 			else if ((unsigned char) text[i] >> 6 != 2 and text[i] >= 32) column++;
 		}
 	}
-	
 	if (i == cursor or i == anchor) { memcpy(screen + length, "\033[7m \033[0m", 9); length += 9; }
-
 	while (row < window.ws_row) {
 		memcpy(screen + length, "\033[K", 3);
 		length += 3; 
 		if (row < window.ws_row - 1) screen[length++] = 10;
 		row++;
 	} 
-
 	if (should_write) write(1, screen, length);
 }
 
@@ -92,8 +87,7 @@ static void left(void) {
 		while (origin and text[origin] != 10) origin--;
 		if (origin and origin < count) origin++;
 		display(0);
-	}
-	moved = 1;
+	} moved = 1;
 }
 
 static void right(void) { 
@@ -102,8 +96,7 @@ static void right(void) {
 		while (origin < count and text[origin] != 10) origin++;
 		if (origin < count) origin++;
 		display(0);
-	}
-	moved = 1;
+	} moved = 1;
 }
 
 static nat compute_current_visual_cursor_column(void) {
@@ -329,6 +322,13 @@ static void insert_output(const char* input_command) {
 	free(string);
 }
 
+static void window_resized(int _) {if(_){} display(1); }
+static noreturn void interrupted(int _) {if(_){} 
+	write(1, "\033[?25h\033[?1049l", 14);
+	tcsetattr(0, TCSAFLUSH, &terminal);
+	save(); exit(0); 
+}
+
 static void change_directory(const char* d) {
 	if (chdir(d) < 0) {
 		perror("change directory chdir");
@@ -344,12 +344,30 @@ static void create_process(char** args) {
 	if (pid < 0) { perror("fork"); getchar(); return; }
 	if (not pid) {
 		if (execve(args[0], args, environ) < 0) { perror("execve"); exit(1); }
-	} else {
-		int status = 0;
-		do waitpid(pid, &status, WUNTRACED);
-		while (!WIFEXITED(status) && !WIFSIGNALED(status));
-	}
+	} 
+	int status = 0;
+	if ((pid = wait(&status)) == -1) { perror("wait"); getchar(); return; }
+	char dt[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(dt, 32, "1%Y%m%d%u.%H%M%S", tm);
+	if (WIFEXITED(status)) 		printf("[%s:(%d) exited with code %d]\n", dt, pid, WEXITSTATUS(status));
+	else if (WIFSIGNALED(status)) 	printf("[%s:(%d) was terminated by signal %s]\n", dt, pid, strsignal(WTERMSIG(status)));
+	else if (WIFSTOPPED(status)) 	printf("[%s:(%d) was stopped by signal %s]\n", 	dt, pid, strsignal(WSTOPSIG(status)));
+	else 				printf("[%s:(%d) terminated for an unknown reason]\n", dt, pid);
+	fflush(stdout);
+	getchar();
 }
+
+//	struct sigaction default0 = {.sa_handler = SIG_DFL}, 
+//			 action0 = {.sa_handler = window_resized},
+//			 action1 = {.sa_handler = interrupted};
+//	sigaction(SIGWINCH, &default0, NULL);
+//	sigaction(SIGINT,   &default0, NULL);
+//
+//	sigaction(SIGWINCH, &action0, NULL);
+//	sigaction(SIGINT,   &action1, NULL);
 
 static void execute(char* command) {
 	const char* string = command;
@@ -367,16 +385,13 @@ static void execute(char* command) {
 		arguments[argument_count++] = strndup(string + start, argument_length);
 		argument_length = 0;
 	}
+
 	if (argument_length) goto process_word;
 	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
 	arguments[argument_count] = NULL;
-	tcsetattr(0, TCSAFLUSH, &terminal);	
-	write(1, "\033[?1049l", 8);
-	fflush(stdout);	
+	write(1, "\033[?25h\033[?1049l", 14);
+	tcsetattr(0, TCSAFLUSH, &terminal);
 	create_process(arguments);
-	puts("[continue]");
-	fflush(stdout);
-	getchar();
 	struct termios terminal_copy = terminal; 
 	terminal_copy.c_iflag &= ~((size_t) IXON);
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
@@ -432,13 +447,6 @@ static void interpret_arrow_key(void) {
 	} else { printf("error found escape seq: ESC #%d\n", c); getchar(); }
 }
 
-static void window_resized(int _) {if(_){} display(1); }
-static noreturn void interrupted(int _) {if(_){} 
-	write(1, "\033[?25h\033[?1049l", 14);
-	tcsetattr(0, TCSAFLUSH, &terminal);
-	save(); exit(0); 
-}
-
 int main(int argc, const char** argv) {
 	struct sigaction action = {.sa_handler = window_resized}; 
 	sigaction(SIGWINCH, &action, NULL);
@@ -463,6 +471,7 @@ new: 	origin = 0; cursor = 0; anchor = (nat) ~0;
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSAFLUSH, &terminal_copy);
 	write(1, "\033[?1049h\033[?25l", 14);
+
 loop:;	char c = 0;
 	display(1);
 	read(0, &c, 1);
@@ -533,6 +542,73 @@ done:	write(1, "\033[?25h\033[?1049l", 14);
 
 // --------------------------------------------------------------------------------------------------------------------------------------
 
+
+
+
+/*
+
+
+
+
+		//printf("[parent has forked child with pid of %d]\n", (int) pid);
+		//time_t t = 0;
+    		//time(&t);
+    		//printf("[parent is starting wait at %s]\n", ctime(&t));
+		//time(&t);
+
+
+
+
+
+
+
+
+
+//int status = 0;
+		//do waitpid(pid, &status, WUNTRACED);
+		//while (!WIFEXITED(status) && !WIFSIGNALED(status));
+
+
+
+
+  if ((pid = fork()) < 0)
+    perror("fork() error");
+
+  else if (pid == 0) {
+    time(&t);
+    printf("child (pid %d) started at %s", (int) getpid(), ctime(&t));
+    sleep(5);
+    time(&t);
+    printf("child exiting at %s", ctime(&t));
+    exit(42);
+  }
+
+
+  else {
+  
+    time(&t);
+    printf("parent is starting wait at %s", ctime(&t));
+    if ((pid = wait(&status)) == -1)
+         perror("wait() error");
+    else {
+	      time(&t);
+	      printf("parent is done waiting at %s", ctime(&t));
+	      printf("the pid of the process that ended was %d\n", (int) pid);
+	      if (WIFEXITED(status))
+	        printf("child exited with status of %d\n", WEXITSTATUS(status));
+	      else if (WIFSIGNALED(status))
+	        printf("child was terminated by signal %d\n",
+	               WTERMSIG(status));
+	      else if (WIFSTOPPED(status))
+	        printf("child was stopped by signal %d\n", WSTOPSIG(status));
+	      else puts("reason unknown for child termination");
+    }
+  }
+}
+
+
+
+*/
 
 
 

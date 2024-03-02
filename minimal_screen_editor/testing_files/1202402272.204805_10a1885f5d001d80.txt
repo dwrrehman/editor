@@ -54,6 +54,11 @@ static void display(bool should_write) {
 	if (should_write) write(1, screen, length);
 }
 
+/* going to try to make a program to print prime numbers! lets see if we can do it! */
+
+int main()
+
+wait lets do it in its own file lol.
 
 
 
