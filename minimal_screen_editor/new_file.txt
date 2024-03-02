@@ -19,7 +19,7 @@ okay, so this works great for small files, but we need to try displaying LONG te
 	anyways, lets try doing that now lol. yay. 
 
 
-
+this will be deleted
 
 
 static void up_begin(void) {

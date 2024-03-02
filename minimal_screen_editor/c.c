@@ -17,7 +17,6 @@
 #include <sys/wait.h> 
 #include <stdint.h>
 #include <signal.h>
-#include <copyfile.h>
 
 typedef uint64_t nat;
 struct action {
@@ -42,7 +41,10 @@ static nat cursor = 0, count = 0, anchor = 0, origin = 0, finish = 0, desired = 
 static char* text = NULL, * clipboard = NULL, * screen = NULL;
 
 static char filename[4096] = {0};
+static char autosavename[4096] = {0};
+
 static struct winsize window = {0};
+static struct termios terminal = {0};
 extern char** environ;
 
 static nat head = 0, action_count = 0;
@@ -160,20 +162,14 @@ static void down(void) {
 static void up_begin(void) {
 	while (cursor) {
 		left();
-		if (cursor) {
-			char c = text[cursor - 1];
-			if (c == 10) break;
-		} else break;
+		if (not cursor or text[cursor - 1] == 10) break;
 	}
 }
 
 static void down_end(void) {
 	while (cursor < count) {
 		right();
-		if (cursor < count) {
-			char c = text[cursor];
-			if (c == 10) break;
-		} else break;
+		if (cursor >= count or text[cursor] == 10) break;
 	}
 }
 
@@ -197,57 +193,31 @@ static void word_right(void) {
 	}
 }
 
-static void save(void) {
+static void write_file(const char* directory, char* name, size_t maxsize) {
 	int flags = O_WRONLY | O_TRUNC;
 	mode_t permission = 0;
-	if (not *filename) {
+	if (not *name) {
 		srand((unsigned)time(0)); rand();
 		char datetime[32] = {0};
 		struct timeval t = {0};
 		gettimeofday(&t, NULL);
 		struct tm* tm = localtime(&t.tv_sec);
 		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-		snprintf(filename, sizeof filename, "%s_%08x%08x.txt", datetime, rand(), rand());
+		snprintf(name, maxsize, "%s%s_%08x%08x.txt", directory, datetime, rand(), rand());
 		flags |= O_CREAT | O_EXCL;
 		permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
 	}
-	int file = open(filename, flags, permission);
-	if (file < 0) { perror("save: open file"); puts(filename); getchar(); }
+	int file = open(name, flags, permission);
+	if (file < 0) { perror("save: open file"); puts(name); getchar(); }
 	write(file, text, count);
 	close(file);
 }
 
-
-static void autosave(void) {    
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-		// todo: IMPORTANT]:   make this function overwrite the previously existing file, if we did an autosave in this editing session.  ie, keep a global  autosave_filename,   which we set here, if empty, and we use, if nonempty. also, don't require that its {creat+exclusive}-access if its nonempty, and wasnt created here. cuz it won't work lol 
-
-///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+static void save(void) {    
+	write_file("./", filename, sizeof filename); 
+	if (autosave_counter < autosave_frequency) return;
+	write_file(autosave_directory, autosavename, sizeof autosavename); 
 	autosave_counter = 0;
-	save(); 
-	
-	char datetime[32] = {0};
-	struct timeval t = {0};
-	gettimeofday(&t, NULL);
-	struct tm* tm = localtime(&t.tv_sec);
-	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-	char autosave_filename[4096] = {0};
-	snprintf(autosave_filename, sizeof autosave_filename, "%s%s_%08x%08x.txt", autosave_directory, datetime, rand(), rand());
-
-	int autosave_file = open(autosave_filename, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-	if (autosave_file < 0) { perror("autosave: open autosave_file"); puts(autosave_filename); getchar(); }
-	
-	int file = open(filename, O_RDWR, 0);
-	if (file < 0) { perror("autosave: open file"); puts(filename); getchar(); }
-
-	if (fcopyfile(file, autosave_file, NULL, COPYFILE_ALL)) {
-		perror("autosave: fcopyfile COPYFILE_ALL");
-		getchar();
-	}
-
-	close(autosave_file);
-	close(file);
 }
 
 static void finish_action(struct action node, char c) {
@@ -258,8 +228,8 @@ static void finish_action(struct action node, char c) {
 }
 
 static void insert(char c, bool should_record) {
-	if (++autosave_counter >= autosave_frequency) autosave();
-	struct action node = { .parent = head, .pre = cursor, .inserting = true };
+	if (++autosave_counter >= autosave_frequency) save();
+	struct action node = { .parent = head, .pre = cursor, .inserting = 1 };
 	text = realloc(text, count + 1);
 	memmove(text + cursor + 1, text + cursor, count - cursor);
 	text[cursor] = c; count++; right();
@@ -267,8 +237,7 @@ static void insert(char c, bool should_record) {
 }
 
 static char delete(bool should_record) {
-	if (++autosave_counter >= autosave_frequency) autosave();
-	struct action node = { .parent = head, .pre = cursor, .inserting = false };
+	struct action node = { .parent = head, .pre = cursor, .inserting = 0 };
 	left(); count--; char c = text[cursor];
 	memmove(text + cursor, text + cursor + 1, count - cursor);
 	text = realloc(text, count);
@@ -303,13 +272,48 @@ static void cut(void) {
 	selecting = false;
 }
 
-static inline void copy(void) {
+static void undo(void) {
+	puts("still a work in progress");
+	fflush(stdout); getchar();
+}
+
+static void paste_undotree(void) {
+	char* string = NULL;
+	size_t length = 0;
+	char line[2048] = {0};
+	for (nat i = 0; i < action_count; i++) {
+
+		const size_t len = (size_t) snprintf(line, sizeof line, "node[%llu]:{^%llu,p@%llu,@p%llu,%s['%d']}\n", 
+			i, 
+			actions[i].parent,
+			actions[i].pre,
+			actions[i].post,
+			actions[i].inserting ? "insert" : "delete",
+			actions[i].c
+		);
+
+		string = realloc(string, length + len);
+		memcpy(string + length, line, len);
+		length += len;
+	}
+	const size_t len = (size_t) snprintf(line, sizeof line, "count=%llu,head=%llu\n", action_count, head);
+	string = realloc(string, length + len);
+	memcpy(string + length, line, len);
+	length += len;
+
+	for (nat i = 0; i < length; i++) insert(string[i], 1);
+	free(string);
+}
+
+static void redo(void) {
+	paste_undotree();
+}
+
+static inline void copy(bool should_delete) {
 	if (not selecting or anchor == (nat) ~0) return;
 	if (anchor > count) anchor = count;
-	if (anchor > cursor) { nat t = anchor; anchor = cursor; cursor = t; }
-	cliplength = cursor - anchor;
-	clipboard = strndup(text + anchor, cliplength);
-
+	cliplength = anchor < cursor ? cursor - anchor : anchor - cursor;
+	clipboard = strndup(text + (anchor < cursor ? anchor : cursor), cliplength);
 	FILE* globalclip = popen("pbcopy", "w");
 	if (not globalclip) {
 		perror("copy popen pbcopy");
@@ -317,6 +321,7 @@ static inline void copy(void) {
 	}	
 	fwrite(clipboard, 1, cliplength, globalclip);
 	pclose(globalclip);
+	if (should_delete) cut();
 }
 
 static void insert_output(const char* input_command) {
@@ -348,6 +353,63 @@ static void insert_output(const char* input_command) {
 static void paste(void) {
 	if (selecting) cut();
 	insert_output("pbpaste");
+}
+
+static void change_directory(const char* d) {
+	if (chdir(d) < 0) {
+		perror("change directory chdir");
+		printf("directory=%s\n", d);
+		getchar(); return;
+	}
+	printf("changed to %s\n", d);
+	getchar();
+}
+
+static void create_process(char** args) {
+	pid_t pid = fork();
+	if (pid < 0) { perror("fork"); getchar(); return; }
+	if (not pid) {
+		if (execve(args[0], args, environ) < 0) { perror("execve"); exit(1); }
+	} else {
+		int status = 0;
+		do waitpid(pid, &status, WUNTRACED);
+		while (!WIFEXITED(status) && !WIFSIGNALED(status));
+	}
+}
+
+static void execute(char* command) {
+	const char* string = command;
+	const size_t length = strlen(command);
+	char** arguments = NULL;
+	size_t argument_count = 0;
+	size_t start = 0, argument_length = 0;
+	for (size_t index = 0; index < length; index++) {
+		if (string[index] != 10) {
+			if (not argument_length) start = index;
+			argument_length++; continue;
+		} else if (not argument_length) continue;
+	process_word:
+		arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+		arguments[argument_count++] = strndup(string + start, argument_length);
+		argument_length = 0;
+	}
+	if (argument_length) goto process_word;
+	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+	arguments[argument_count] = NULL;
+
+	tcsetattr(0, TCSAFLUSH, &terminal);	
+	write(1, "\033[?1049l", 8);
+	fflush(stdout);	
+	create_process(arguments);
+	puts("[continue]");
+	fflush(stdout);
+	getchar();
+	struct termios terminal_copy = terminal; 
+	terminal_copy.c_iflag &= ~((size_t) IXON);
+	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
+	tcsetattr(0, TCSAFLUSH, &terminal_copy);
+	write(1, "\033[?1049h", 8);
+	free(arguments);
 }
 
 static void jump_index(char* string) {
@@ -410,12 +472,19 @@ static void interpret_arrow_key(void) {
 	} else { printf("error found escape seq: ESC #%d\n", c); getchar(); }
 }
 
-static void window_resize_handler(int _) { display(true); if (_) {} }
+static void window_resized(int _){if(_){} display(1); }
+static void interrupted(int _){if(_){} 
+	write(1, "\033[?25h\033[?1049l", 14);
+	tcsetattr(0, TCSAFLUSH, &terminal);
+	save(); exit(1); 
+}
 
 int main(int argc, const char** argv) {
-	struct sigaction action = {.sa_handler = window_resize_handler}; 
+	struct sigaction action = {.sa_handler = window_resized}; 
 	sigaction(SIGWINCH, &action, NULL);
-	if (argc < 2) goto new_file;
+	struct sigaction action2 = {.sa_handler = interrupted}; 
+	sigaction(SIGINT, &action2, NULL);
+	if (argc < 2) goto new;
 	strlcpy(filename, argv[1], sizeof filename);
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
@@ -426,9 +495,8 @@ int main(int argc, const char** argv) {
 	text = malloc(count);
 	read(file, text, count);
 	close(file);
-new_file: 
+new: 
 	origin = 0; cursor = 0; anchor = (nat) ~0;
-	struct termios terminal = {0};
 	tcgetattr(0, &terminal);
 	struct termios terminal_copy = terminal; 
 	terminal_copy.c_iflag &= ~((size_t) IXON);
@@ -437,31 +505,32 @@ new_file:
 	write(1, "\033[?1049h\033[?25l", 14);
 
 loop:;	char c = 0;
-	display(true);
+	display(1);
 	read(0, &c, 1);
-	if (c == 4) {
-		if (not cliplength) goto loop;
-		else if (not strcmp(clipboard, "exit")) goto done;
-		else if (not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
-	//	else if (not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
-	//	else if (not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
-		else if (not strncmp(clipboard, "index ", 6)) jump_index(clipboard + 6);
-		else if (not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);	
-		else { printf("unknown command: %s\n", clipboard); getchar(); }
-	}
-	else if (c == 17) 	goto done;	// Q
-	else if (c == 20) 	paste(); 	// T
-	else if (c == 8)	copy(); 	// H
-	else if (c == 24)	cut(); 		// X
-	else if (c == 19) 	save();         // S
-	else if (c == 27) 	interpret_arrow_key();
-	else if (c == 127) 	{ if (selecting) cut(); else { if (cursor) delete(1); } }
+	if (c == 17) 	  goto do_c;	// Q
+	else if (c == 19) save();	// S
+	else if (c == 18) redo(); 	// R
+	else if (c == 4)  undo(); 	// D
+	else if (c == 8)  copy(0); 	// H
+	else if (c == 24) copy(1); 	// X
+	else if (c == 1)  paste();	// A
+	else if (c == 27) interpret_arrow_key();
+	else if (c == 127) 	{ if (selecting) cut(); else if (cursor) delete(1); }
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c, 1); }
+	else { printf("error: ignoring input byte '%d'\n", c); fflush(stdout); getchar(); } 
 	goto loop;
-
-done:	save();
-	write(1, "\033[?25h\033[?1049l", 14);
+do_c:	if (not cliplength) goto loop;
+	else if (not strcmp(clipboard, "exit")) goto done;
+	else if (not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
+	else if (not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
+	else if (not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
+	else if (not strncmp(clipboard, "index ", 6)) jump_index(clipboard + 6);
+	else if (not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);	
+	else { printf("unknown command: %s\n", clipboard); getchar(); }
+	goto loop;
+done:	write(1, "\033[?25h\033[?1049l", 14);
 	tcsetattr(0, TCSAFLUSH, &terminal);
+	save(); exit(0);
 }
 
 
@@ -502,10 +571,107 @@ done:	save();
 
 
 
-
-
-
 // --------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+//	else if (c == 20) 	 	// T
+
+
+
+
+
+/*
+	//printf("\033[2J\033[H");
+	//printf("searching for path string...\n");
+	size_t env_index = 0;	
+	for (; environ[env_index]; env_index++) {
+		if (not strncmp(environ[env_index], "PATH=", 5)) {
+			//printf("found path! \"%s\"...\n", environ[env_index]);
+			break;
+		}
+	}
+
+	char* path_string = strdup(environ[env_index] + 5);
+	
+	//printf("path strings: { \n");
+	size_t pre_index = 0; 
+
+	bool found = false;
+
+	while (1) {
+		if (not path_string[pre_index]) break;	
+		//printf("\t\"");
+		char dir[4096] = {0};
+		size_t dir_count = 0;
+		for (; path_string[pre_index] != ':'; pre_index++) {
+			if (not path_string[pre_index]) break; 			
+			//putchar(path_string[pre_index]);
+			dir[dir_count++] = path_string[pre_index];
+		}
+	
+		dir[dir_count++] = '/';
+		for (int ib = 0; arguments[0][ib]; ib++) {
+			dir[dir_count++] = arguments[0][ib];
+		}
+		if (not access(dir, F_OK) and not found) {
+			free(arguments[0]);
+			arguments[0] = strndup(dir, dir_count);
+			//printf(" [\033[32m√\033[0m] " );
+			found = true;		
+		}
+
+		//printf("\"\n");
+		if (not path_string[pre_index]) break;
+		pre_index++;
+	}
+
+	free(path_string);
+
+	//printf("} \n");
+
+	//printf("\nargv(argc=%lu) {\n", argument_count);
+	//for (size_t a = 0; a < argument_count; a++) printf("\targv[%lu]: \"%s\"\n", a, arguments[a]);
+	//printf("} \n");
+*/
+
+
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		// todo: IMPORTANT]:   make this function overwrite the previously existing file, if we did an autosave in this editing session.  ie, keep a global  autosave_filename,   which we set here, if empty, and we use, if nonempty. also, don't require that its {creat+exclusive}-access if its nonempty, and wasnt created here. cuz it won't work lol 
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	
+	
+/*
+	char datetime[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+	char autosave_filename[4096] = {0};
+	snprintf(autosave_filename, sizeof autosave_filename, "%s%s_%08x%08x.txt", autosave_directory, datetime, rand(), rand());
+
+	int autosave_file = open(autosave_filename, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+	if (autosave_file < 0) { perror("autosave: open autosave_file"); puts(autosave_filename); getchar(); }
+	
+	int file = open(filename, O_RDWR, 0);
+	if (file < 0) { perror("autosave: open file"); puts(filename); getchar(); }
+
+	if (fcopyfile(file, autosave_file, NULL, COPYFILE_ALL)) {
+		perror("autosave: fcopyfile COPYFILE_ALL");
+		getchar();
+	}
+
+	close(autosave_file);
+	close(file);
+*/
+
+
+
+
+
 
 
 //	else if (c == 1) 	anchor = cursor;// A     // delete this one? ..... yeah.... 

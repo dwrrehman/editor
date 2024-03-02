@@ -21,7 +21,7 @@ okay, now i am going to try to make tis thing generate a text file!
 
 	nice! okay,i think it did acutally! wow!
 
-'		i think this is working quite well actually!
+		i think this is working quite well actually!
 
 
 			okay
@@ -87,4 +87,57 @@ i really like this version of the editor though. its literally so cool. yay! ver
 
 yeah, typing actual characers always fixes it, but its definitely something that i need tofix though. anyways. 
 lets solve this problem later i think lol. yay. 
+
+
+hello?
+
+this is going to be my first autosave here,
+i think. i am going to try to press about 100 characters.
+basically, its based on the number of key presses that you actually do.
+
+it will first generate an autosave file after a set number of inserts, and then, it will overwrite that autosavefile, after each subsequent autosave. so yeah. and then, it alsoooo saves the file regularly after each autosave.
+
+	and so like, this type of editor, should be perfectly enough nonvolatile-ness for our purposes. if we somehow were to crash, we would still have the filecontent, and we would alsoooo have a backup version of the file too. and like, the number of autosave files that we actually have is still like not that much. so everything works really well!  amazing. i am acually so happy that we managed to implment the whole editor like this. nonvolatileness, at essentially no cost!!! amazing. i love it so much. YAYYYYY
+
+
+	anyways. i think this is basicallyyyyy usable now, we just need to implement the memory-only undo system, and then we should be perfectly fine, and can start the process of writing code with this thing lol. yay! thats actually so cool lol. YAYYYYYYYYY i love this so much!!! yayyy yayy yayyy yayy lol
+
+
+but yeah, that one bug where the cursor isnt visible when we move down on the last line... that is a littleeeee bit annoying lol. but i mean, as soon as you type more text, it fixes itself, so i don't think its actually that much of a problem lol... i mean. yeah. if i find a simple solution ill fix it, but idon't think its that much of an issue for me, honestly. yay. okay lets do the undotree system now! yay i wrote this on 202403015.192023
+
+gosh this works so well lol
+
+okay lets see if this works 
+
+i just tried to paste some text, and got this weird bug actually where the origin was changingggg   kinda weird lol. idk  its probably fine though idk 
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
