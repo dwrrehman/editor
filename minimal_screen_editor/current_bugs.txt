@@ -5,18 +5,33 @@
 
 
 [visual bug]:
+---------------
+
 
 	- cursor not displayed, and origin not shifted enough when we press enter to end up on a new line, a the bottom of the screen. 
 
 
 [features]:
+-------------
 
-	- add the undo-tree system:  only in memory though. 
 
-	- add the autosaving feature.   (copying into a save directory)
 
-	- add the automatic saving feature. (save the file automatically, every 24 insertions/deletions!)
+x	- add the undo-tree system:  only in memory though. 
 
-	- 
+x	- add the autosaving feature.   (copying into a save directory)
+
+x	- add the automatic saving feature. (save the file automatically, every x:24; 100 insertions/x:deletions;!)
+
+
+	- add macros to the text editor! to prevent me having to do very repetitive movements all the time, when editing code. it comes up where we need this alot...
+
+
+
+	 - make the code as minimal as possible! 
+
+
+
+
+
 
 

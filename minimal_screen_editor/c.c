@@ -17,36 +17,28 @@
 #include <sys/wait.h> 
 #include <stdint.h>
 #include <signal.h>
-
+#include <stdnoreturn.h>
 typedef uint64_t nat;
 struct action {
 	nat parent, pre, post;
 	uint32_t choice;
 	bool inserting;
 	char c;
-	uint16_t _padding_;
+	uint16_t _;
 };
 
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
 static const nat autosave_frequency = 100;
-// nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn
-// hello there from space! this is my cool text i am really interesting and cool, and bubbles and beans
-
-static nat autosave_counter = 0;
-
-static bool moved = false, selecting = false;
-static nat cursor = 0, count = 0, anchor = 0, origin = 0, finish = 0, desired = 0, cliplength = 0, screen_size = 0;
+static bool moved = 0, selecting = 0;
+static nat cursor = 0, count = 0, anchor = 0, origin = 0, finish = 0, head = 0, action_count = 0,
+       desired = 0, cliplength = 0, screen_size = 0, autosave_counter = 0;
 static char* text = NULL, * clipboard = NULL, * screen = NULL;
-
+static struct action* actions = NULL;
 static char filename[4096] = {0};
 static char autosavename[4096] = {0};
-
 static struct winsize window = {0};
 static struct termios terminal = {0};
 extern char** environ;
-
-static nat head = 0, action_count = 0;
-static struct action* actions = NULL;
 
 static void display(bool should_write) {
 	ioctl(0, TIOCGWINSZ, &window);
@@ -99,9 +91,9 @@ static void left(void) {
 		if (origin) origin--;
 		while (origin and text[origin] != 10) origin--;
 		if (origin and origin < count) origin++;
-		display(false);
+		display(0);
 	}
-	moved = true;
+	moved = 1;
 }
 
 static void right(void) { 
@@ -109,15 +101,14 @@ static void right(void) {
 	if (cursor >= finish) {
 		while (origin < count and text[origin] != 10) origin++;
 		if (origin < count) origin++;
-		display(false);
+		display(0);
 	}
-	moved = true;
+	moved = 1;
 }
 
 static nat compute_current_visual_cursor_column(void) {
-	nat i = cursor;
+	nat i = cursor, column = 0;
 	while (i and text[i - 1] != 10) i--;
-	nat column = 0;
 	while (i < cursor and text[i] != 10) {
 		if (text[i] == 9) { nat amount = 8 - column % 8; column += amount; }
 		else if (column >= window.ws_col - 2) column = 0;
@@ -145,7 +136,7 @@ static void up(void) {
 	while (cursor and text[cursor - 1] != 10) left();
 	move_cursor_to_visual_position(not m ? desired : column);
 	if (m) desired = column;
-	moved = false;
+	moved = 0;
 }
 
 static void down(void) {
@@ -154,7 +145,7 @@ static void down(void) {
 	while (cursor < count and text[cursor] != 10) right(); right();
 	move_cursor_to_visual_position(not m ? desired : column);
 	if (m) desired = column;
-	moved = false;
+	moved = 0;
 }
 
 static void up_begin(void) {
@@ -174,9 +165,8 @@ static void down_end(void) {
 static void word_left(void) {
 	left();
 	while (cursor) {
-		char behind = text[cursor - 1], here = text[cursor];
-		if (not (not isalnum(here) or isalnum(behind))) break;
-		if (behind == 10) break;
+		if (not (not isalnum(text[cursor]) or isalnum(text[cursor - 1]))) break;
+		if (text[cursor - 1] == 10) break;
 		left();
 	}
 }
@@ -184,11 +174,25 @@ static void word_left(void) {
 static void word_right(void) {
 	right();
 	while (cursor < count) {
-		char behind = text[cursor - 1], here = text[cursor];
-		if (not (isalnum(here) or not isalnum(behind))) break;
-		if (here == 10) break;
+		if (not (isalnum(text[cursor]) or not isalnum(text[cursor - 1]))) break;
+		if (text[cursor] == 10) break;
 		right();
 	}
+}
+
+static void searchf(void) {
+	nat t = 0;
+	loop: if (t == cliplength or cursor >= count) return;
+	if (text[cursor] != clipboard[t]) t = 0; else t++; 
+	right(); goto loop;
+}
+
+static void searchb(void) {
+	nat t = cliplength;
+	loop: if (not t or not cursor) return;
+	left(); t--; 
+	if (text[cursor] != clipboard[t]) t = cliplength;
+	goto loop;
 }
 
 static void write_file(const char* directory, char* name, size_t maxsize) {
@@ -243,21 +247,6 @@ static char delete(bool should_record) {
 	return c;
 }
 
-static void searchf(void) {
-	nat t = 0;
-	loop: if (t == cliplength or cursor >= count) return;
-	if (text[cursor] != clipboard[t]) t = 0; else t++; 
-	right(); goto loop;
-}
-
-static void searchb(void) {
-	nat t = cliplength;
-	loop: if (not t or not cursor) return;
-	left(); t--; 
-	if (text[cursor] != clipboard[t]) t = cliplength;
-	goto loop;
-}
-
 static void cut(void) {
 	if (not selecting or anchor == (nat) ~0) return;
 	if (anchor > count) anchor = count;
@@ -267,160 +256,37 @@ static void cut(void) {
 	cliplength = cursor - anchor;
 	for (nat i = 0; i < cliplength and cursor; i++) delete(1);
 	anchor = (nat) ~0;
-	selecting = false;
+	selecting = 0;
 }
-
-
-
-/*
-
-static void undo(void) {
-	lseek(history, 0, SEEK_SET);
-	read(history, &head, sizeof head);
-	if (not head) return;
-	struct action node = {0};
-	lseek(history, head, SEEK_SET);
-	read(history, &node, sizeof node);
-	nat len = (nat) (node.length < 0 ? -node.length : node.length);
-	char* string = malloc(len);
-	read(history, string, len);
-	cursor = node.post;
-	if (node.length < 0) insert(string, len, 0); else delete(len, 0);
-	cursor = node.pre; 
-	anchor = node.pre;
-	head = node.parent; 
-	lseek(history, 0, SEEK_SET);
-	write(history, &head, sizeof head);
-}
-
-static void redo(void) {
-
-	if (not actions[head].count) return;
-
-	head = actions[head].children[actions[head].choice];
-
-	const struct action a = actions[head];
-
-	cursor = a.pre_cursor; 
-
-	if (a.insert) 
-		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
-	else 
-		for (nat i = 0; i < a.length; i++) delete(0);
-
-	cursor = a.post_cursor;
-	anchor = cursor;
-
-	//if (a.count > 1) { 
-	//	printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
-	//	getchar(); 
-	//}	
-}
-*/
 
 static void redo(void) {
 	nat chosen_child = 0, child_count = 0; 
-	// last_child = 0, 
 	for (nat i = 0; i < action_count; i++) {
-		if (actions[i].parent == head) {
-			if (child_count == actions[head].choice) {
-				// printf("found the chosen child!\n");
-				chosen_child = i;
-			}
-			//last_child = i;
-			child_count++;
-
-			//printf("child_count=%llu : last_child=%llu : "
-			//	"node#%llu is the child of head=%llu.\n", 
-			//	child_count, last_child, i, head
-			//);
-			//fflush(stdout); getchar();
-		}
+		if (actions[i].parent != head) continue;
+		if (child_count == actions[head].choice) chosen_child = i;
+		child_count++;
 	}
 	if (not child_count) return;
-
-
-	//	//printf("redo: error: could not find any children of head=%llu.\n", head);
-	//	//fflush(stdout); getchar();
-	//	return;
-	//}
-
-
-/*	
-//	if (child_count == 1) {
-//
-//		//printf("single: last_child=node#%llu is the sole child of head=%llu.\n", last_child, head);
-//		//fflush(stdout); getchar();
-//
-//		head = last_child;
-//	}
-*/
-
-	if (child_count > 1) {
-		//printf("error: found %llu children of head=%llu!!! please pick one.\n", 
-		//	child_count, head
-		//);
-		//fflush(stdout); getchar();
-
-		printf("\n\033[7m[      %u  :  %llu      ]\033[0m\n", actions[head].choice, child_count); 
-		getchar(); 
+	if (child_count >= 2) {
+		printf("\n\033[7m[      %u  :  %llu      ]\033[0m\n", 
+			actions[head].choice, child_count
+		); getchar(); 
 		actions[head].choice = (actions[head].choice + 1) % child_count;
 	}
-	
 	head = chosen_child;
-
 	const struct action node = actions[head];
 	cursor = node.pre; 
 	if (node.inserting) insert(node.c, 0); else delete(0);
 	cursor = node.post;
 }
 
-
-
-// head = actions[head].children[actions[head].choice];
-
-
-
 static void undo(void) {
-	if (head == 0) return;
-	const struct action node = actions[head];
+	if (not head) return;
+	struct action node = actions[head];
 	cursor = node.post;
 	if (node.inserting) delete(0); else insert(node.c, 0); 
 	cursor = node.pre;
 	head = node.parent;
-}
-
-
-static void paste_undotree(void) {
-
-	puts("undo tree is still a work in progress");
-	fflush(stdout); getchar();
-
-	char* string = NULL;
-	size_t length = 0;
-	char line[2048] = {0};
-	for (nat i = 0; i < action_count; i++) {
-
-		const size_t len = (size_t) snprintf(line, sizeof line, "node[%llu]:{^%llu,p@%llu,@p%llu,%s['%d']}\n", 
-			i, 
-			actions[i].parent,
-			actions[i].pre,
-			actions[i].post,
-			actions[i].inserting ? "insert" : "delete",
-			actions[i].c
-		);
-
-		string = realloc(string, length + len);
-		memcpy(string + length, line, len);
-		length += len;
-	}
-	const size_t len = (size_t) snprintf(line, sizeof line, "count=%llu,head=%llu\n", action_count, head);
-	string = realloc(string, length + len);
-	memcpy(string + length, line, len);
-	length += len;
-
-	for (nat i = 0; i < length; i++) insert(string[i], 0);
-	free(string);
 }
 
 static inline void copy(bool should_delete) {
@@ -439,7 +305,6 @@ static inline void copy(bool should_delete) {
 }
 
 static void insert_output(const char* input_command) {
-
 	char command[4096] = {0};
 	strlcpy(command, input_command, sizeof command);
 	strlcat(command, " 2>&1", sizeof command);
@@ -462,11 +327,6 @@ static void insert_output(const char* input_command) {
 	pclose(f);
 	for (nat i = 0; i < length; i++) insert(string[i], 1);
 	free(string);
-}
-
-static void paste(void) {
-	if (selecting) cut();
-	insert_output("pbpaste");
 }
 
 static void change_directory(const char* d) {
@@ -510,7 +370,6 @@ static void execute(char* command) {
 	if (argument_length) goto process_word;
 	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
 	arguments[argument_count] = NULL;
-
 	tcsetattr(0, TCSAFLUSH, &terminal);	
 	write(1, "\033[?1049l", 8);
 	fflush(stdout);	
@@ -538,44 +397,31 @@ static void jump_line(char* string) {
 	up_begin(); 
 }
 
-static void set_anchor(void) {
-	if (selecting) return;
-	anchor = cursor; 
-	selecting = true;
-}
-
-static void clear_anchor(void) {
-	if (not selecting) return;
-	anchor = (nat) ~0;
-	selecting = false;
-}
+static void set_anchor(void) { if (selecting) return; anchor = cursor;  selecting = 1; }
+static void clear_anchor(void) { if (not selecting) return; anchor = (nat) ~0; selecting = 0; }
+static void paste(void) { if (selecting) cut(); insert_output("pbpaste"); }
 
 static void interpret_arrow_key(void) {
-	char c = 0; read(0, &c, 1);
-
-	if (false) {}
-	else if (c == 'u') { clear_anchor(); up_begin(); }
+	char c = 0; 
+	read(0, &c, 1);
+	     if (c == 'u') { clear_anchor(); up_begin(); }
 	else if (c == 'd') { clear_anchor(); down_end(); }
 	else if (c == 'l') { clear_anchor(); word_left(); }
 	else if (c == 'r') { clear_anchor(); word_right(); }
-
 	else if (c == 'f') { clear_anchor(); searchf(); }
 	else if (c == 'b') { clear_anchor(); searchb(); }
 	else if (c == 't') { clear_anchor(); for (int i = 0; i < window.ws_row - 1; i++) up(); }
 	else if (c == 'e') { clear_anchor(); for (int i = 0; i < window.ws_row - 1; i++) down(); }
-
 	else if (c == 's') {
 		read(0, &c, 1); 
 		     if (c == 'u') { set_anchor(); up(); }
 		else if (c == 'd') { set_anchor(); down(); }
 		else if (c == 'r') { set_anchor(); right(); }
 		else if (c == 'l') { set_anchor(); left(); }
-
 		else if (c == 'b') { set_anchor(); up_begin(); }
 		else if (c == 'e') { set_anchor(); down_end(); }
 		else if (c == 'w') { set_anchor(); word_right(); }
 		else if (c == 'm') { set_anchor(); word_left(); }
-
 	} else if (c == '[') {
 		read(0, &c, 1); 
 		if (c == 'A') { clear_anchor(); up(); }
@@ -586,8 +432,8 @@ static void interpret_arrow_key(void) {
 	} else { printf("error found escape seq: ESC #%d\n", c); getchar(); }
 }
 
-static void window_resized(int _){if(_){} display(1); }
-static void interrupted(int _){if(_){} 
+static void window_resized(int _) {if(_){} display(1); }
+static noreturn void interrupted(int _) {if(_){} 
 	write(1, "\033[?25h\033[?1049l", 14);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 	save(); exit(0); 
@@ -609,7 +455,6 @@ int main(int argc, const char** argv) {
 	text = malloc(count);
 	read(file, text, count);
 	close(file);
-
 new: 	origin = 0; cursor = 0; anchor = (nat) ~0;
 	finish_action((struct action){.parent = (nat) ~0}, 0);
 	tcgetattr(0, &terminal);
@@ -618,22 +463,19 @@ new: 	origin = 0; cursor = 0; anchor = (nat) ~0;
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSAFLUSH, &terminal_copy);
 	write(1, "\033[?1049h\033[?25l", 14);
-
 loop:;	char c = 0;
 	display(1);
 	read(0, &c, 1);
-	if (c == 17) 	  goto do_c;	// Q
+	     if (c == 17) goto do_c;	// Q
 	else if (c == 19) save();	// S
 	else if (c == 18) redo(); 	// R
 	else if (c == 4)  undo(); 	// D
 	else if (c == 8)  copy(0); 	// H
 	else if (c == 24) copy(1); 	// X
 	else if (c == 1)  paste();	// A
-
-	else if (c == 20) paste_undotree();	// T 	// temporary, debugging tool.
-
+	else if (c == 20) {}		// T
 	else if (c == 27) interpret_arrow_key();
-	else if (c == 127) 	{ if (selecting) cut(); else if (cursor) delete(1); }
+	else if (c == 127) { if (selecting) cut(); else if (cursor) delete(1); }
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c, 1); }
 	else { printf("error: ignoring input byte '%d'\n", c); fflush(stdout); getchar(); } 
 	goto loop;
@@ -690,6 +532,136 @@ done:	write(1, "\033[?25h\033[?1049l", 14);
 
 
 // --------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+//last_child = i;
+
+// printf("found the chosen child!\n");
+
+//printf("child_count=%llu : last_child=%llu : "
+			//	"node#%llu is the child of head=%llu.\n", 
+			//	child_count, last_child, i, head
+			//);
+			//fflush(stdout); getchar();
+
+	//	//printf("redo: error: could not find any children of head=%llu.\n", head);
+	//	//fflush(stdout); getchar();
+	//	return;
+	//}
+
+/*	
+//	if (child_count == 1) {
+//
+//		//printf("single: last_child=node#%llu is the sole child of head=%llu.\n", last_child, head);
+//		//fflush(stdout); getchar();
+//
+//		head = last_child;
+//	}
+*/
+//printf("error: found %llu children of head=%llu!!! please pick one.\n", 
+		//	child_count, head
+		//);
+		//fflush(stdout); getchar();
+
+
+
+
+/*
+
+// used for debugging the undo tree.
+
+static void paste_undotree(void) {
+
+	puts("undo tree is still a work in progress");
+	fflush(stdout); getchar();
+
+	char* string = NULL;
+	size_t length = 0;
+	char line[2048] = {0};
+	for (nat i = 0; i < action_count; i++) {
+
+		const size_t len = (size_t) snprintf(line, sizeof line, "node[%llu]:{^%llu,p@%llu,@p%llu,%s['%d']}\n", 
+			i, 
+			actions[i].parent,
+			actions[i].pre,
+			actions[i].post,
+			actions[i].inserting ? "insert" : "delete",
+			actions[i].c
+		);
+
+		string = realloc(string, length + len);
+		memcpy(string + length, line, len);
+		length += len;
+	}
+	const size_t len = (size_t) snprintf(line, sizeof line, "count=%llu,head=%llu\n", action_count, head);
+	string = realloc(string, length + len);
+	memcpy(string + length, line, len);
+	length += len;
+
+	for (nat i = 0; i < length; i++) insert(string[i], 0);
+	free(string);
+}
+
+
+
+
+
+*/
+
+
+// head = actions[head].children[actions[head].choice];
+
+/*
+
+static void undo(void) {
+	lseek(history, 0, SEEK_SET);
+	read(history, &head, sizeof head);
+	if (not head) return;
+	struct action node = {0};
+	lseek(history, head, SEEK_SET);
+	read(history, &node, sizeof node);
+	nat len = (nat) (node.length < 0 ? -node.length : node.length);
+	char* string = malloc(len);
+	read(history, string, len);
+	cursor = node.post;
+	if (node.length < 0) insert(string, len, 0); else delete(len, 0);
+	cursor = node.pre; 
+	anchor = node.pre;
+	head = node.parent; 
+	lseek(history, 0, SEEK_SET);
+	write(history, &head, sizeof head);
+}
+
+static void redo(void) {
+
+	if (not actions[head].count) return;
+
+	head = actions[head].children[actions[head].choice];
+
+	const struct action a = actions[head];
+
+	cursor = a.pre_cursor; 
+
+	if (a.insert) 
+		for (nat i = 0; i < a.length; i++) insert(a.text[i], 0);
+	else 
+		for (nat i = 0; i < a.length; i++) delete(0);
+
+	cursor = a.post_cursor;
+	anchor = cursor;
+
+	//if (a.count > 1) { 
+	//	printf("\033[0;44m[%lu:%lu]\033[0m", a.count, actions[head].choice); 
+	//	getchar(); 
+	//}	
+}
+*/
+
+
+
 
 
 
