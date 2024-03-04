@@ -478,7 +478,7 @@ loop:;	char c = 0;
 	else if (c == 27) interpret_arrow_key();
 	else if (c == 127) { if (selecting) cut(); else if (cursor) delete(1); }
 	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c, 1); }
-	else { printf("error: ignoring input byte '%d'\n", c); fflush(stdout); getchar(); } 
+	else { printf("error: ignoring input byte '%d'", c); fflush(stdout); getchar(); } 
 	goto loop;
 do_c:	if (not cliplength) goto loop;
 	else if (not strcmp(clipboard, "exit")) goto done;
