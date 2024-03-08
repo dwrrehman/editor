@@ -8,7 +8,7 @@ int main(int argc, const char** argv) {
 	const int n = atoi(argv[1]);
 
 	for (int i = 0; i < n; i++) {
-		for (int j = 2; j < i >> 1; j++) {
+		for (int j = 2; j < i; j++) {
 			if (i % j == 0) goto composite;
 		}
 		printf("%d is prime!\n", i); 
@@ -16,11 +16,10 @@ int main(int argc, const char** argv) {
 		if (getchar() == 'n') break;
 		composite: continue;
 	} 
-
-	abort();
-
+	//abort();
 	return 0;
 }
+
 /*
 
 debug:
@@ -32,10 +31,20 @@ testing_files/primes.c
 
 execute:
 
-do ./testing_files/gen_primes.out
+do ./testing_files/generate.out
 5
 
+do /bin/mv
+a.out
+testing_files/generate.out
 
+
+do /bin/ls
+testing_files/
 
 
 */
+
+
+
+

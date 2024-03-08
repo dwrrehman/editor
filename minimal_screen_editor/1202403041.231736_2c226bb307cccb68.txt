@@ -1,0 +1,27 @@
+hi there!
+
+	this is the editor now!
+
+		it actually works really well!  i am going to try to show how the undo tree works now!
+
+				its pretty intuitive. kinda.
+
+
+
+		sometimes. lol
+
+
+	anwyays
+
+
+1202403041.231736_2c226bb307cccb68.txt
+build
+c.c
+current_bugs.txt
+deploy
+editor
+editor.dSYM
+hello.txt
+new_file.txt
+testing_files
+

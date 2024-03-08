@@ -7,6 +7,15 @@
 #include <termios.h> // finished main implementation on 202403015.223257.
 #include <time.h>
 #include <stdbool.h>
+
+	// we should add easy keybindings for making the editor controlable via our voice! using talon!!! using some sort of modal commands, with lots of shortcuts for common things we want to do!!! very important. 
+	// and make this system not interfere with the regular way of using the text editor with keys. 
+
+	//      voice is the ultimate ergonomic typing method. we should really use it primarily. yay. this will be cool lol. yay
+
+
+
+
 #include <errno.h>
 #include <ctype.h>
 #include <time.h>
@@ -19,6 +28,7 @@
 #include <signal.h>       //       alias pbpaste="xclip -selection clipboard -o" 
 #include <stdnoreturn.h>  //       alias pbcopy="xclip -selection c"
 typedef uint64_t nat;
+enum modes { keyboard_mode, voice_mode };
 struct action {
 	nat parent, pre, post;
 	uint32_t choice;
@@ -28,7 +38,7 @@ struct action {
 };
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
 static const nat autosave_frequency = 100;
-static bool moved = 0, selecting = 0;
+static bool moved = 0, selecting = 0, mode = 0;
 static nat cursor = 0, count = 0, anchor = 0, origin = 0, finish = 0, head = 0, action_count = 0,
        desired = 0, cliplength = 0, screen_size = 0, autosave_counter = 0;
 static char* text = NULL, * clipboard = NULL, * screen = NULL;
@@ -38,6 +48,14 @@ static char autosavename[4096] = {0};
 static struct winsize window = {0};
 static struct termios terminal = {0};
 extern char** environ;
+
+/*static bool stdin_is_empty(void) {
+	fd_set f; FD_ZERO(&f); FD_SET(0, &f);
+	struct timeval timeout = {0};
+	return select(1, &f, 0, 0, &timeout) != 1;
+}*/
+
+static nat counter = 0;
 
 static void display(bool should_write) {
 	ioctl(0, TIOCGWINSZ, &window);
@@ -76,6 +94,12 @@ static void display(bool should_write) {
 		if (row < window.ws_row - 1) screen[length++] = 10;
 		row++;
 	} 
+
+//	length += (nat) snprintf(screen + length, screen_size, "\033[%d;1H:%012llx:[%s]\033[K", 
+//		window.ws_row, (counter++), mode ? "\033[31mvoice mode\033[0m" : "\033[32mkeyboard mode\033[0m"
+//	);
+
+
 	if (should_write) write(1, screen, length);
 }
 
@@ -223,7 +247,8 @@ static void finish_action(struct action node, char c) {
 }
 
 static void insert(char c, bool should_record) {
-	if (++autosave_counter >= autosave_frequency and should_record) save();
+	if (should_record) autosave_counter++;
+	if (autosave_counter >= autosave_frequency and should_record) save();
 	struct action node = { .parent = head, .pre = cursor, .inserting = 1, .choice = 0 };
 	text = realloc(text, count + 1);
 	memmove(text + cursor + 1, text + cursor, count - cursor);
@@ -298,6 +323,7 @@ static inline void copy(bool should_delete) {
 }
 
 static void insert_output(const char* input_command) {
+	save();
 	char command[4096] = {0};
 	strlcpy(command, input_command, sizeof command);
 	strlcat(command, " 2>&1", sizeof command);
@@ -361,6 +387,7 @@ static void create_process(char** args) {
 }
 
 static void execute(char* command) {
+	save();
 	const char* string = command;
 	const size_t length = strlen(command);
 	char** arguments = NULL;
@@ -387,7 +414,7 @@ static void execute(char* command) {
 	terminal_copy.c_iflag &= ~((size_t) IXON);
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSAFLUSH, &terminal_copy);
-	write(1, "\033[?1049h", 8);
+	write(1, "\033[?1049h\033[?25l", 8);
 	free(arguments);
 }
 
@@ -407,6 +434,10 @@ static void set_anchor(void) { if (selecting) return; anchor = cursor;  selectin
 static void clear_anchor(void) { if (not selecting) return; anchor = (nat) ~0; selecting = 0; }
 static void paste(void) { if (selecting) cut(); insert_output("pbpaste"); }
 static void local_paste(void) { for (nat i = 0; i < cliplength; i++) insert(clipboard[i], 1); }
+static void insert_string(const char* string) { for (nat i = 0; i < strlen(string); i++) insert(string[i], 1); }
+
+static void page_up(void) { for (int i = 0; i < window.ws_row - 3; i++) up(); } 
+static void page_down(void) { for (int i = 0; i < window.ws_row - 3; i++) down(); } 
 
 static void interpret_arrow_key(void) {
 	char c = 0; 
@@ -417,8 +448,8 @@ static void interpret_arrow_key(void) {
 	else if (c == 'r') { clear_anchor(); word_right(); }
 	else if (c == 'f') { clear_anchor(); searchf(); }
 	else if (c == 'b') { clear_anchor(); searchb(); }
-	else if (c == 't') { clear_anchor(); for (int i = 0; i < window.ws_row - 1; i++) up(); }
-	else if (c == 'e') { clear_anchor(); for (int i = 0; i < window.ws_row - 1; i++) down(); }
+	else if (c == 't') { clear_anchor(); page_up(); }
+	else if (c == 'e') { clear_anchor(); page_down(); }
 	else if (c == 's') {
 		read(0, &c, 1); 
 		     if (c == 'u') { set_anchor(); up(); }
@@ -438,6 +469,154 @@ static void interpret_arrow_key(void) {
 		else { printf("error: found escape seq: ESC [ #%d\n", c); getchar(); }
 	} else { printf("error found escape seq: ESC #%d\n", c); getchar(); }
 }
+
+static void trim_whitespace(char** string, nat* length) {
+	while (**string) {
+		if (not isspace(**string)) break; 
+		(*string)++; (*length)--;
+		//printf("\"%.*s\"\n", (int) *length, *string);
+	}
+	
+	while (*length) {
+		if (not isspace((*string)[*length - 1])) break;
+		(*length)--;
+		//printf("\"%.*s\"\n", (int) *length, *string);
+	}
+	//printf("result = \"%.*s\"\n", (int) *length, *string);
+}
+
+
+static void lowercase_string(char* string, nat length) {
+	for (nat i = 0; i < length; i++) {
+		string[i] = (char) tolower(string[i]);
+	}
+}
+
+static bool equals(const char* literal, const char* string, nat c_count) {
+	const nat length = (nat) strlen(literal);
+	if (length != c_count) return false;
+	for (nat i = 0; i < c_count; i++) {
+		if (string[i] != literal[i]) return false;
+	}
+	return true;
+}
+
+static void select_current_line(char just) {
+
+	nat begin = cursor; 
+	while (begin) {
+		if (text[begin - 1] == 10) break;
+		begin--;
+	}
+	
+	nat end = begin;
+	while (end < count) {
+		if (text[end] == 10) break;
+		end++;
+	}
+
+	anchor = begin;
+	cursor = end;
+	selecting = true;
+
+
+}
+
+static void select_current_word(char just) {
+
+	nat begin = cursor; 
+	while (begin) {
+		if (not isalnum(text[begin - 1])) break;
+		begin--;
+	}
+	
+	nat end = begin;
+	while (end < count) {
+		if (not isalnum(text[end])) break;
+		end++;
+	}
+
+	anchor = begin;
+	cursor = end;
+	selecting = true;
+}
+
+
+
+static void act_upon_voice_command(char* string, nat length) {
+
+	trim_whitespace(&string, &length);
+	lowercase_string(string, length);
+
+	//printf("\033[H[STDIN EMPTY]: (%llu): voice = \"%s\"\033[K\n", length, string);
+	//printf("\033[H");	
+
+	char file = 0;
+	char just = 0;
+	char extend = 0;
+
+	nat start = 0, c_count = 0;
+	for (nat index = 0; index < length; index++) {
+		if (not isspace(string[index])) { 
+			if (not c_count) start = index;
+			c_count++; continue;
+		} else if (not c_count) continue;
+
+		process:;
+			const char* word = string + start;
+			const nat wlen = c_count;
+			
+			if (equals("hello", word, wlen)) {}
+
+			else if (equals("reach",    word, wlen)) { if (extend) set_anchor(); else clear_anchor();  up(); }
+			else if (equals("seek",     word, wlen)) { if (extend) set_anchor(); else clear_anchor();  down(); }
+			else if (equals("left",     word, wlen)) { if (extend) set_anchor(); else clear_anchor();  left(); }
+			else if (equals("right",    word, wlen)) { if (extend) set_anchor(); else clear_anchor();  right(); }
+			else if (equals("next",     word, wlen)) { if (extend) set_anchor(); else clear_anchor();  word_left(); }
+			else if (equals("previous", word, wlen)) { if (extend) set_anchor(); else clear_anchor();  word_right(); }
+			else if (equals("begin",    word, wlen)) { if (extend) set_anchor(); else clear_anchor();  up_begin(); }
+			else if (equals("end",      word, wlen)) { if (extend) set_anchor(); else clear_anchor();  down_end(); }
+			else if (equals("page",     word, wlen)) { if (extend) set_anchor(); else clear_anchor();  page_down(); }
+			else if (equals("back",     word, wlen)) { if (extend) set_anchor(); else clear_anchor();  page_up(); }
+	
+			else if (equals("self", word, wlen)) { extend = 0; }
+			else if (equals("extend", word, wlen)) { extend = 0; }
+			else if (equals("just", word, wlen)) { just = 1; }
+			else if (equals("entire", word, wlen)) { just = 0; }
+			else if (equals("line", word, wlen)) { select_current_line(just); just = 0; }
+			else if (equals("word", word, wlen)) { select_current_word(just); just = 0; }			
+
+			else if (equals("stash", word, wlen)) copy(0);
+			else if (equals("chuck", word, wlen)) copy(1);
+			else if (equals("remove", word, wlen)) cut();
+			else if (equals("insert", word, wlen)) paste();
+
+			else if (equals("file", word, wlen)) file = 1;
+			else if (equals("save", word, wlen) and file == 1) { save(); file = 0; }
+
+			//    else insert_string("\n error: unknown command\n");
+			// next: 
+			c_count = 0;
+	}
+	if (c_count) goto process;
+	
+}
+
+//printf("FILE-SAVE{\"%.*s\"}, ", (int) wlen, word);
+//printf("ERROR:state_file[%.*s], ", (int) wlen, word);
+//printf("HELLO{\"%.*s\"}, ", (int) wlen, word);
+//printf("CUT{\"%.*s\"}, ", (int) wlen, word);
+//printf("FILE{\"%.*s\"}, ", (int) wlen, word);
+//printf("COPY{\"%.*s\"}, ", (int) wlen, word);
+//printf("PASTE{\"%.*s\"}, ", (int) wlen, word);
+//printf("CUT{\"%.*s\"}, ", (int) wlen, word);
+//printf("[%.*s], ", (int) wlen, word);
+//printf("\033[K\n[DONE PROCESSING!]\033[K\n");
+
+//fflush(stdout);
+
+
+
 
 int main(int argc, const char** argv) {
 	struct sigaction action = {.sa_handler = window_resized}; 
@@ -459,15 +638,30 @@ new: 	origin = 0; cursor = 0; anchor = (nat) ~0;
 	finish_action((struct action){.parent = (nat) ~0}, 0);
 	tcgetattr(0, &terminal);
 	struct termios terminal_copy = terminal; 
-	terminal_copy.c_cc[VMIN] = 1; terminal_copy.c_cc[VTIME] = 0;
+	terminal_copy.c_cc[VMIN] = 0; terminal_copy.c_cc[VTIME] = 1;  //vmin=1,vtime=0   
 	terminal_copy.c_iflag &= ~((size_t) IXON);
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSAFLUSH, &terminal_copy);
 	write(1, "\033[?1049h\033[?25l", 14);
-loop:;	char c = 0;
-	display(1);
-	read(0, &c, 1);
-	     if (c == 17) goto do_c;	// Q
+	mode = voice_mode;
+	char* voice_command_buffer = calloc(4096, 1);
+	nat voice_command_length = 0;
+
+loop:	display(1);
+fast_loop:; 
+	char c = 0;
+	const ssize_t n = read(0, &c, 1);
+	if (not n) {
+		if (voice_command_length) {
+			voice_command_buffer[voice_command_length] = 0;
+			act_upon_voice_command(voice_command_buffer, voice_command_length);
+			voice_command_length = 0;
+			display(1);
+		}
+		goto fast_loop;
+	}
+	
+		     if (c == 17) goto do_c;	// Q
 	else if (c == 19) save();	// S
 	else if (c == 18) redo(); 	// R
 	else if (c == 4)  undo(); 	// D
@@ -477,11 +671,19 @@ loop:;	char c = 0;
 	else if (c == 20) local_paste();// T
 	else if (c == 27) interpret_arrow_key();
 	else if (c == 127) { if (selecting) cut(); else if (cursor) delete(1); }
-	else if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c, 1); }
-	else { printf("error: ignoring input byte '%d'", c); fflush(stdout); getchar(); } 
-	goto loop;
+	else if (mode == keyboard_mode) {
+		if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c, 1); }
+		else { printf("error: ignoring input byte '%d'", c); fflush(stdout); getchar(); } 
+		goto loop;
+	} else {
+		voice_command_buffer[voice_command_length++] = c;
+		goto loop;
+	}
+
 do_c:	if (not cliplength) goto loop;
 	else if (not strcmp(clipboard, "exit")) goto done;
+	else if (not strcmp(clipboard, "voice")) mode = voice_mode;
+	else if (not strcmp(clipboard, "keyboard")) mode = keyboard_mode;
 	else if (not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
 	else if (not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
 	else if (not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
@@ -509,7 +711,90 @@ done:	write(1, "\033[?25h\033[?1049l", 14);
 
 
 
+/*
 
+
+
+
+
+		if (if user typed "pound sign" £   a unicode symbol i don't use.   that goes back to voice mode. so yeah. 
+			we should also give some indicator on the screen that we are in this mode.... so yeah. 
+
+					the viusalization on the screen should also be different, i think. like, we should probably be able to... idk actually. maybe our current viz is enough lol. not sure. 
+
+
+
+
+
+
+we should have a command for inserting text strings:
+
+
+c prefix for all of these?...
+
+
+	oe	" = "
+	op	" + "
+	oa	" & "  etc
+
+	ap	"++"
+	al	"<<"
+	ad	"--"
+
+		";\n" 
+
+	i	"#include <CURSOR>"
+		
+
+	bp	"(CURSOR)"
+	bs	"[CURSOR]"
+	bc	"{ CURSOR }"   
+
+		  the indentation of the current line detected! so we can smartly indent.
+
+	rl	" < "
+	rg	" >= "
+	re	" == "
+	rn	" != "
+
+	fi	"for (int i = 0; i < CURSOR; i++) {\n\t\n}"
+	fn	"for (nat i = 0; i < CURSOR; i++) {\n\t\n}"
+
+	ff	"if (CURSOR) {\n\t}"     etc
+
+	g	"goto CURSOR;"
+	
+		""
+
+
+
+
+
+we should actually make this based on words, not characters!
+
+	ie, each construct gets its own special word that triggers it. kinda like the letters, but we have alot more of them lol. 
+
+	so yeah. 
+
+we'd use the    word XXX    or phrase ability for that i think.    so yeah.    and maybe detecting if stdin is full lol. so yeah. 
+				ie, VTIME/VMIN    stuff     so eyah. 
+
+				hmmm
+
+
+
+
+
+
+
+		
+		
+
+
+
+
+
+*/
 
 
 
