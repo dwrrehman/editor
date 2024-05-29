@@ -528,14 +528,14 @@ loop:
 		else if (c == 'f') goto do_c;
 		else if (c == 'q') goto done;
 		else if (c == 's') save();
-		else if (c == 'x') redo();
+		else if (c == 'j') redo();
 		else if (c == 'z') undo();
 		else if (c == 'c') copy(0);
 		else if (c == 'd') copy(1);
 		else if (c == 'v') paste();
 		else if (c == 'w') local_paste();
 		else if (c == 'b') { ecb_to_clip(); goto do_c; }
-		else if (c == 'j') literal = 1;
+		else if (c == 'x') literal = 1;
 		else { printf("error: unknown command '%d'", c); fflush(stdout); }
 	}
 	goto loop;
