@@ -1,34 +1,26 @@
 #include <stdio.h>   // 202402191.234834: this version of the editor is trying to
-#include <stdlib.h>  // make as simplest and robustful of minimalist screen based editor
+#include <stdlib.h>  // make as simplest and robustful of a minimalist screen-based editor
 #include <string.h>  // as possible, to make it not ever crash.
-#include <iso646.h>  // it will probably also have an automatic saving and autosaving  system.
+#include <iso646.h>  // it will probably also have an automatic saving and autosaving system.
 #include <unistd.h>
-#include <fcntl.h>
-#include <termios.h> // finished main implementation on 202403015.223257.
+#include <fcntl.h>   // finished main implementation on 202403015.223257.
+#include <termios.h>
 #include <time.h>
 #include <stdbool.h>
-
-	// we should add easy keybindings for making the editor controlable via our voice! using talon!!! using some sort of modal commands, with lots of shortcuts for common things we want to do!!! very important. 
-	// and make this system not interfere with the regular way of using the text editor with keys. 
-
-	//      voice is the ultimate ergonomic typing method. we should really use it primarily. yay. this will be cool lol. yay
-
-
-
-
 #include <errno.h>
 #include <ctype.h>
 #include <time.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/ioctl.h>
-#include <sys/time.h> 
-#include <sys/wait.h> 
+#include <sys/time.h>
+#include <sys/wait.h>
 #include <stdint.h>
 #include <signal.h>       //       alias pbpaste="xclip -selection clipboard -o" 
 #include <stdnoreturn.h>  //       alias pbcopy="xclip -selection c"
+
 typedef uint64_t nat;
-enum modes { keyboard_mode, voice_mode };
+
 struct action {
 	nat parent, pre, post;
 	uint32_t choice;
@@ -36,8 +28,10 @@ struct action {
 	char c;
 	uint16_t _;
 };
+
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
 static const nat autosave_frequency = 100;
+
 static bool moved = 0, selecting = 0;
 static nat cursor = 0, count = 0, anchor = 0, origin = 0, finish = 0, head = 0, action_count = 0,
        desired = 0, cliplength = 0, screen_size = 0, autosave_counter = 0;
@@ -464,6 +458,7 @@ int main(int argc, const char** argv) {
 	sigaction(SIGWINCH, &action, NULL);
 	struct sigaction action2 = {.sa_handler = interrupted}; 
 	sigaction(SIGINT, &action2, NULL);
+
 	if (argc < 2) goto new;
 	strlcpy(filename, argv[1], sizeof filename);
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
@@ -475,6 +470,7 @@ int main(int argc, const char** argv) {
 	text = malloc(count);
 	read(file, text, count);
 	close(file);
+
 new: 	origin = 0; cursor = 0; anchor = (nat) ~0;
 	finish_action((struct action){.parent = (nat) ~0}, 0);
 	tcgetattr(0, &terminal);
@@ -485,6 +481,7 @@ new: 	origin = 0; cursor = 0; anchor = (nat) ~0;
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSAFLUSH, &terminal_copy);
 	write(1, "\033[?1049h\033[?25l", 14);
+
 loop:	display(1);
 	char c = 0;
 	read(0, &c, 1);
@@ -501,6 +498,7 @@ loop:	display(1);
 	if ((unsigned char) c >= 32 or c == 10 or c == 9) { if (selecting) cut(); insert(c, 1); }
 	else { printf("error: ignoring input byte '%d'", c); fflush(stdout); getchar(); } 
 	goto loop;
+
 do_c:	if (not cliplength) goto loop;
 	else if (not strcmp(clipboard, "exit")) goto done;
 	else if (not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
@@ -510,10 +508,53 @@ do_c:	if (not cliplength) goto loop;
 	else if (not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);	
 	else { printf("unknown command: %s\n", clipboard); getchar(); }
 	goto loop;
+
 done:	write(1, "\033[?25h\033[?1049l", 14);
 	tcsetattr(0, TCSAFLUSH, &terminal);
 	save(); exit(0);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -2249,6 +2290,32 @@ int main(int argc, const char** argv) {
 
 
 
+
+
+
+
+
+
+202403214.005118:
+
+	// we should add easy keybindings for making the editor controlable via our voice! using talon!!! using some sort of modal commands, with lots of shortcuts for common things we want to do!!! very important. 
+	// and make this system not interfere with the regular way of using the text editor with keys. 
+
+	//      voice is the ultimate ergonomic typing method. we should really use it primarily. yay. this will be cool lol. yay
+
+
+
+
+
+
+
+
+
 */
+
+
+
+
+
 
 
