@@ -1,0 +1,10 @@
+this is the first document that i am writing using my new ex/ed like text editor, that is based off the modal editor source code that i wrote recently.
+
+so yeah, this actually seems to be quite usable, and really stable so far! although i havent fully implemented stuff lol. but yeah, so far its good i think.
+
+i guess we'll see if its actually as stable as i need it to be lol. idk. but yeah!
+
+cool beans lol. lets see if i implemented insert mode properly now lololol
+
+
+1202406053.025609

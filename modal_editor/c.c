@@ -401,6 +401,10 @@ static void execute(char* command) {
 	arguments[argument_count] = NULL;
 	write(1, "\033[?25h\033[?1049l", 14);
 	tcsetattr(0, TCSAFLUSH, &terminal);
+
+	for (nat i = 0; i < (nat) (window.ws_row * 2); i++) puts("");
+	printf("\033[H"); fflush(stdout);
+
 	create_process(arguments);
 	struct termios terminal_copy = terminal; 
 	terminal_copy.c_iflag &= ~((size_t) IXON);
