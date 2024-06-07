@@ -1,0 +1,5 @@
+okay this is my first document using this text editor, now!
+
+	i think its actually pretty stable, i have only ever seen one bug related to the origin so far, which i think i know how to fix actually, which is good. lol. so yeah! i think honestly we might be good to actually start using it for small stuff at least. still needs to be tested a tonnnn to make sure that it isnt going to crash. in particular, the undo tree system, and cutting text. those are the main two things lol.
+
+
