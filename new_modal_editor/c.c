@@ -30,8 +30,11 @@ struct action {
 	char* string;
 };
 
+
+#define disabled   (nat)~0
+
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
-static const nat autosave_frequency = 100; // (nat) -1; // -1 disables autosaving
+static const nat autosave_frequency = disabled; // (nat) -1; // -1 disables autosaving
 
 static nat 
 	moved = 0,          // delete the need for this variable. just use desired, i think..? or nothing?
@@ -42,7 +45,6 @@ static nat
 	action_count = 0, 
 	desired = 0, 
 	cliplength = 0, 
-	screen_size = 0, 
 	autosave_counter = 0;
 
 static char* text = NULL, * clipboard = NULL;
@@ -95,10 +97,6 @@ static void display(void) {
 	ioctl(0, TIOCGWINSZ, &window);
 	char screen[max_screen_size];
 	nat length = append("\033[H", 3, screen, 0);
-	if (*message) {
-		length += append(message, strlen(message), screen, length);
-		memset(message, 0, sizeof message);
-	}
 
 	static nat origin = 0;
 	if (not cursor_in_view(origin)) {
@@ -136,6 +134,12 @@ static void display(void) {
 		length += append("\033[K", 3, screen, length);
 		if (row < window.ws_row - 1) length += append("\n", 1, screen, length);
 		row++;
+	}
+
+	if (*message) {
+		length += append("\033[6;6H", 6, screen, length);
+		length += append(message, strlen(message), screen, length);
+		memset(message, 0, sizeof message);
 	}
 
 	write(1, screen, length);
@@ -218,8 +222,24 @@ static void word_right(void) {
 	}
 }
 
-static void write_file(const char* directory, char* name, size_t maxsize) {
+static void searchf(const char* string, nat length) {
+	nat t = 0;
+	loop: if (t == length or cursor >= count) return;
+	if (text[cursor] != string[t]) t = 0; else t++; 
+	right(); goto loop;
+}
 
+static void searchb(const char* string, nat length) {
+	nat t = length;
+	loop: if (not t or not cursor) return;
+	left(); t--; 
+	if (text[cursor] != string[t]) t = length;
+	goto loop;
+}
+
+
+
+static void write_file(const char* directory, char* name, size_t maxsize) {
 
 	print("write_file: saving file...\n");
 
@@ -260,12 +280,12 @@ static void save(void) {
 	if (autosave_counter < autosave_frequency) return;
 }
 
-static void finish_action(struct action node, char* string, nat length) {
+static void finish_action(struct action node, char* string, int64_t length) {
 	node.choice = 0;
 	node.parent = head;
 	node.post = cursor; 
-	node.string = string;
-	node.length = (int64_t) length;
+	node.string = strndup(string, (nat) length);
+	node.length = length;
 	head = action_count;
 	actions = realloc(actions, sizeof(struct action) * (action_count + 1));
 	actions[action_count++] = node;
@@ -278,9 +298,8 @@ static void insert(char* string, nat length, bool should_record) {
 	text = realloc(text, count + length);
 	memmove(text + cursor + length, text + cursor, count - cursor);
 	memcpy(text + cursor, string, length);
-	count += length; 
-	cursor += length;
-	if (should_record) finish_action(node, string, length);
+	count += length; cursor += length;
+	if (should_record) finish_action(node, string, (int64_t) length);
 }
 
 static void delete(nat length, bool should_record) {
@@ -289,12 +308,11 @@ static void delete(nat length, bool should_record) {
 	if (autosave_counter >= autosave_frequency and should_record) autosave();
 	if (length > 1 and should_record) autosave();
 	struct action node = { .pre = cursor };
-	cursor -= length;
-	count -= length; 
+	cursor -= length; count -= length; 
 	char* string = strndup(text + cursor, length);
 	memmove(text + cursor, text + cursor + length, count - cursor);
 	text = realloc(text, count);
-	if (should_record) finish_action(node, string, length);
+	if (should_record) finish_action(node, string, (int64_t) -length);
 }
 
 static void redo(void) {
@@ -320,8 +338,15 @@ static void redo(void) {
 	head = chosen_child;
 	const struct action node = actions[head];
 	cursor = node.pre; 
+	
 	if (node.length > 0) insert(node.string, (nat) node.length, 0); else delete((nat) -node.length, 0);
 	cursor = node.post;
+
+
+	char string[4096] = {0};
+	snprintf(string, sizeof string, "redo: redid %lldb, head now %llu...\n", node.length, head);
+	print(string);
+
 }
 
 static void undo(void) {
@@ -331,6 +356,10 @@ static void undo(void) {
 	if (node.length > 0) delete((nat) node.length, 0); else insert(node.string, (nat) -node.length, 0); 
 	cursor = node.pre;
 	head = node.parent;
+
+	char string[4096] = {0};
+	snprintf(string, sizeof string, "undo: undid %lldb, head now %llu...\n", node.length, head);
+	print(string);
 }
 
 
@@ -344,75 +373,27 @@ static void insert_dt(void) {
 	insert(datetime, strlen(datetime), 1);
 }
 
-static void set_anchor(void) { anchor = cursor;  }
-
 
 static void cut(void) {
-	if (not selecting or anchor == (nat) ~0) return;
-	if (anchor > count) anchor = count;
+	if (anchor > count or anchor == cursor) return;
 	if (anchor > cursor) { nat t = anchor; anchor = cursor; cursor = t; }
 	free(clipboard);
-	clipboard = strndup(text + anchor, cursor - anchor);
 	cliplength = cursor - anchor;
-	for (nat i = 0; i < cliplength and cursor; i++) delete(1);
-	anchor = (nat) ~0;
-	selecting = 0;
+	clipboard = strndup(text + anchor, cliplength);
+	delete(cliplength, 1);
+	anchor = disabled;
+
+	char string[4096] = {0};
+	snprintf(string, sizeof string, "cut: removed %llub from file at %llu...\n", cliplength, cursor);
+	print(string);
 }
 
-static void searchf(void) {
-	cut(); 
-	nat t = 0;
-	loop: if (t == cliplength or cursor >= count) return;
-	if (text[cursor] != clipboard[t]) t = 0; else t++; 
-	right(); goto loop;
-}
-
-static void searchb(void) {
-	cut(); 
-	nat t = cliplength;
-	loop: if (not t or not cursor) return;
-	left(); t--; 
-	if (text[cursor] != clipboard[t]) t = cliplength;
-	goto loop;
-}
-
-static void redo(void) {
-	nat chosen_child = 0, child_count = 0; 
-	for (nat i = 0; i < action_count; i++) {
-		if (actions[i].parent != head) continue;
-		if (child_count == actions[head].choice) chosen_child = i;
-		child_count++;
-	}
-	if (not child_count) return;
-	if (child_count >= 2) {
-		printf("\n\033[7m[      %u  :  %llu      ]\033[0m\n", 
-			actions[head].choice, child_count
-		); getchar(); 
-		actions[head].choice = (actions[head].choice + 1) % child_count;
-	}
-	head = chosen_child;
-	const struct action node = actions[head];
-	cursor = node.pre; 
-	if (node.inserting) insert(node.c, 0); else delete(0);
-	cursor = node.post;
-}
-
-static void undo(void) {
-	if (not head) return;
-	struct action node = actions[head];
-	cursor = node.post;
-	if (node.inserting) delete(0); else insert(node.c, 0); 
-	cursor = node.pre;
-	head = node.parent;
-}
-
-static inline void copy(bool should_delete) {
-	if (not selecting or anchor == (nat) ~0) return;
-	if (anchor > count) anchor = count;
-	if (anchor == cursor) { clear_anchor(); return; }
-
+static inline void copy(void) {
+	if (anchor > count or anchor == cursor) return;
 	cliplength = anchor < cursor ? cursor - anchor : anchor - cursor;
+	free(clipboard);
 	clipboard = strndup(text + (anchor < cursor ? anchor : cursor), cliplength);
+
 	FILE* globalclip = popen("pbcopy", "w");
 	if (not globalclip) {
 		perror("copy popen pbcopy");
@@ -420,8 +401,6 @@ static inline void copy(bool should_delete) {
 	}	
 	fwrite(clipboard, 1, cliplength, globalclip);
 	pclose(globalclip);
-	if (should_delete) cut();
-	clear_anchor();
 }
 
 static void insert_output(const char* input_command) {
@@ -446,15 +425,15 @@ static void insert_output(const char* input_command) {
 		length += l;
 	}
 	pclose(f);
-	for (nat i = 0; i < length; i++) insert(string[i], 1);
+	insert(string, length, 1);
 	free(string);
 }
 
 static void window_resized(int _) {if(_){} ioctl(0, TIOCGWINSZ, &window); }
 static noreturn void interrupted(int _) {if(_){} 
 	write(1, "\033[?25h", 6);
-	tcsetattr(0, TCSAFLUSH, &terminal);
-	save(); exit(0); 
+	tcsetattr(0, TCSANOW, &terminal);
+	save(); exit(0);
 }
 
 static void change_directory(const char* d) {
@@ -463,8 +442,7 @@ static void change_directory(const char* d) {
 		printf("directory=%s\n", d);
 		getchar(); return;
 	}
-	printf("changed to %s\n", d);
-	getchar();
+	print("changed directories\n");
 }
 
 static void create_process(char** args) {
@@ -509,18 +487,17 @@ static void execute(char* command) {
 	if (argument_length) goto process_word;
 	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
 	arguments[argument_count] = NULL;
-	write(1, "\033[?25h\033[?1049l", 14);
-	tcsetattr(0, TCSAFLUSH, &terminal);
+	write(1, "\033[?25h", 6);
+	tcsetattr(0, TCSANOW, &terminal);
 
 	for (nat i = 0; i < (nat) (window.ws_row * 2); i++) puts("");
 	printf("\033[H"); fflush(stdout);
 
 	create_process(arguments);
 	struct termios terminal_copy = terminal; 
-	terminal_copy.c_iflag &= ~((size_t) IXON);
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
-	tcsetattr(0, TCSAFLUSH, &terminal_copy);
-	write(1, "\033[?1049h\033[?25l", 14);
+	tcsetattr(0, TCSANOW, &terminal_copy);
+	write(1, "\033[?25l", 6);
 	free(arguments);
 }
 
@@ -536,29 +513,15 @@ static void jump_line(char* string) {
 	up_begin(); 
 }
 
-static void insert_string(const char* string) { for (nat i = 0; i < strlen(string); i++) insert(string[i], 1); }
-static void paste(void) { if (selecting) cut(); insert_output("pbpaste"); }
-static void local_paste(void) { for (nat i = 0; i < cliplength; i++) insert(clipboard[i], 1); }
+
+
+static void paste(void) { insert_output("pbpaste"); }
+static void local_paste(void) { insert(clipboard, cliplength, 1); }
+
 static void half_page_up(void)   { for (int i = 0; i < (window.ws_row) / 2; i++) up(); } 
 static void half_page_down(void) { for (int i = 0; i < (window.ws_row) / 2; i++) down(); }
-static void paste_ecb(void) { for (nat i = 0; i < cliplength1; i++) insert(clipboard1[i], 1); }
-static void set_ecb(char* string) {
-	free(clipboard1); 
-	cliplength1 = strlen(string);
-	clipboard1 = strdup(string);
-}
-static void ecb_to_clip(void) {
-	free(clipboard); cliplength = cliplength1;
-	clipboard = strndup(clipboard1, cliplength1);
-}
-static void insert_dt(void) {
-	char datetime[32] = {0};
-	struct timeval t = {0};
-	gettimeofday(&t, NULL);
-	struct tm* tm = localtime(&t.tv_sec);
-	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-	insert_string(datetime);
-}
+
+
 
 int main(int argc, const char** argv) {
 
@@ -578,20 +541,19 @@ int main(int argc, const char** argv) {
 	text = malloc(count);
 	read(file, text, count);
 	close(file);
-new: 	cursor = 0; anchor = (nat) ~0;
-	finish_action((struct action){.parent = (nat) ~0}, 0);
+new: 	cursor = 0; anchor = disabled;
+	finish_action((struct action) {0}, NULL, (int64_t) 0);
 	tcgetattr(0, &terminal);
 	struct termios terminal_copy = terminal; 
 	terminal_copy.c_cc[VMIN] = 1; 
-	terminal_copy.c_cc[VTIME] = 0;  //vmin=1,vtime=0   
-	terminal_copy.c_iflag &= ~((size_t) IXON);
+	terminal_copy.c_cc[VTIME] = 0;
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
-	tcsetattr(0, TCSAFLUSH, &terminal_copy);
+	tcsetattr(0, TCSANOW, &terminal_copy);
 	write(1, "\033[?25l", 6);
         bool is_inserting = 0;
 	char history[5] = {0};
 loop:
-	display(1);
+	display();
 	char c = 0;
 	read(0, &c, 1);
 	if (is_inserting) {
@@ -605,12 +567,12 @@ loop:
 			history[4] == 'd'
 		) {
 			memset(history, 0, 5);
-			delete(1); delete(1); delete(1); delete(1); delete(1); 
+			delete(5, 1);
 			is_inserting = false; 
 		}
 		else if (c == 27) is_inserting = false;
-		else if (c == 127) { if (cursor) delete(1); }
-		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(c, 1);
+		else if (c == 127) delete(1,1);
+		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1, 1);
 		else { 
 			printf("error: ignoring input byte '%d'", c); 
 			fflush(stdout); 
@@ -619,48 +581,45 @@ loop:
 		memmove(history + 1, history, 4);
 		history[0] = c;
 	} else {
-		if (literal) { insert(c, 1); literal = 0; goto loop; }
 		c = (char) tolower(c);
-		if ((false)) {}
-		else if (c == 27) {}
-		else if (c == 9) insert(9, 1);
-		else if (c == 10) insert(10, 1);
-		else if (c == 32) insert(32, 1);
-		else if (c == 't') is_inserting = true;
-		else if (c == 'a') { if (not selecting) set_anchor(); else clear_anchor(); }
-		else if (c == 'r') { if (selecting) cut(); else if (cursor) delete(1); }
-		else if (c == 'n') left();
-		else if (c == 'u') down();
-		else if (c == 'p') up();
-		else if (c == 'i') right();
+		if (c == 27) {}
+		else if (c == 'a') anchor = anchor == disabled ? cursor : disabled; 
+		else if (c == 'b') paste();
+		else if (c == 'c') save();
+		else if (c == 'd') searchb("hello", 5);
 		else if (c == 'e') word_left();
-		else if (c == 'o') word_right();
+		else if (c == 'f') {}
+		else if (c == 'g') goto do_c;
 		else if (c == 'h') half_page_up();
-		else if (c == 'm') half_page_down();
+		else if (c == 'i') right();
+		else if (c == 'j') {}
 		else if (c == 'k') up_begin();
 		else if (c == 'l') down_end();
-		else if (c == 'y') searchf();
-		else if (c == 'g') searchb();
-		else if (c == 'f') goto do_c;
+		else if (c == 'm') half_page_down();
+		else if (c == 'n') left();
+		else if (c == 'o') word_right();
+		else if (c == 'p') up();
 		else if (c == 'q') goto done;
-		else if (c == 's') save();
-		else if (c == 'j') redo();
-		else if (c == 'z') undo();
-		else if (c == 'c') copy(0);
-		else if (c == 'd') copy(1);
-		else if (c == 'v') paste();
+		else if (c == 'r') { if (anchor == disabled) delete(1,1); else cut(); }
+		else if (c == 's') searchf("hello", 5);
+		else if (c == 't') is_inserting = 1;
+		else if (c == 'u') down();
+		else if (c == 'v') {}
 		else if (c == 'w') local_paste();
-		else if (c == 'b') { ecb_to_clip(); goto do_c; }
-		else if (c == 'x') literal = 1;
+		else if (c == 'x') redo();
+		else if (c == 'y') copy();
+		else if (c == 'z') undo();
+
 		else { printf("error: unknown command '%d'", c); fflush(stdout); }
 	}
+
 	goto loop;
 do_c:	if (not cliplength) goto loop;
 	else if (not strcmp(clipboard, "exit")) goto done;
 	else if (not strcmp(clipboard, "dt")) insert_dt();
 	else if (not strncmp(clipboard, "nop ", 4)) {}
-	else if (not strncmp(clipboard, "copy ", 5)) set_ecb(clipboard + 5);
-	else if (not strcmp(clipboard, "paste")) paste_ecb();
+	
+
 	else if (not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
 	else if (not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
 	else if (not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
@@ -668,13 +627,21 @@ do_c:	if (not cliplength) goto loop;
 	else if (not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);	
 	else { printf("unknown command: %s\n", clipboard); getchar(); }
 	goto loop;
-done:	write(1, "\033[?25h\033[?1049l", 14);
-	tcsetattr(0, TCSAFLUSH, &terminal);
+done:	write(1, "\033[?25h", 6);
+	tcsetattr(0, TCSANOW, &terminal);
 	save(); exit(0);
 }
 
 
 
+
+
+
+
+
+
+// else if (not strncmp(clipboard, "copy ", 5)) set_ecb(clipboard + 5);
+// else if (not strcmp(clipboard, "paste")) paste_ecb();
 
 
 
@@ -805,6 +772,47 @@ static void interpret_arrow_key(void) {
 
 
 // static void clear_anchor(void) { if (not selecting) return; anchor = (nat) ~0; selecting = 0; }
+
+
+
+
+
+
+
+static void paste_ecb(void) { for (nat i = 0; i < cliplength1; i++) insert(clipboard1[i], 1); }
+static void set_ecb(char* string) {
+	free(clipboard1); 
+	cliplength1 = strlen(string);
+	clipboard1 = strdup(string);
+}
+static void ecb_to_clip(void) {
+	free(clipboard); cliplength = cliplength1;
+	clipboard = strndup(clipboard1, cliplength1);
+}
+static void insert_dt(void) {
+	char datetime[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+	insert_string(datetime);
+}
+
+
+
+{ ecb_to_clip(); goto do_c; }
+
+
+
+
+// static void insert_string(const char* string) { for (nat i = 0; i < strlen(string); i++) insert(string[i], 1); }
+
+
+
+
+
+
+static void set_anchor(void) { anchor = cursor; }
 
 
 
