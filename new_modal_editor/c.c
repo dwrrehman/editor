@@ -107,12 +107,14 @@ static void display(void) {
 		if (cursor < origin) { 
 		while (origin and 
 		not cursor_in_view(origin)){
-		origin--; 
+		do origin--; while (origin and 
+		text[origin - 1] != 10);
 		} }
 		else if (cursor > origin) { 
 		while (origin < count 
 		and not cursor_in_view(origin)) {
-		origin++; 
+		do origin++; while (origin < count and
+		(not origin or text[origin - 1] != 10));
 		} }
 	}
 
