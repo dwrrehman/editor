@@ -77,20 +77,24 @@ static void print(const char* string) {
 static nat cursor_in_view(nat origin) {
 	nat i = origin, row = 0, column = 0;
 	for (; i < count; i++) {
-		if (row >= window.ws_row) break;
-		if (i == cursor) return true;
+		
 		if (text[i] == 10) {
-		nl:	if (row < window.ws_row - 1) {}
+			if (i == cursor) return true;
+		nl:	
 			row++; column = 0;
 		} else if (text[i] == 9) {
 			nat amount = 8 - column % 8;
 			column += amount;
+			if (i == cursor) return true;
 		} else {
+			if (i == cursor) return true;
 			if (column >= window.ws_col - 2) goto nl;
 			else if ((unsigned char) text[i] >> 6 != 2 and text[i] >= 32) column++;
 		}
+		if (row >= window.ws_row) break;
 	}
-	return i == cursor;
+	if (i == cursor) return true;
+	return false;
 }
 
 static void display(void) {
@@ -127,7 +131,6 @@ static void display(void) {
 			else if ((unsigned char) text[i] >> 6 != 2 and text[i] >= 32) column++;
 		}
 	}
-
 	if (i == cursor or i == anchor) length += append("\033[7m \033[0m", 9, screen, length);
 
 	while (row < window.ws_row) {
@@ -269,15 +272,15 @@ static void write_file(const char* directory, char* name, size_t maxsize) {
 }
 
 static void autosave(void) {
-	print("autosaving file...\n");
-	write_file(autosave_directory, autosavename, sizeof autosavename); 
 	autosave_counter = 0;
+
+	print("autosaving file...\n");
+	write_file(autosave_directory, autosavename, sizeof autosavename);
 }
 
 static void save(void) {
 	print("saving file...");
-	write_file("./", filename, sizeof filename); 
-	if (autosave_counter < autosave_frequency) return;
+	write_file("./", filename, sizeof filename);
 }
 
 static void finish_action(struct action node, char* string, int64_t length) {
@@ -396,8 +399,10 @@ static inline void copy(void) {
 
 	FILE* globalclip = popen("pbcopy", "w");
 	if (not globalclip) {
-		perror("copy popen pbcopy");
-		getchar(); return;
+		char string[4096] = {0};
+		snprintf(string, sizeof string, "copy: error: pbcopy: %s...\n", strerror(errno));
+		print(string);
+		return;
 	}	
 	fwrite(clipboard, 1, cliplength, globalclip);
 	pclose(globalclip);
@@ -411,9 +416,11 @@ static void insert_output(const char* input_command) {
 
 	FILE* f = popen(command, "r");
 	if (not f) {
-		printf("error: could not execute \"%s\"\n", command);
-		perror("insert_output popen");
-		getchar(); return;
+		char string[4096] = {0};
+		snprintf(string, sizeof string, "insert output: error: could not execute %s, popen: %s...\n", 
+			command, strerror(errno));
+		print(string);
+		return;
 	}
 	char* string = NULL;
 	size_t length = 0;
@@ -438,21 +445,33 @@ static noreturn void interrupted(int _) {if(_){}
 
 static void change_directory(const char* d) {
 	if (chdir(d) < 0) {
-		perror("change directory chdir");
-		printf("directory=%s\n", d);
-		getchar(); return;
+		char string[4096] = {0};
+		snprintf(string, sizeof string, "change directory: error: could not ct into %s: chdir: %s...\n", 
+			d, strerror(errno));
+		print(string);
+		return;
 	}
 	print("changed directories\n");
 }
 
 static void create_process(char** args) {
 	pid_t pid = fork();
-	if (pid < 0) { perror("fork"); getchar(); return; }
+	if (pid < 0) { 
+		char string[4096] = {0};
+		snprintf(string, sizeof string, "create procress: error: fork: %s...\n", strerror(errno));
+		print(string);
+		return;
+	}
 	if (not pid) {
 		if (execve(args[0], args, environ) < 0) { perror("execve"); exit(1); }
 	} 
 	int status = 0;
-	if ((pid = wait(&status)) == -1) { perror("wait"); getchar(); return; }
+	if ((pid = wait(&status)) == -1) { 
+		char string[4096] = {0};
+		snprintf(string, sizeof string, "create procress: error: wait: %s...\n", strerror(errno));
+		print(string);
+		return;
+	}
 	char dt[32] = {0};
 	struct timeval t = {0};
 	gettimeofday(&t, NULL);
@@ -574,14 +593,14 @@ loop:
 		else if (c == 127) delete(1,1);
 		else if ((unsigned char) c >= 32 or c == 10 or c == 9) insert(&c, 1, 1);
 		else { 
-			printf("error: ignoring input byte '%d'", c); 
-			fflush(stdout); 
-			getchar();
+			char string[4096] = {0};
+			snprintf(string, sizeof string, "error: ignoring input byte '%d'...\n", c);
+			print(string);
 		}
 		memmove(history + 1, history, 4);
 		history[0] = c;
 	} else {
-		c = (char) tolower(c);
+		// c = (char) tolower(c);
 		if (c == 27) {}
 		else if (c == 'a') anchor = anchor == disabled ? cursor : disabled; 
 		else if (c == 'b') paste();
@@ -610,7 +629,11 @@ loop:
 		else if (c == 'y') copy();
 		else if (c == 'z') undo();
 
-		else { printf("error: unknown command '%d'", c); fflush(stdout); }
+		else { 
+			char string[4096] = {0};
+			snprintf(string, sizeof string, "error: unknown command '%d'...\n", c);
+			print(string);
+		}
 	}
 
 	goto loop;
@@ -625,7 +648,11 @@ do_c:	if (not cliplength) goto loop;
 	else if (not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
 	else if (not strncmp(clipboard, "index ", 6)) jump_index(clipboard + 6);
 	else if (not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);	
-	else { printf("unknown command: %s\n", clipboard); getchar(); }
+	else { 
+		char string[4096] = {0};
+		snprintf(string, sizeof string, "error: unknown command \"%s\"...\n", clipboard);
+		print(string);
+	}
 	goto loop;
 done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);

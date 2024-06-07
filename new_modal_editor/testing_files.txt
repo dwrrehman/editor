@@ -1,3 +1,6 @@
+if (row < window.ws_row - 1) if (row < window.ws_row - 1) if (row < window.ws_row - 1) top of file 
+
+
 length += append(message, strlen(message), screen, length);length += append(message, strlen(message), screen, length);
 #include <stdio.h>   // 202402191.234834: a modal text editor written by dwrr. 
 #include <stdlib.h>
@@ -19,6 +22,15 @@ length += append(message, strlen(message), screen, length);length += append(mess
 #include <stdint.h>
 #include <signal.h>
 #include <stdnoreturn.h>
+
+
+for (nat i = 0; i < count; i++) {
+	
+}
+
+
+
+
 
 typedef uint64_t nat;
 
@@ -98,7 +110,12 @@ static const nat autosave_frequency = 100; // (nat) -1; // -1 disables autosavin
 
 
 
-
+hello there from space!
+this is my cool editor lol.
+lets see if the last line works now lol.
+YAYYYY IT DOESEEEE OMG YAYY
+okay yeah so that was the problem lol. 
+wow that was super simple to fix lololol
 
 
 
@@ -5872,10 +5889,15 @@ done:	write(1, "\033[?25h", 6);
 
 
 
+i mean, it actually does work here lol
 
 
 
-
+like, right here.
+like, it does work here.
+which is interestinggg hm.
+yeah. but then we don't get the right origin for when we are at the end though. so thats the problem lol. hm......
+interestinggg
 
 
 
@@ -5911,5 +5933,53 @@ interesting lol. this is much closer though. nice!!!
 lets paste something large now!
 
 
+hello there from space
 
 
+yay
+okay this works at least
+i think so
+
+
+q
+
+hello tere from space!
+this is kind of working. crap it isnt nvm. hmmm
+
+okay yeah this is problematic lol. 
+hmmmttttttttttttt
+
+
+
+
+okay finally, this works?
+nopeeee shoottt
+
+resiouslyyyy
+
+why is this now working
+WHY?!
+this is so stuipd
+
+
+okay lets try this now
+
+wait
+
+
+i think this works now
+omg
+
+hello
+hello there
+
+YAYYYY
+
+it works finallyyy
+
+
+OMGGGG
+
+
+
+YAYYYY
