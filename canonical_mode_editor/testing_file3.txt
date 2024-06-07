@@ -290,37 +290,48 @@ static void mid_print(void) {
 static void print_command_list(void) {
 
 	puts("commands:\n"
-		"else if (c == 'a') set_anchor();\n"
-		"else if (c == 'b') {}\n"
-		"else if (c == 'c') {}\n"
-		"else if (c == 'd') insert_dt();\n"
-		"else if (c == 'e') execute(input + 1);\n"
-		"else if (c == 'f') information(input, n);\n"
-		"else if (c == 'g') {}\n"
-		"else if (c == 'h') scroll_up(input, n);\n"
-		"else if (c == 'i') goto loop;\n"
-		"else if (c == 'j') change_directory(dir_placeholder);\n"
-		"else if (c == 'k') backspace();\n"
-		"else if (c == 'l') jump_line(input, n);\n"
-		"else if (c == 'm') scroll_down(input, n);\n"
-		"else if (c == 'n') search_forwards(input, n);\n"
-		"else if (c == 'o') clear_screen();\n"
-		"else if (c == 'p') print_document();\n"
-		"else if (c == 'q') goto quit;\n"
-		"else if (c == 'r') cut(input, n);\n"
-		"else if (c == 's') copy(input, n);\n"
-		"else if (c == 't') enter_insert_mode();\n"
-		"else if (c == 'u') search_backwards(input, n);\n"
-		"else if (c == 'v') {}\n"
-		"else if (c == 'w') write_file(\"./\", filename);\n"
-		"else if (c == 'x') redo();\n"
-		"else if (c == 'y') {}\n"
-		"else if (c == 'z') undo();\n"
-		"else if (c == '?') print_command_list();\n"
+		"(c == 'a') set_anchor();\n"
+		"(c == 'b') {}\n"
+		"(c == 'c') {}\n"
+		"(c == 'd') {}\n"
+		"(c == 'e') execute(input + 1);\n"
+		"(c == 'f') information(input, n);\n"
+		"(c == 'g') insert_dt();\n"
+		"(c == 'h') scroll_up(input, n);\n"
+		"(c == 'i') {}\n"
+		"(c == 'j') change_directory(\"default_directory_name\");\n"
+		"(c == 'k') backspace();\n"
+		"(c == 'l') jump_line(input, n);\n"
+		"(c == 'm') scroll_down(input, n);\n"
+		"(c == 'n') search_forwards(input, n);\n"
+		"(c == 'o') clear_screen();\n"
+		"(c == 'p') print_document();\n"
+		"(c == 'q') goto quit;\n"
+		"(c == 'r') cut(input, n);\n"
+		"(c == 's') copy(input, n);\n"
+		"(c == 't') { inserting = 1; puts(\"entered insert mode\"); } \n"
+		"(c == 'u') search_backwards(input, n);\n"
+		"(c == 'v') {}\n"
+		"(c == 'w') write_file(\"./\", filename);\n"
+		"(c == 'x') redo();\n"
+		"(c == 'y') {}\n"
+		"(c == 'z') undo();\n"
+		"(c == '?') print_command_list();\n"
 	);
 }
 
 
+
+
+/*
+static void debug_command(char* input, nat n) {
+	printf("debug: found command: \"");
+	for (nat i = 0; i < n; i++) {
+		printf("%c", input[i] == 10 ? '*' : input[i]);
+	}
+	puts("\"");
+}
+*/
 
 
 
@@ -551,179 +562,9 @@ quit:
 
 
 
+
+
 /*
-
-
-NEW IDEA:
-
-
-		LETS build the compiler/interpreter     into this utility!!!
-
-			ie, make each of these single letter commands actually a defined word, that does a particular thing, 
-
-				and make q   be   the word quit instead     ie, do lexing/parsing of our language in the editor, 
-
-
-				ie, our text editor is just the interpreter  itself!!!
-
-
-
-							they 			ie, only compiletime evaluation, basically. 
-
-
-
-				so yeah! should be amazing to use. omg
-
-
-
-		yayyyyyyyy lets do that 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-202406064.232428:
-
-	heres the commands that we are currently using in the editor:
-
-			and their keybindings, 
-
-			and or what word they will use to be spelt as in the dirctionary lol
-
-
-
-
-a	anchor
-dt	insert dt
-e	execute command
-file	file information
-h	scroll up by one page (N)
-nop 	no operation
-cd	change directory
-k	backspace
-line	jump line (N)
-m	scroll down by one page (N)
-n<str>	search forwards
-o	clear screen
-document  print document
-exit	goto quit
-r<str>  cut string and insert replacement
-s	copy selectionto clipboard
-t	insert mode
-u<str>	search backwards
-w	write file
-x	redo
-z	undo
-help	print command list
-
-
-
-
-
-
-sorting by length, we get:
-
-
-
-document  print document
-exit	goto quit
-help	print command list
-file	file information
-line	jump line (N)
-
-nop 	no operation
-dt	insert dt
-cd	change directory (string)
-
-e	execute command (string)
-h	scroll up by one page (N)
-m	scroll down by one page (N)
-
-s	copy selectionto clipboard
-t	insert mode
-w	write file
-x	redo
-z	undo
-o	clear screen
-k	backspace
-a	anchor
-
-
-n<str>	search forwards
-u<str>	search backwards
-r<str>  cut string and insert replacement
-
-
-
-
-
-
-
-	so yeah, the commands that need to be spelt as single letters, are, mostly,    and the ones that arent as often used have longer names, that describe them better too. so yeah. 
-
-
-
-		the main problem that we are having now, is that     the last three commands,    searching, and replacement, 
-
-
-				basically, find and replace, 
-
-
-						is actually like...
-
-
-								they NEEDD to take an arbitrary string argument,  basically always..
-
-
-
-
-			like it doesnt make sense to split up the argument much from the command
-
-
-					and thus we can't reallyyyy formulate those as words   in theprogramming language
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-static void debug_command(char* input, nat n) {
-	printf("debug: found command: \"");
-	for (nat i = 0; i < n; i++) {
-		printf("%c", input[i] == 10 ? '*' : input[i]);
-	}
-	puts("\"");
-}
-
-
-
-
-
 
 
 
@@ -764,10 +605,6 @@ user manual:
 	
 	h<number>	move cursor backwards by number characters, or page_size/2 if absent.
 			cursors position is displayed after the move.
-
-	f<number>	display information about the current file, and cursor positions. 
-			if number is given, it overwrites the value of page size.
-
 
 	
 		

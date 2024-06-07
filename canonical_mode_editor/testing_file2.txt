@@ -40,12 +40,14 @@ struct action {
 	char* string;
 };
 
-static nat cursor = 0, anchor = 0, count = 0, head = 0, action_count = 0, inserting = 0;
+static nat cursor = 0, anchor = 0, count = 0, head = 0, action_count = 0;
 static struct action* actions = NULL;
 static char* text = NULL;
-static char filename[4096] = {0};
 
-static nat page_size = 650;
+static nat page_size = 1024;
+
+
+static char filename[4096] = {0};
 
 extern char** environ;
 
@@ -290,39 +292,37 @@ static void mid_print(void) {
 static void print_command_list(void) {
 
 	puts("commands:\n"
-		"else if (c == 'a') set_anchor();\n"
-		"else if (c == 'b') {}\n"
-		"else if (c == 'c') {}\n"
-		"else if (c == 'd') insert_dt();\n"
-		"else if (c == 'e') execute(input + 1);\n"
-		"else if (c == 'f') information(input, n);\n"
-		"else if (c == 'g') {}\n"
-		"else if (c == 'h') scroll_up(input, n);\n"
-		"else if (c == 'i') goto loop;\n"
-		"else if (c == 'j') change_directory(dir_placeholder);\n"
-		"else if (c == 'k') backspace();\n"
-		"else if (c == 'l') jump_line(input, n);\n"
-		"else if (c == 'm') scroll_down(input, n);\n"
-		"else if (c == 'n') search_forwards(input, n);\n"
-		"else if (c == 'o') clear_screen();\n"
-		"else if (c == 'p') print_document();\n"
-		"else if (c == 'q') goto quit;\n"
-		"else if (c == 'r') cut(input, n);\n"
-		"else if (c == 's') copy(input, n);\n"
-		"else if (c == 't') enter_insert_mode();\n"
-		"else if (c == 'u') search_backwards(input, n);\n"
-		"else if (c == 'v') {}\n"
-		"else if (c == 'w') write_file(\"./\", filename);\n"
-		"else if (c == 'x') redo();\n"
-		"else if (c == 'y') {}\n"
-		"else if (c == 'z') undo();\n"
-		"else if (c == '?') print_command_list();\n"
+		" q quit editor\n"
+		" o clear screen\n"
+		" t go into insert mode\n"
+		" g insert datetime at cursor\n"
+		" f display current filename\n"
+		" n get cursor and count file information\n"
+		" j<string> change directory\n"
+		" p<number> set page size\n"
+		" e<string> execute shell command\n"
+		" z undo last action\n"
+		" x redo last action\n"
+		" k delete character bebind cursor\n"
+		" r<string> select-for-replacement a string in document (unimplemented) \n"
+		" s<string> search for string forwards\n"
+		" a<string> search for string backwards\n"
+		" d display entire document\n"
+		" m print page before cursor\n"
+		" c print page after cursor\n"
+		" w write file contents\n"
+		" ? this help menu\n"
+		" \\ndrt\\n end insert"
 	);
 }
 
-
-
-
+static void debug_command(char* input, nat n) {
+	printf("debug: found command: \"");
+	for (nat i = 0; i < n; i++) {
+		printf("%c", input[i] == 10 ? '*' : input[i]);
+	}
+	puts("\"");
+}
 
 static void clear_screen(void) {
 	for (nat i = 0; i < 100; i++) puts("");
@@ -337,35 +337,26 @@ static void backspace(void) {
 	"(document now %llub long)...", cursor, count);
 }
 
-static nat number(char* string) {
-	nat r = 0, s = 1;
-	for (nat i = 0; string[i]; i++) {
-		if (string[i] == ' ') continue;
-		else if (string[i] == 'o') s <<= 1;
-		else if (string[i] == 'l') { r += s; s <<= 1; } 
-		else break;
-	}
-	return r;
-}
-
 static void scroll_up(char* input, nat n) {
-	const nat amount = n == 2 ? page_size >> 1 : number(input + 1);
+	const nat amount = n == 2 ? page_size >> 1 : (nat) atoi(input + 1);
 	if (cursor >= amount) cursor -= amount; else cursor = 0;
-	printf("[went backward %llub, cursor is now at %llu]...\n", amount, cursor);
+	printf("moving %llu bytes backwards...\n", amount);
+	printf("cursor is now at %llu...\n", cursor);
 	mid_print();
 }
 
 static void scroll_down(char* input, nat n) {
-	const nat amount = n == 2 ? page_size >> 1 : number(input + 1);
+	const nat amount = n == 2 ? page_size >> 1 : (nat) atoi(input + 1);
 	if (cursor + amount < count) cursor += amount; else cursor = count;
-	printf("[went forward %llub, cursor is now at %llu]...\n", amount, cursor);
+	printf("advancing %llu bytes forwards...\n", amount);
+	printf("cursor is now at %llu...\n", cursor);
 	mid_print();
 }
 
 static void information(char* input, nat n) {
 	if (n > 2) {
 		puts("setting page size...");
-		page_size = number(input + 1);
+		page_size = (nat) atoi(input + 1);
 	}
 	printf("filename is \"%s\"\n", filename[0] ? filename : "(new file)");
 	printf("page_size is set to %llu.\n", page_size);
@@ -436,10 +427,6 @@ static void copy(__attribute__((unused)) char* input, __attribute__((unused)) na
 	// calls     copy();
 }
 
-static void enter_insert_mode(void) {
-	puts("entered insert mode");
-	inserting = 1;
-}
 
 int main(int argc, const char** argv) {
 	struct sigaction action2 = {.sa_handler = interrupted}; 
@@ -452,7 +439,7 @@ int main(int argc, const char** argv) {
 	tcsetattr(0, TCSANOW, &terminal);
 	
 	char input[128] = {0}; 
-	nat inserted_count = 0;
+	nat inserting = 0, inserted_count = 0;
 	finish_action((struct action){.parent = (nat) ~0}, 0, 0);
 
 	if (argc < 2) goto loop;
@@ -470,7 +457,7 @@ loop:
 	memset(input, 0, sizeof input);
 	if (not inserting) { printf(". "); fflush(stdout); }
 	
-	const int64_t r = read(0, input, sizeof input - 1);
+	const int64_t r = read(0, input, sizeof input);
 	const nat n = (nat) r;
 	if (r < 0) {
 		puts("error: read returned < 0:");
@@ -491,23 +478,21 @@ loop:
 			insert(input, n, 1);
 		}
 	} else {
-		const char* dir_placeholder = "my_directory_name_here";
-
+		debug_command(input, n);
 		char c = *input;
 
-		if (n == 1) {}
-		else if (c == 32) {}
-		else if (c == 10) {}
+		if (c == 10) {}
+		if (c == ' ') {}
 		else if (c == 'a') set_anchor();
 		else if (c == 'b') {}
 		else if (c == 'c') {}
-		else if (c == 'd') insert_dt();
+		else if (c == 'd') {}
 		else if (c == 'e') execute(input + 1);
 		else if (c == 'f') information(input, n);
-		else if (c == 'g') {}
+		else if (c == 'g') insert_dt();
 		else if (c == 'h') scroll_up(input, n);
-		else if (c == 'i') goto loop;
-		else if (c == 'j') change_directory(dir_placeholder);
+		else if (c == 'i') {}
+		else if (c == 'j') change_directory("default_directory_name");
 		else if (c == 'k') backspace();
 		else if (c == 'l') jump_line(input, n);
 		else if (c == 'm') scroll_down(input, n);
@@ -517,14 +502,13 @@ loop:
 		else if (c == 'q') goto quit;
 		else if (c == 'r') cut(input, n);
 		else if (c == 's') copy(input, n);
-		else if (c == 't') enter_insert_mode();
+		else if (c == 't') { inserting = 1; puts("entered insert mode"); } 
 		else if (c == 'u') search_backwards(input, n);
 		else if (c == 'v') {}
 		else if (c == 'w') write_file("./", filename);
 		else if (c == 'x') redo();
-		else if (c == 'y') {}
+		else if (c == 'y') print_command_list();
 		else if (c == 'z') undo();
-		else if (c == '?') print_command_list();
 		else printf("error: unknown command: %c\n", c);
 	}
 	goto loop;
@@ -551,179 +535,9 @@ quit:
 
 
 
+
+
 /*
-
-
-NEW IDEA:
-
-
-		LETS build the compiler/interpreter     into this utility!!!
-
-			ie, make each of these single letter commands actually a defined word, that does a particular thing, 
-
-				and make q   be   the word quit instead     ie, do lexing/parsing of our language in the editor, 
-
-
-				ie, our text editor is just the interpreter  itself!!!
-
-
-
-							they 			ie, only compiletime evaluation, basically. 
-
-
-
-				so yeah! should be amazing to use. omg
-
-
-
-		yayyyyyyyy lets do that 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-202406064.232428:
-
-	heres the commands that we are currently using in the editor:
-
-			and their keybindings, 
-
-			and or what word they will use to be spelt as in the dirctionary lol
-
-
-
-
-a	anchor
-dt	insert dt
-e	execute command
-file	file information
-h	scroll up by one page (N)
-nop 	no operation
-cd	change directory
-k	backspace
-line	jump line (N)
-m	scroll down by one page (N)
-n<str>	search forwards
-o	clear screen
-document  print document
-exit	goto quit
-r<str>  cut string and insert replacement
-s	copy selectionto clipboard
-t	insert mode
-u<str>	search backwards
-w	write file
-x	redo
-z	undo
-help	print command list
-
-
-
-
-
-
-sorting by length, we get:
-
-
-
-document  print document
-exit	goto quit
-help	print command list
-file	file information
-line	jump line (N)
-
-nop 	no operation
-dt	insert dt
-cd	change directory (string)
-
-e	execute command (string)
-h	scroll up by one page (N)
-m	scroll down by one page (N)
-
-s	copy selectionto clipboard
-t	insert mode
-w	write file
-x	redo
-z	undo
-o	clear screen
-k	backspace
-a	anchor
-
-
-n<str>	search forwards
-u<str>	search backwards
-r<str>  cut string and insert replacement
-
-
-
-
-
-
-
-	so yeah, the commands that need to be spelt as single letters, are, mostly,    and the ones that arent as often used have longer names, that describe them better too. so yeah. 
-
-
-
-		the main problem that we are having now, is that     the last three commands,    searching, and replacement, 
-
-
-				basically, find and replace, 
-
-
-						is actually like...
-
-
-								they NEEDD to take an arbitrary string argument,  basically always..
-
-
-
-
-			like it doesnt make sense to split up the argument much from the command
-
-
-					and thus we can't reallyyyy formulate those as words   in theprogramming language
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-static void debug_command(char* input, nat n) {
-	printf("debug: found command: \"");
-	for (nat i = 0; i < n; i++) {
-		printf("%c", input[i] == 10 ? '*' : input[i]);
-	}
-	puts("\"");
-}
-
-
-
-
-
 
 
 
@@ -734,14 +548,11 @@ user manual:
 
 	
 
-	? 	print a helpful list of commands and their keybindings.
-
-
-
-
 	q 	quit the editor.
 
 	t	enter insert mode.
+
+	y 	print a helpful list of commands and their keybindings.
 
 	w 	write contents of buffer to file named filename.
 
@@ -764,10 +575,6 @@ user manual:
 	
 	h<number>	move cursor backwards by number characters, or page_size/2 if absent.
 			cursors position is displayed after the move.
-
-	f<number>	display information about the current file, and cursor positions. 
-			if number is given, it overwrites the value of page size.
-
 
 	
 		

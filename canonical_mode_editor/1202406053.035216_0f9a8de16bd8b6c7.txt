@@ -1,0 +1,96 @@
+1202406064.233014
+	hiii!
+
+	i am writing this using the new canonical mode text editor, that is kinda similar to ed in some ways, 
+
+		its actually really usable so far, and i havent seen it crash at all, so far, which is why i am writing this in it lol
+
+
+			but yeah, currently,    
+
+
+			just like this after noon,        i realized that i coulddd   possiblyyyyyy
+
+
+			build the programming language (at least the interpreted portion of it!) (ie the compiletime system)
+
+				into the editor!!!   and make the editing language    THE LANGUAGE ITSELF 
+
+
+											like, the programming language /  assembly language   itelf
+
+					basically, we can partially merge these projects lol 
+
+
+						anddddd
+
+
+								actually, more generally,    this thing is actually more like a shell, 
+
+
+								which just so happens to be able to edit files lol.   which is pretty interseting 
+
+
+			and while you are editing text,  you are actually basically writing shell/programming language     commands/directives lol
+
+
+				which is pretty insane to think about lol 
+
+
+
+						like,             it really does question the whole distinction between a shell and an editor, honestly, 
+
+				they really should be the same entity
+
+
+										and thus       programmaatically manipulating text    
+
+
+
+									should be like a core primitive, i think. 
+
+
+
+
+
+			hm
+					yeah
+								i really do feel like this is the way forwards.. 
+
+
+
+						we just have to be careful-   becase like, we can very easily destroy the file if we arent careful lolol 
+
+
+
+			luckily, we will using using the undo tree system a ton to prevent bad mistakes, but yet. still. 
+
+
+
+anyways
+
+
+lets try inserting this text now lol 
+
+
+into the document 
+
+
+
+
+okay cool it looks like this actually really works!!
+
+
+		i think i am just going to implement    cut  /    replacement       real quick, and then im going to try to code something up using this editor, and keep in mind the usecases of where a programming language functioaltiy could be useful if it was in the editor as commandssss   just like the editing commands  too 
+
+
+
+		so yeah, we'll do that now lol 
+
+
+
+talk to you again soon!
+
+
+dwrr
+
