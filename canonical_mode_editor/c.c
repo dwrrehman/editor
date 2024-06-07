@@ -40,10 +40,11 @@ struct action {
 	char* string;
 };
 
-
-static nat cursor = 0, count = 0, head = 0,  action_count = 0;
+static nat cursor = 0, anchor = 0, count = 0, head = 0, action_count = 0;
 static struct action* actions = NULL;
 static char* text = NULL;
+
+static nat page_size = 1024;
 
 
 static char filename[4096] = {0};
@@ -88,8 +89,6 @@ static void delete(nat length, bool should_record) {
 	text = realloc(text, count);
 	if (should_record) finish_action(node, string, length);
 }
-
-
 
 static void redo(void) {
 	nat chosen_child = 0, child_count = 0; 
@@ -268,33 +267,172 @@ static void write_file(const char* directory, char* name) {
 }
 
 
-static nat page_size = 1024;
-
-
 
 static void mid_print(void) {
+	const nat half = page_size >> 1;
+	const nat amount_down = half < count - cursor ? half : count - cursor;
+	const nat amount_up = half < cursor ? half : cursor;
 
-	const nat amount_down = page_size/2 < count - cursor ? page_size/2 : count - cursor;
-	const nat amount_up = page_size/2 < cursor ? page_size/2 : cursor;
-
-	puts("printing pages around cursor:");
-	puts("--------------");
-	fwrite(text + cursor - amount_up, 1, amount_up, stdout);
-	if (text[cursor] == 10)
-		printf("\033[7m%s\033[0m\n", "[N]");
-	else 
-		printf("\033[7m%c\033[0m", text[cursor]);
-	fwrite(text + cursor + 1, 1, amount_down, stdout);
-	
-	puts("\n--------------");
+	puts("::");
+	for (nat i = cursor - amount_up; i < cursor + amount_down; i++) {
+		if (i == cursor) {
+			if (text[i] == 10) printf("\033[7m%s\033[0m\n", "[N]");
+			else printf("\033[7m%c\033[0m", text[i]);
+		} else if (i == anchor) {
+			if (text[i] == 10) printf("\033[7m%s\033[0m\n", "[N]");
+			else printf("\033[7m%cA\033[0m", text[i]);
+		} else putchar(text[i]);
+	}
+	puts("");
 }
+
+//fwrite(text + cursor - amount_up, 1, amount_up, stdout);
+//fwrite(text + cursor + 1, 1, amount_down, stdout);
+
+static void print_command_list(void) {
+
+	puts("commands:\n"
+		" q quit editor\n"
+		" o clear screen\n"
+		" t go into insert mode\n"
+		" g insert datetime at cursor\n"
+		" f display current filename\n"
+		" n get cursor and count file information\n"
+		" j<string> change directory\n"
+		" p<number> set page size\n"
+		" e<string> execute shell command\n"
+		" z undo last action\n"
+		" x redo last action\n"
+		" k delete character bebind cursor\n"
+		" r<string> select-for-replacement a string in document (unimplemented) \n"
+		" s<string> search for string forwards\n"
+		" a<string> search for string backwards\n"
+		" d display entire document\n"
+		" m print page before cursor\n"
+		" c print page after cursor\n"
+		" w write file contents\n"
+		" ? this help menu\n"
+		" \\ndrt\\n end insert"
+	);
+}
+
+static void debug_command(char* input, nat n) {
+	printf("debug: found command: \"");
+	for (nat i = 0; i < n; i++) {
+		printf("%c", input[i] == 10 ? '*' : input[i]);
+	}
+	puts("\"");
+}
+
+static void clear_screen(void) {
+	for (nat i = 0; i < 100; i++) puts("");
+	fflush(stdout);
+	printf("\033[H");
+	fflush(stdout);
+}
+
+static void backspace(void) {
+	delete(1, 1); 
+	printf("deleting 1 byte at cursor %llu, "
+	"(document now %llub long)...", cursor, count);
+}
+
+static void scroll_up(char* input, nat n) {
+	const nat amount = n == 2 ? page_size >> 1 : (nat) atoi(input + 1);
+	if (cursor >= amount) cursor -= amount; else cursor = 0;
+	printf("moving %llu bytes backwards...\n", amount);
+	printf("cursor is now at %llu...\n", cursor);
+	mid_print();
+}
+
+static void scroll_down(char* input, nat n) {
+	const nat amount = n == 2 ? page_size >> 1 : (nat) atoi(input + 1);
+	if (cursor + amount < count) cursor += amount; else cursor = count;
+	printf("advancing %llu bytes forwards...\n", amount);
+	printf("cursor is now at %llu...\n", cursor);
+	mid_print();
+}
+
+static void information(char* input, nat n) {
+	if (n > 2) {
+		puts("setting page size...");
+		page_size = (nat) atoi(input + 1);
+	}
+	printf("filename is \"%s\"\n", filename[0] ? filename : "(new file)");
+	printf("page_size is set to %llu.\n", page_size);
+	printf("cursor is at %llu.\n"
+	       "anchor is at %llu.\n"
+		"document is %llu bytes long.\n"
+		"there are %llu actions done on the file.\n",
+		cursor, anchor, count, action_count
+	);
+}
+
+static void print_document(void) {
+	printf(	"printing full document: "
+		"(%llu bytes, cursor at %llu, anchor at %llu)\n", 
+		count, cursor, anchor);
+	fwrite(text, 1, count, stdout);
+	puts("");
+}
+
+static void search_forwards(char* input, nat n) {
+	if (n > 2) searchf(input + 1, n - 2); 
+	else {
+		puts("error: search_forwards with no arguments is unimplemented...");
+	}
+
+	printf("cursor is at %llu.\n", cursor);
+	mid_print();
+}
+
+static void search_backwards(char* input, nat n) {
+	if (n > 2) searchb(input + 1, n - 2); 
+	else {
+		puts("error: search_backwards with no arguments is unimplemented...");
+	}
+
+	printf("cursor is at %llu.\n", cursor);
+	mid_print();
+}
+
+static void set_anchor(void) {
+	printf("setting anchor to be at cursor, at %llu.\n", cursor);
+	anchor = cursor;
+}
+
+static void jump_line(/*char* input, nat n*/__attribute__((unused)) char* input, __attribute__((unused)) nat n) {
+
+	puts("jump line: unimplemented...");
+	return;
+}
+
+static void cut(__attribute__((unused)) char* input, __attribute__((unused)) nat n) {
+
+	puts("cut: replacing a selection, ...unimplemented at the moment.");
+
+	return;
+
+	// amount = cursor - anchor; // if anchor is first. 
+	// calls     delete(amount, 1);
+}
+
+static void copy(__attribute__((unused)) char* input, __attribute__((unused)) nat n) {
+
+	puts("copy: copying a selection, ...unimplemented at the moment.");
+
+	return;
+
+	// amount = cursor - anchor; // if anchor is first. 
+	// calls     copy();
+}
+
 
 int main(int argc, const char** argv) {
 	struct sigaction action2 = {.sa_handler = interrupted}; 
 	sigaction(SIGINT, &action2, NULL);
 
 	struct termios terminal = {0};
-
 	tcgetattr(0, &terminal);
 	terminal.c_cc[VKILL] = _POSIX_VDISABLE;
 	terminal.c_cc[VWERASE] = _POSIX_VDISABLE;
@@ -302,10 +440,7 @@ int main(int argc, const char** argv) {
 	
 	char input[128] = {0}; 
 	nat inserting = 0, inserted_count = 0;
-
 	finish_action((struct action){.parent = (nat) ~0}, 0, 0);
-
-	
 
 	if (argc < 2) goto loop;
 	strlcpy(filename, argv[1], sizeof filename);
@@ -320,24 +455,18 @@ int main(int argc, const char** argv) {
 	close(file);
 loop:
 	memset(input, 0, sizeof input);
-	if (not inserting) {
-		printf(". ");
-		fflush(stdout);
-	}
+	if (not inserting) { printf(". "); fflush(stdout); }
 	
-	const int64_t n = read(0, input, sizeof input);
-
-
-	if (n < 0) {
+	const int64_t r = read(0, input, sizeof input);
+	const nat n = (nat) r;
+	if (r < 0) {
 		puts("error: read returned < 0:");
 		perror("read");
-		printf("[continue]");
-		fflush(stdout);
-		getchar();
-	}
-	if (not n) { puts("disconnect!"); goto done; }
+		printf("attempting to save the current file contents and quit...\n");
+		printf("[continue]"); fflush(stdout); getchar(); goto quit;
 
-
+	} else if (not r) { puts("read returned 0, end of stdin!"); goto quit; }
+	
 	if (inserting) {
 		if (not strcmp(input, "drt\n")) {
 			puts("exited insert mode");
@@ -345,58 +474,156 @@ loop:
 			inserted_count = 0;
 			inserting = 0;
 		} else {
-			inserted_count += (nat) n;
-			insert(input, (nat) n, 1);
+			inserted_count += n;
+			insert(input, n, 1);
 		}
 	} else {
-
-		printf("debug: found command: \"");
-		for (int64_t i = 0; i < n; i++) {
-			printf("%c", input[i] == 10 ? '*' : input[i]);
-		}
-		puts("\"");
-
+		debug_command(input, n);
 		char c = *input;
 
-		if (c == 'q') goto done;
-		else if (c == 'o') {
-			for (nat i = 0; i < 100; i++) puts("");
-			fflush(stdout);
-			printf("\033[H");
-			fflush(stdout);
-		}
-		else if (c == 't') { inserting = 1; puts("entered insert mode"); } 
-		else if (c == 'g') insert_dt();
-		else if (c == 'j') change_directory("default_directory_name");
-		else if (c == 'f') printf("current filename: \"%s\"\n", filename[0] ? filename : "(new file)");
+		if (c == 10) {}
+		if (c == ' ') {}
+		else if (c == 'a') set_anchor();
+		else if (c == 'b') {}
+		else if (c == 'c') {}
+		else if (c == 'd') {}
 		else if (c == 'e') execute(input + 1);
-		else if (c == 'p') page_size = (nat) atoi(input + 1);
-		else if (c == 'z') undo();
-		else if (c == 'x') redo();
-		else if (c == 'k') { 
-			printf("deleting one char at %llu, "
-			"(document was %llub long)...", 
-			cursor, count
-			); 
-			delete(1, 1); 
-		}
+		else if (c == 'f') information(input, n);
+		else if (c == 'g') insert_dt();
+		else if (c == 'h') scroll_up(input, n);
+		else if (c == 'i') {}
+		else if (c == 'j') change_directory("default_directory_name");
+		else if (c == 'k') backspace();
+		else if (c == 'l') jump_line(input, n);
+		else if (c == 'm') scroll_down(input, n);
+		else if (c == 'n') search_forwards(input, n);
+		else if (c == 'o') clear_screen();
+		else if (c == 'p') print_document();
+		else if (c == 'q') goto quit;
+		else if (c == 'r') cut(input, n);
+		else if (c == 's') copy(input, n);
+		else if (c == 't') { inserting = 1; puts("entered insert mode"); } 
+		else if (c == 'u') search_backwards(input, n);
+		else if (c == 'v') {}
 		else if (c == 'w') write_file("./", filename);
-		else if (c == 'l') printf("cursor is currently located at %llu.\n"
-					"document is %llu bytes long.\n"
-					"there are %llu actions done on the file.\n",
-					cursor, count, action_count
-				);
-		else if (c == 'd') {
-			puts("printing the entire document:");
-			puts("--------------");
-			fwrite(text, 1, count, stdout);
-			puts("\n--------------");
-		}
+		else if (c == 'x') redo();
+		else if (c == 'y') print_command_list();
+		else if (c == 'z') undo();
+		else printf("error: unknown command: %c\n", c);
+	}
+	goto loop;
+quit:
+	write_file("./", filename);
+	printf("exiting and saving %llub to \"%s\"...\n", count, filename);
+	exit(0);
+}
 
-		else if (c == 'm') {
 
-			mid_print();
-		}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+
+
+
+user manual:
+=============
+
+	
+
+	q 	quit the editor.
+
+	t	enter insert mode.
+
+	y 	print a helpful list of commands and their keybindings.
+
+	w 	write contents of buffer to file named filename.
+
+
+
+
+	a 	set anchor position to current cursor position.
+
+
+
+	n<string> 	search forwards for a string, and move cursor to after the string.
+			cursors position is displayed after the move.
+	
+	u<string>	search backwards for a string, and move cursor to before the string.
+			cursors position is displayed after the move.
+
+
+	m<number>	move cursor forwards by number characters, or page_size/2 if absent.
+			cursors position is displayed after the move.
+	
+	h<number>	move cursor backwards by number characters, or page_size/2 if absent.
+			cursors position is displayed after the move.
+
+	
+		
+
+
+
+
+	x	redo last insert/delete action performed.
+
+	z 	undo last insert/delete action performed.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+		not useful anymore, really,   since mid_print exists:
+
+
+
+
 
 		else if (c == 'c') {
 			const nat amount = page_size < count - cursor ? page_size : count - cursor;
@@ -414,72 +641,14 @@ loop:
 			puts("\n--------------");
 		}
 
-		else if (c == 's') {
-			if (n >= 2) searchf(input + 1, (nat) n - 2); 
-			else puts("error: searchf given not enough arguments...");
-			printf("cursor is now looking at %llu.\n", cursor);
-			mid_print();
-		}
 
-		else if (c == 'a') {
-			if (n >= 2) searchb(input + 1, (nat) n - 2); 
-			else puts("error: searchb given not enough arguments...");
-			printf("cursor is now looking at %llu.\n", cursor);
-			mid_print();
-		}
 
-		else if (c == 'n') {
-			const nat amount = page_size >> 1;
-			if (cursor + amount < count) cursor += amount; else cursor = count;
-			printf("advancing pagesize/2 %llu bytes forwards...\n", amount);
-			printf("now looking at cursor %llu...\n", cursor);
-			mid_print();
-		}
 
-		else if (c == 'u') {
-			const nat amount = page_size >> 1;
-			if (cursor >= amount) cursor -= amount; else cursor = 0;
-			printf("moving pagesize/2 %llu bytes backwards...\n", amount);
-			printf("now looking at cursor %llu...\n", cursor);
-			mid_print();
-		}
 
-		else if (c == 'r') puts("replacing a string with another string, ...unimplemented at the moment.");
-		else if (c == 'h') {
-			puts("commands:\n"
-				" q quit editor\n"
-				" o clear screen\n"
-				" t go into insert mode\n"
-				" g insert datetime at cursor\n"
-				" f display current filename\n"
-				" n get cursor and count file information\n"
-				" j<string> change directory\n"
-				" p<number> set page size\n"
-				" e<string> execute shell command\n"
-				" z undo last action\n"
-				" x redo last action\n"
-				" k delete character bebind cursor\n"
-				
-				" r<string> select-for-replacement a string in document (unimplemented) \n"
-				" s<string> search for string forwards\n"
-				" a<string> search for string backwards\n"
-				" d display entire document\n"
-				" m print page before cursor\n"
-				" c print page after cursor\n"
-				" w write file contents\n"
-				" h this help menu\n"
-				" \\ndrt\\n end insert"
-			);
-		} else {
-			printf("error: unknown command: %c\n", c);
-		}
-	}
-	goto loop;
-done:
-	printf("exiting and saving the file...\n");
-	write_file("./", filename);
-	exit(0);
-}
+*/
+
+
+
 
 
 
