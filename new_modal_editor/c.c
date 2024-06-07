@@ -34,7 +34,7 @@ struct action {
 #define disabled   (nat)~0
 
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
-static const nat autosave_frequency = disabled; // (nat) -1; // -1 disables autosaving
+static const nat autosave_frequency = disabled;
 
 static nat 
 	moved = 0,          // delete the need for this variable. just use desired, i think..? or nothing?
@@ -225,14 +225,22 @@ static void word_right(void) {
 	}
 }
 
-static void searchf(const char* string, nat length) {
+static void searchf(void) {
+	const char* string = clipboard;
+	nat length = cliplength;
+	if (anchor != disabled) cut();
+
 	nat t = 0;
 	loop: if (t == length or cursor >= count) return;
 	if (text[cursor] != string[t]) t = 0; else t++; 
 	right(); goto loop;
 }
 
-static void searchb(const char* string, nat length) {
+static void searchb(void) {
+	const char* string = clipboard;
+	nat length = cliplength;
+	if (anchor != disabled) cut();
+
 	nat t = length;
 	loop: if (not t or not cursor) return;
 	left(); t--; 
@@ -309,7 +317,7 @@ static void delete(nat length, bool should_record) {
 	if (cursor < length) return;
 	if (should_record) autosave_counter++;
 	if (autosave_counter >= autosave_frequency and should_record) autosave();
-	if (length > 1 and should_record) autosave();
+	if (length > 10 and should_record) autosave();
 	struct action node = { .pre = cursor };
 	cursor -= length; count -= length; 
 	char* string = strndup(text + cursor, length);
@@ -600,18 +608,19 @@ loop:
 		memmove(history + 1, history, 4);
 		history[0] = c;
 	} else {
-		// c = (char) tolower(c);
+
 		if (c == 27) {}
+		else if (c == ' ') {}
 		else if (c == 'a') anchor = anchor == disabled ? cursor : disabled; 
-		else if (c == 'b') paste();
-		else if (c == 'c') save();
-		else if (c == 'd') searchb("hello", 5);
+		else if (c == 'b') {}
+		else if (c == 'c') copy();
+		else if (c == 'd') searchb();
 		else if (c == 'e') word_left();
-		else if (c == 'f') {}
-		else if (c == 'g') goto do_c;
+		else if (c == 'f') goto do_c;
+		else if (c == 'g') 
 		else if (c == 'h') half_page_up();
 		else if (c == 'i') right();
-		else if (c == 'j') {}
+		else if (c == 'j') paste();
 		else if (c == 'k') up_begin();
 		else if (c == 'l') down_end();
 		else if (c == 'm') half_page_down();
@@ -620,13 +629,13 @@ loop:
 		else if (c == 'p') up();
 		else if (c == 'q') goto done;
 		else if (c == 'r') { if (anchor == disabled) delete(1,1); else cut(); }
-		else if (c == 's') searchf("hello", 5);
+		else if (c == 's') searchf();
 		else if (c == 't') is_inserting = 1;
 		else if (c == 'u') down();
-		else if (c == 'v') {}
+		else if (c == 'v') insert_dt();
 		else if (c == 'w') local_paste();
 		else if (c == 'x') redo();
-		else if (c == 'y') copy();
+		else if (c == 'y') paste();
 		else if (c == 'z') undo();
 
 		else { 
@@ -637,17 +646,31 @@ loop:
 	}
 
 	goto loop;
-do_c:	if (not cliplength) goto loop;
-	else if (not strcmp(clipboard, "exit")) goto done;
-	else if (not strcmp(clipboard, "dt")) insert_dt();
-	else if (not strncmp(clipboard, "nop ", 4)) {}
+do_c:;
+	if (anchor == disabled) { save(); goto loop; }
 	
+	const char* s = strndup(
+		text + (anchor < cursor 
+			? anchor 
+			: cursor),
+		anchor < cursor 
+			? cursor - anchor 
+			: anchor - cursor);
 
-	else if (not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
-	else if (not strncmp(clipboard, "change ", 7)) change_directory(clipboard + 7);
-	else if (not strncmp(clipboard, "do ", 3)) execute(clipboard + 3);
-	else if (not strncmp(clipboard, "index ", 6)) jump_index(clipboard + 6);
-	else if (not strncmp(clipboard, "line ", 5)) jump_line(clipboard + 5);	
+	if (not strcmp(s, "exit")) goto done;
+	else if (not strcmp(s, "dt")) 
+		insert_dt();
+	else if (not strncmp(s, "nop ", 4)) {}
+	else if (not strncmp(s, "insert ", 7))
+		insert_output(s + 7);
+	else if (not strncmp(s, "change ", 7))
+		change_directory(s + 7);
+	else if (not strncmp(s, "do ", 3)) 
+		execute(s + 3);
+	else if (not strncmp(s, "index ", 6)) 
+		jump_index(s + 6);
+	else if (not strncmp(s, "line ", 5))
+		jump_line(s + 5);
 	else { 
 		char string[4096] = {0};
 		snprintf(string, sizeof string, "error: unknown command \"%s\"...\n", clipboard);
