@@ -1,7 +1,7 @@
 #include <stdio.h>   // 202402191.234834: a modal text editor written by dwrr. 
 #include <stdlib.h>
 #include <string.h>
-#include <iso646.h>
+#include <iso646.h> 
 #include <unistd.h>
 #include <fcntl.h>
 #include <termios.h>
@@ -104,8 +104,16 @@ static void display(void) {
 
 	static nat origin = 0;
 	if (not cursor_in_view(origin)) {
-		if (cursor < origin) { while (origin and not cursor_in_view(origin)) origin--; }
-		else if (cursor > origin) { while (origin < count and not cursor_in_view(origin)) origin++; }
+		if (cursor < origin) { 
+		while (origin and 
+		not cursor_in_view(origin)){
+		origin--; 
+		} }
+		else if (cursor > origin) { 
+		while (origin < count 
+		and not cursor_in_view(origin)) {
+		origin++; 
+		} }
 	}
 
 	nat i = origin, row = 0, column = 0;
@@ -224,31 +232,6 @@ static void word_right(void) {
 		right();
 	}
 }
-
-static void searchf(void) {
-	const char* string = clipboard;
-	nat length = cliplength;
-	if (anchor != disabled) cut();
-
-	nat t = 0;
-	loop: if (t == length or cursor >= count) return;
-	if (text[cursor] != string[t]) t = 0; else t++; 
-	right(); goto loop;
-}
-
-static void searchb(void) {
-	const char* string = clipboard;
-	nat length = cliplength;
-	if (anchor != disabled) cut();
-
-	nat t = length;
-	loop: if (not t or not cursor) return;
-	left(); t--; 
-	if (text[cursor] != string[t]) t = length;
-	goto loop;
-}
-
-
 
 static void write_file(const char* directory, char* name, size_t maxsize) {
 
@@ -398,6 +381,28 @@ static void cut(void) {
 	snprintf(string, sizeof string, "cut: removed %llub from file at %llu...\n", cliplength, cursor);
 	print(string);
 }
+
+static void searchf(void) {
+	if (anchor != disabled) cut();
+	const char* string = clipboard;
+	nat length = cliplength;
+	nat t = 0;
+	loop: if (t == length or cursor >= count) return;
+	if (text[cursor] != string[t]) t = 0; else t++; 
+	right(); goto loop;
+}
+
+static void searchb(void) {
+	if (anchor != disabled) cut();
+	const char* string = clipboard;
+	nat length = cliplength;
+	nat t = length;
+	loop: if (not t or not cursor) return;
+	left(); t--; 
+	if (text[cursor] != string[t]) t = length;
+	goto loop;
+}
+
 
 static inline void copy(void) {
 	if (anchor > count or anchor == cursor) return;
@@ -549,7 +554,6 @@ static void half_page_up(void)   { for (int i = 0; i < (window.ws_row) / 2; i++)
 static void half_page_down(void) { for (int i = 0; i < (window.ws_row) / 2; i++) down(); }
 
 
-
 int main(int argc, const char** argv) {
 
 	struct sigaction action = {.sa_handler = window_resized}; 
@@ -563,8 +567,8 @@ int main(int argc, const char** argv) {
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
 	int file = open(filename, O_RDONLY);
 	if (file < 0) { read_error: perror("load: read open file"); exit(1); }
-	struct stat s; fstat(file, &s);
-	count = (nat) s.st_size;
+	struct stat ss; fstat(file, &ss);
+	count = (nat) ss.st_size;
 	text = malloc(count);
 	read(file, text, count);
 	close(file);
@@ -617,10 +621,10 @@ loop:
 		else if (c == 'd') searchb();
 		else if (c == 'e') word_left();
 		else if (c == 'f') goto do_c;
-		else if (c == 'g') 
+		else if (c == 'g') paste();
 		else if (c == 'h') half_page_up();
 		else if (c == 'i') right();
-		else if (c == 'j') paste();
+		else if (c == 'j') {}
 		else if (c == 'k') up_begin();
 		else if (c == 'l') down_end();
 		else if (c == 'm') half_page_down();
@@ -635,7 +639,7 @@ loop:
 		else if (c == 'v') insert_dt();
 		else if (c == 'w') local_paste();
 		else if (c == 'x') redo();
-		else if (c == 'y') paste();
+		else if (c == 'y') goto do_c;
 		else if (c == 'z') undo();
 
 		else { 
@@ -649,7 +653,7 @@ loop:
 do_c:;
 	if (anchor == disabled) { save(); goto loop; }
 	
-	const char* s = strndup(
+	char* s = strndup(
 		text + (anchor < cursor 
 			? anchor 
 			: cursor),
