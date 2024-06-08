@@ -615,7 +615,7 @@ loop:
 	} else {
 		if (c == 27) {}
 		else if (c == ' ') {}
-		else if (c == 'a') searchb();
+		else if (c == 'a') anchor = anchor == disabled ? cursor : disabled;
 		else if (c == 'b') {}
 		else if (c == 'c') copy();
 		else if (c == 'd') searchf();
@@ -633,7 +633,7 @@ loop:
 		else if (c == 'p') up();
 		else if (c == 'q') goto done;
 		else if (c == 'r') { if (anchor == disabled) delete(1,1); else cut(); }
-		else if (c == 's') anchor = anchor == disabled ? cursor : disabled;
+		else if (c == 's') searchb();
 		else if (c == 't') is_inserting = 1;
 		else if (c == 'u') down();
 		else if (c == 'v') insert_dt();
