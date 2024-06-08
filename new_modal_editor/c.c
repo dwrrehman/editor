@@ -1,8 +1,8 @@
 #include <stdio.h>   // 202402191.234834: a modal text editor written by dwrr. 
-#include <stdlib.h>
-#include <string.h>
-#include <iso646.h> 
-#include <unistd.h>
+#include <stdlib.h>  // new modal editor: rewritten on 202406075.165239
+#include <string.h>  // to be more stable, and display text with less bugs. 
+#include <iso646.h>  // also redo all the keybinds and change semantics of 
+#include <unistd.h>  // many commands.
 #include <fcntl.h>
 #include <termios.h>
 #include <time.h>
@@ -29,7 +29,6 @@ struct action {
 	int64_t length;
 	char* string;
 };
-
 
 #define disabled   (nat)~0
 
@@ -358,7 +357,6 @@ static void undo(void) {
 	print(string);
 }
 
-
 static void insert_dt(void) {
 	char datetime[32] = {0};
 	struct timeval t = {0};
@@ -368,7 +366,6 @@ static void insert_dt(void) {
 	printf("insert_dt: inserted datetime \"%s\" at cursor %llu...\n", datetime, cursor);
 	insert(datetime, strlen(datetime), 1);
 }
-
 
 static void cut(void) {
 	if (anchor > count or anchor == cursor) return;
@@ -385,7 +382,7 @@ static void cut(void) {
 }
 
 static void searchf(void) {
-	if (anchor != disabled) cut();
+	cut();
 	const char* string = clipboard;
 	nat length = cliplength;
 	nat t = 0;
@@ -395,7 +392,7 @@ static void searchf(void) {
 }
 
 static void searchb(void) {
-	if (anchor != disabled) cut();
+	cut();
 	const char* string = clipboard;
 	nat length = cliplength;
 	nat t = length;
@@ -421,6 +418,12 @@ static inline void copy(void) {
 	}	
 	fwrite(clipboard, 1, cliplength, globalclip);
 	pclose(globalclip);
+	anchor = disabled;
+
+	char string[4096] = {0};
+	snprintf(string, sizeof string, "copy: copied %llub at %llu...\n", cliplength, cursor);
+	print(string);
+
 }
 
 static void insert_output(const char* input_command) {
@@ -455,7 +458,7 @@ static void window_resized(int _) {if(_){} ioctl(0, TIOCGWINSZ, &window); }
 static noreturn void interrupted(int _) {if(_){} 
 	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
-	save(); exit(0);
+	save(); puts(""); exit(0); 
 }
 
 static void change_directory(const char* d) {
@@ -547,17 +550,12 @@ static void jump_line(char* string) {
 	up_begin(); 
 }
 
-
-
 static void paste(void) { insert_output("pbpaste"); }
 static void local_paste(void) { insert(clipboard, cliplength, 1); }
-
 static void half_page_up(void)   { for (int i = 0; i < (window.ws_row) / 2; i++) up(); } 
 static void half_page_down(void) { for (int i = 0; i < (window.ws_row) / 2; i++) down(); }
 
-
 int main(int argc, const char** argv) {
-
 	struct sigaction action = {.sa_handler = window_resized}; 
 	sigaction(SIGWINCH, &action, NULL);
 	struct sigaction action2 = {.sa_handler = interrupted}; 
@@ -574,6 +572,7 @@ int main(int argc, const char** argv) {
 	text = malloc(count);
 	read(file, text, count);
 	close(file);
+
 new: 	cursor = 0; anchor = disabled;
 	finish_action((struct action) {0}, NULL, (int64_t) 0);
 	tcgetattr(0, &terminal);
@@ -614,13 +613,12 @@ loop:
 		memmove(history + 1, history, 4);
 		history[0] = c;
 	} else {
-
 		if (c == 27) {}
 		else if (c == ' ') {}
-		else if (c == 'a') anchor = anchor == disabled ? cursor : disabled; 
+		else if (c == 'a') searchb();
 		else if (c == 'b') {}
 		else if (c == 'c') copy();
-		else if (c == 'd') searchb();
+		else if (c == 'd') searchf();
 		else if (c == 'e') word_left();
 		else if (c == 'f') goto do_c;
 		else if (c == 'g') paste();
@@ -635,34 +633,24 @@ loop:
 		else if (c == 'p') up();
 		else if (c == 'q') goto done;
 		else if (c == 'r') { if (anchor == disabled) delete(1,1); else cut(); }
-		else if (c == 's') searchf();
+		else if (c == 's') anchor = anchor == disabled ? cursor : disabled;
 		else if (c == 't') is_inserting = 1;
 		else if (c == 'u') down();
 		else if (c == 'v') insert_dt();
 		else if (c == 'w') local_paste();
 		else if (c == 'x') redo();
-		else if (c == 'y') goto do_c;
+		else if (c == 'y') save();
 		else if (c == 'z') undo();
-
 		else { 
 			char string[4096] = {0};
 			snprintf(string, sizeof string, "error: unknown command '%d'...\n", c);
 			print(string);
 		}
 	}
-
 	goto loop;
-do_c:;
-	if (anchor == disabled) { save(); goto loop; }
-	
-	char* s = strndup(
-		text + (anchor < cursor 
-			? anchor 
-			: cursor),
-		anchor < cursor 
-			? cursor - anchor 
-			: anchor - cursor);
-
+do_c:
+	cut();
+	char* s = clipboard;
 	if (not strcmp(s, "exit")) goto done;
 	else if (not strcmp(s, "dt")) 
 		insert_dt();
@@ -685,9 +673,8 @@ do_c:;
 	goto loop;
 done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
-	save(); exit(0);
+	save(); puts(""); exit(0);
 }
-
 
 
 

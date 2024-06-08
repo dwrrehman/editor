@@ -3,3 +3,54 @@ okay this is my first document using this text editor, now!
 	i think its actually pretty stable, i have only ever seen one bug related to the origin so far, which i think i know how to fix actually, which is good. lol. so yeah! i think honestly we might be good to actually start using it for small stuff at least. still needs to be tested a tonnnn to make sure that it isnt going to crash. in particular, the undo tree system, and cutting text. those are the main two things lol.
 
 
+1202406075.170237:
+okay coollll so i think i solved the bug to do with the origin, and made it all so that the behavior of f, the execute command key, and s and d   the searchf and searchb keys,  are all uniform- they all do a cut as their first action they do. if the selection is nonempty, it will be cut. if its empty, we just look at clipboard. this is probably the most useful way to do things, i think, becuase it means that we just have to enter insert mode with     
+
+
+ohhh wait i am going to rebind the s and d and a commands
+
+
+	a   :     backwards saerch
+
+	s   :     set anchor
+
+	d   :     forwards search
+
+
+yeah thats probably going to be the keybindings, i think. that makes more sense and is more ergonomic lol. so yeah. yay. 
+
+
+
+cool 
+
+
+
+lets do that real quick, and then ill continue this lol
+
+
+
+
+1202406075.171152
+
+okayyyy i think i implemented it now!
+
+lets try it out lol. should be cool to use lol
+
+				for example, 
+
+
+			you just say
+
+			stthatdrtpund           to search forwards for it 
+
+						or change the last char to "a"
+
+							for backwards
+
+
+			pretty amazing!! i like it alot
+
+				
+
+
+
