@@ -33,7 +33,7 @@ struct action {
 #define disabled   (nat)~0
 
 static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
-static const nat autosave_frequency = 200;
+static const nat autosave_frequency = disabled;
 
 static nat 
 	moved = 0,          // delete the need for this variable. just use desired, i think..? or nothing?
@@ -76,9 +76,11 @@ static void print(const char* string) {
 static nat cursor_in_view(nat origin) {
 	nat i = origin, row = 0, column = 0;
 	for (; i < count; i++) {
+		
 		if (text[i] == 10) {
 			if (i == cursor) return true;
-		nl:	row++; column = 0;
+		nl:	
+			row++; column = 0;
 		} else if (text[i] == 9) {
 			nat amount = 8 - column % 8;
 			column += amount;
@@ -299,6 +301,7 @@ static void delete(nat length, bool should_record) {
 	if (cursor < length) return;
 	if (should_record) autosave_counter++;
 	if (autosave_counter >= autosave_frequency and should_record) autosave();
+	if (length > 10 and should_record) autosave();
 	struct action node = { .pre = cursor };
 	cursor -= length; count -= length; 
 	char* string = strndup(text + cursor, length);
@@ -672,6 +675,12 @@ done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
 	save(); puts(""); exit(0);
 }
+
+
+
+
+
+
 
 
 // else if (not strncmp(clipboard, "copy ", 5)) set_ecb(clipboard + 5);
