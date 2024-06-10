@@ -1,0 +1,49 @@
+hello!
+
+	this is a testing file, that i am writing, in order to test the editors ability to do stuff relating to autosaving. basically we are trying to make it autosave, so that it acutally saves the file in a seperate location every 200 keypresses that we do lol. it seems to be working pretty well now, so far, but i guess we'll see ... hmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm
+
+
+	ohhhhh we actually need to give the autosave directory lolol.. its autosaving into the current directory, which isnt as intended lololol. ill fix that now lol. mmk
+
+
+
+OHHHH
+
+	wait it was actually already workingggg lolol
+
+
+		basically, we were just printing out the wrong path   in terms of displaying thefile path that we had written to lol. so yeah. pretty simple fix lol. nice! lets see if it will happen again....
+
+		hmmmm yeah okay i think its working lol. i am pretty sure that everything is working now as far as autosaving is concerned lol.... at least i think lol. at least, i think. so far. 
+
+
+
+
+		okay cool!
+
+
+
+			so yeah
+
+
+
+
+				i am really loving how this editor is so far. 
+
+
+
+
+		i think i want to do more testing with it,    but eventually once it proves itself to be stable and such, 
+
+			ill probably just like start using it for real lol 
+
+
+
+			becuase its so fun to use 
+
+
+
+
+	yay
+
+

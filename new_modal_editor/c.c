@@ -32,7 +32,7 @@ struct action {
 
 #define disabled   (nat)~0
 
-static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";
+static const char* autosave_directory = "/Users/dwrr/root/personal/autosaves/";
 static const nat autosave_frequency = 200;
 
 static nat 
@@ -255,9 +255,9 @@ static void write_file(const char* directory, char* name, size_t maxsize) {
 	write(file, text, count);
 
 	char string[4096] = {0};
-	snprintf(string, sizeof string, "write_file: successfully wrote %llub to file \"%s\"...\n", count, filename);
+	snprintf(string, sizeof string, "write_file: successfully wrote %llub to file \"%s\"...\n", count, name);
 	print(string);
-
+	fsync(file);
 	close(file);
 }
 
