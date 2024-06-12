@@ -44,9 +44,10 @@ static nat
 	action_count = 0, 
 	desired = 0, 
 	cliplength = 0, 
+	tasklength = 0,
 	autosave_counter = 0;
 
-static char* text = NULL, * clipboard = NULL;
+static char* text = NULL, * clipboard = NULL, * taskboard = NULL;
 static struct action* actions = NULL;
 
 static char message[4096] = {0};
@@ -549,6 +550,27 @@ static void jump_line(char* string) {
 
 static void paste(void) { insert_output("pbpaste"); }
 static void local_paste(void) { insert(clipboard, cliplength, 1); }
+
+// static void paste_ecb(void) { for (nat i = 0; i < tasklength; i++) insert(taskboard[i], 1); }
+
+static void clip_to_ecb(void) {
+	char string[4096] = {0};
+	snprintf(string, sizeof string, "clip to ecb: copied %llub to task clipboard...\n", cliplength);
+	print(string);
+	free(taskboard);
+	tasklength = cliplength;
+	taskboard = strndup(clipboard, cliplength);
+}
+
+static void ecb_to_clip(void) {
+	char string[4096] = {0};
+	snprintf(string, sizeof string, "ecb to clip: copied %llub to main clipboard...\n", tasklength);
+	print(string);
+	free(clipboard);
+	cliplength = tasklength;
+	clipboard = strndup(taskboard, tasklength);
+}
+
 static void half_page_up(void)   { for (int i = 0; i < (window.ws_row) / 2; i++) up(); } 
 static void half_page_down(void) { for (int i = 0; i < (window.ws_row) / 2; i++) down(); }
 
@@ -613,7 +635,7 @@ loop:
 		if (c == 27) {}
 		else if (c == ' ') {}
 		else if (c == 'a') anchor = anchor == disabled ? cursor : disabled;
-		else if (c == 'b') {}
+		else if (c == 'b') { ecb_to_clip(); goto do_c; }
 		else if (c == 'c') copy();
 		else if (c == 'd') searchf();
 		else if (c == 'e') word_left();
@@ -621,7 +643,7 @@ loop:
 		else if (c == 'g') paste();
 		else if (c == 'h') half_page_up();
 		else if (c == 'i') right();
-		else if (c == 'j') {}
+		else if (c == 'j') clip_to_ecb();
 		else if (c == 'k') up_begin();
 		else if (c == 'l') down_end();
 		else if (c == 'm') half_page_down();
