@@ -574,6 +574,23 @@ static void ecb_to_clip(void) {
 static void half_page_up(void)   { for (int i = 0; i < (window.ws_row) / 2; i++) up(); } 
 static void half_page_down(void) { for (int i = 0; i < (window.ws_row) / 2; i++) down(); }
 
+static char remap(const char c, const nat is_inserting) {
+
+	const char upper_remap_alpha[26] = "AVMHRTGYUNEOLKP:QWSBFCDXJZ"
+	const char lower_remap_alpha[26] = "avmhrtgyuneolkp;qwsbfcdxjz"
+
+	if (c == 13 and is_inserting) return 10;
+
+	/*  to use qwerty, uncomment these lines:  */
+
+	//if (c >= 'A' and c <= 'Z') upper_remap_alpha[c - 'A'];
+	//if (c >= 'a' and c <= 'z') upper_remap_alpha[c - 'z'];
+
+
+
+	return c;
+}
+
 int main(int argc, const char** argv) {
 	struct sigaction action = {.sa_handler = window_resized}; 
 	sigaction(SIGWINCH, &action, NULL);
@@ -607,6 +624,7 @@ loop:
 	display();
 	char c = 0;
 	read(0, &c, 1);
+	c = remap(c, is_inserting);
 	if (is_inserting) {
 		if ((false)) {}
 		else if (
@@ -617,7 +635,11 @@ loop:
 			history[3] == 'r' and
 			history[4] == 'd'
 		) {
-			memset(history, 0, 5);
+			history[0] = 0;
+			history[1] = 0;
+			history[2] = 0;
+			history[3] = 0;
+			history[4] = 0;
 			delete(5, 1);
 			is_inserting = false; 
 		}
