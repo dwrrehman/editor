@@ -576,17 +576,17 @@ static void half_page_down(void) { for (int i = 0; i < (window.ws_row) / 2; i++)
 
 static char remap(const char c, const nat is_inserting) {
 
-	const char upper_remap_alpha[26] = "AVMHRTGYUNEOLKP:QWSBFCDXJZ"
-	const char lower_remap_alpha[26] = "avmhrtgyuneolkp;qwsbfcdxjz"
+	const char upper_remap_alpha[26] = "AVMHRTGYUNEOLKP:QWSBFCDXJZ";
+	const char lower_remap_alpha[26] = "avmhrtgyuneolkp;qwsbfcdxjz";
 
 	if (c == 13 and is_inserting) return 10;
+	
 
 	/*  to use qwerty, uncomment these lines:  */
-
 	//if (c >= 'A' and c <= 'Z') upper_remap_alpha[c - 'A'];
-	//if (c >= 'a' and c <= 'z') upper_remap_alpha[c - 'z'];
-
-
+	//if (c >= 'a' and c <= 'z') lower_remap_alpha[c - 'a'];
+	//if (c == ';') return 'i';
+	//if (c == 'I') return 'I';
 
 	return c;
 }
