@@ -599,7 +599,9 @@ int main(int argc, const char** argv) {
 	sigaction(SIGINT, &action2, NULL);
 
 	if (argc < 2) goto new;
-	strlcpy(filename, argv[1], sizeof filename);
+	// strlcpy(filename, argv[1], sizeof filename);
+	snprintf(filename, sizeof filename, "%s", argv[1]);
+
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
 	int file = open(filename, O_RDONLY);
