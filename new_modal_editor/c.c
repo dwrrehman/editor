@@ -427,8 +427,9 @@ static inline void copy(void) {
 static void insert_output(const char* input_command) {
 	save();
 	char command[4096] = {0};
-	strlcpy(command, input_command, sizeof command);
-	strlcat(command, " 2>&1", sizeof command);
+	//strlcpy(command, input_command, sizeof command);
+	//strlcat(command, " 2>&1", sizeof command);
+	snprintf(command, sizeof command, "%s 2>&1", input_command);
 
 	FILE* f = popen(command, "r");
 	if (not f) {
