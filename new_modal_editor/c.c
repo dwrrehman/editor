@@ -101,6 +101,7 @@ static void display(void) {
 	nat length = append("\033[H", 3, screen, 0);
 
 	static nat origin = 0;
+	if (origin > count) origin = count;
 	if (not cursor_in_view(origin)) {
 		if (cursor < origin) { 
 		while (origin and 
@@ -232,6 +233,34 @@ static void word_right(void) {
 		right();
 	}
 }
+
+static void write_string(const char* directory, 
+			char* w_string, nat w_length) {
+
+	print("write_string: saving clipboard...\n");
+	char name[4096] = {0};
+	srand((unsigned)time(0)); rand();
+	char datetime[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+	snprintf(name, sizeof name, "%s%s_%08x%08x.txt", directory, datetime, rand(), rand());
+	int flags = O_WRONLY | O_TRUNC | O_CREAT | O_EXCL;
+	mode_t permission = S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH;
+	print("write_file: creating file with generated name...\n");
+	
+	int file = open(name, flags, permission);
+	if (file < 0) { perror("save: open file"); puts(name); getchar(); }
+	write(file, w_string, w_length);
+
+	char string[4096] = {0};
+	snprintf(string, sizeof string, "write_file: successfully wrote %llub to file \"%s\"...\n", w_length, name);
+	print(string);
+	fsync(file);
+	close(file);
+}
+
 
 static void write_file(const char* directory, char* name, size_t maxsize) {
 
@@ -598,14 +627,29 @@ int main(int argc, const char** argv) {
 	struct sigaction action2 = {.sa_handler = interrupted}; 
 	sigaction(SIGINT, &action2, NULL);
 
-	if (argc < 2) goto new;
-	// strlcpy(filename, argv[1], sizeof filename);
-	snprintf(filename, sizeof filename, "%s", argv[1]);
+	if (argc == 0) exit(1);
 
+	else if (argc == 1) goto new;
+
+	else if (argc == 2) {
+		snprintf(filename, sizeof filename, "%s", argv[1]);
+
+	} else if (argc == 3 and argv[1][0] == '+') {
+		snprintf(filename, sizeof filename, "%s", argv[2]);
+
+	} else {
+		printf("received these %u arguments:\n", argc);
+		for (int i = 0; i < argc; i++) {
+			printf("   arg #%u = \"%s\"\n", i, argv[i]);
+		}
+		puts("end of argv.");
+		return puts("usage: ./editor [file]");
+	}
+	
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
 	int file = open(filename, O_RDONLY);
-	if (file < 0) { read_error: perror("load: read open file"); exit(1); }
+	if (file < 0) { read_error: printf("could not open \"%s\"\n", filename); perror("load: read open file"); exit(1); }
 	struct stat ss; fstat(file, &ss);
 	count = (nat) ss.st_size;
 	text = malloc(count);
@@ -698,6 +742,8 @@ do_c:
 	if (not strcmp(s, "exit")) goto done;
 	else if (not strcmp(s, "dt")) 
 		insert_dt();
+	else if (not strcmp(s, "write"))
+		write_string("./", taskboard, tasklength);
 	else if (not strncmp(s, "nop ", 4)) {}
 	else if (not strncmp(s, "insert ", 7))
 		insert_output(s + 7);
