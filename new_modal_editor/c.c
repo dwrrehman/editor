@@ -712,19 +712,19 @@ loop:
 		else if (c == 'g') paste();
 		else if (c == 'h') half_page_up();
 		else if (c == 'i') right();
-		else if (c == 'j') clip_to_ecb();
+		else if (c == 'j') {}
 		else if (c == 'k') up_begin();
 		else if (c == 'l') down_end();
 		else if (c == 'm') half_page_down();
 		else if (c == 'n') left();
 		else if (c == 'o') word_right();
 		else if (c == 'p') up();
-		else if (c == 'q') goto done;
+		else if (c == 'q') insert_dt();
 		else if (c == 'r') { if (anchor == disabled) delete(1,1); else cut(); }
 		else if (c == 's') searchb();
 		else if (c == 't') is_inserting = 1;
 		else if (c == 'u') down();
-		else if (c == 'v') insert_dt();
+		else if (c == 'v') clip_to_ecb();
 		else if (c == 'w') local_paste();
 		else if (c == 'x') redo();
 		else if (c == 'y') save();
