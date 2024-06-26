@@ -707,7 +707,7 @@ loop:
 		else if (c == 'c') copy();
 		else if (c == 'd') searchf();
 		else if (c == 'e') word_left();
-		else if (c == 'f') goto do_c;
+		else if (c == 'f') insert_dt();
 		else if (c == 'g') paste();
 		else if (c == 'h') half_page_up();
 		else if (c == 'i') right();
@@ -718,7 +718,7 @@ loop:
 		else if (c == 'n') left();
 		else if (c == 'o') word_right();
 		else if (c == 'p') up();
-		else if (c == 'q') insert_dt();
+		else if (c == 'q') goto do_c;
 		else if (c == 'r') { if (anchor == disabled) delete(1,1); else cut(); }
 		else if (c == 's') searchb();
 		else if (c == 't') is_inserting = 1;
