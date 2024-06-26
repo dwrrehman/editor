@@ -738,7 +738,8 @@ loop:
 do_c:
 	cut();
 	char* s = clipboard;
-	if (not strcmp(s, "exit")) goto done;
+	if (not s) {}
+	else if (not strcmp(s, "exit")) goto done;
 	else if (not strcmp(s, "quit")) goto done;
 	else if (not strcmp(s, "end")) goto done;
 	else if (not strcmp(s, "dt")) insert_dt();
