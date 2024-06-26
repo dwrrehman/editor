@@ -568,6 +568,7 @@ static void execute(char* command) {
 
 static void jump_index(char* string) {
 	const size_t n = (size_t) atoi(string);
+	cursor = 0;
 	for (size_t i = 0; i < n; i++) right();
 }
 
@@ -606,17 +607,15 @@ static void half_page_down(void) { for (int i = 0; i < (window.ws_row) / 2; i++)
 
 static char remap(const char c, const nat is_inserting) {
 
-	const char upper_remap_alpha[26] = "AVMHRTGYUNEOLKP:QWSBFCDXJZ";
-	const char lower_remap_alpha[26] = "avmhrtgyuneolkp;qwsbfcdxjz";
-
 	if (c == 13 and is_inserting) return 10;
-	
 
 	/*  to use qwerty, uncomment these lines:  */
-	//if (c >= 'A' and c <= 'Z') upper_remap_alpha[c - 'A'];
-	//if (c >= 'a' and c <= 'z') lower_remap_alpha[c - 'a'];
-	//if (c == ';') return 'i';
-	//if (c == 'I') return 'I';
+	// const char upper_remap_alpha[26] = "AVMHRTGYUNEOLKP:QWSBFCDXJZ";
+	// const char lower_remap_alpha[26] = "avmhrtgyuneolkp;qwsbfcdxjz";
+	// if (c >= 'A' and c <= 'Z') upper_remap_alpha[c - 'A'];
+	// if (c >= 'a' and c <= 'z') lower_remap_alpha[c - 'a'];
+	// if (c == ';') return 'i';
+	// if (c == 'I') return 'I';
 
 	return c;
 }
@@ -740,8 +739,9 @@ do_c:
 	cut();
 	char* s = clipboard;
 	if (not strcmp(s, "exit")) goto done;
-	else if (not strcmp(s, "dt")) 
-		insert_dt();
+	else if (not strcmp(s, "quit")) goto done;
+	else if (not strcmp(s, "end")) goto done;
+	else if (not strcmp(s, "dt")) insert_dt();
 	else if (not strcmp(s, "write"))
 		write_string("./", taskboard, tasklength);
 	else if (not strncmp(s, "nop ", 4)) {}
