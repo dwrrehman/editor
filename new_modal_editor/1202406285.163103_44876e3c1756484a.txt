@@ -1,3 +1,209 @@
+insert ls
+
+
+
+
+1202406097.022711_0a60c2f4569f267e.txt
+1202406252.015710_028a76dc508166d1.txt
+1202406285.163103_44876e3c1756484a.txt
+build
+c.c
+canon_c.c
+deploy
+dummyfile.txt
+editor
+editor.dSYM
+empty.txt
+original_c.c
+programming_testing
+save_of_contemporary_editor.txt
+save_of_our_work_c.c
+simple_adds.s
+testing_files.txt
+
+
+
+
+
+
+
+insert cat 1202406097.022711_0a60c2f4569f267e.txt
+
+hello!
+
+	this is a testing file, that i am writing, in order to test the editors ability to do stuff relating to autosaving. basically we are trying to make it autosave, so that it acutally saves the file in a seperate location every 200 keypresses that we do lol. it seems to be working pretty well now, so far, but i guess we'll see ... hmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm
+
+
+	ohhhhh we actually need to give the autosave directory lolol.. its autosaving into the current directory, which isnt as intended lololol. ill fix that now lol. mmk
+
+
+
+OHHHH
+
+	wait it was actually already workingggg lolol
+
+
+		basically, we were just printing out the wrong path   in terms of displaying thefile path that we had written to lol. so yeah. pretty simple fix lol. nice! lets see if it will happen again....
+
+		hmmmm yeah okay i think its working lol. i am pretty sure that everything is working now as far as autosaving is concerned lol.... at least i think lol. at least, i think. so far. 
+
+
+
+
+		okay cool!
+
+
+
+			so yeah
+
+
+
+
+				i am really loving how this editor is so far. 
+
+
+
+
+		i think i want to do more testing with it,    but eventually once it proves itself to be stable and such, 
+
+			ill probably just like start using it for real lol 
+
+
+
+			becuase its so fun to use 
+
+
+
+
+	yay
+
+
+
+
+
+
+
+insert cat build
+
+
+#!/bin/zsh
+
+if [ "release" = "$1" ]; then
+	clang -Ofast c.c -o editor
+
+
+elif [ "small" = "$1" ]; then
+	clang -Os c.c -o editor	
+
+
+elif [ "clean" = "$1" ]; then
+	rm -rf editor
+	rm -rf editor.dSYM
+	rm -rf c.plist
+
+elif [ "" = "$1" ]; then 
+	clang -g -O0 -Weverything -Wno-poison-system-directories -Wno-declaration-after-statement -fsanitize=address,undefined c.c -o editor -ferror-limit=4
+
+elif [ "check" = "$1" ]; then 
+	clang -Weverything --analyze -Wno-declaration-after-statement -Wno-poison-system-directories c.c
+
+
+else 
+	echo "build: unknown target: $1"
+fi
+
+
+insert cat empty.txt
+
+
+
+hello there from space
+
+
+
+
+
+
+this works lol
+
+
+
+
+
+
+
+
+
+
+
+
+
+cool
+
+
+
+
+
+
+
+
+i am testing the origins tuff and display stuff that is being weird fro the end of the file right now. 
+
+
+hm
+
+
+getting there though
+
+
+
+
+
+hello there from space
+this is the end
+bubbles
+and beans
+
+qqqqqqqqqq
+
+
+
+insert ls
+
+
+
+1202406097.022711_0a60c2f4569f267e.txt
+1202406252.015710_028a76dc508166d1.txt
+1202406285.163103_44876e3c1756484a.txt
+build
+c.c
+canon_c.c
+deploy
+dummyfile.txt
+editor
+editor.dSYM
+empty.txt
+original_c.c
+programming_testing
+save_of_contemporary_editor.txt
+save_of_our_work_c.c
+simple_adds.s
+testing_files.txt
+
+
+
+
+insert cat c.c
+
+1202406285.164121
+
+insert date
+
+
+Fri Jun 28 16:41:07 PDT 2024
+
+
+
 #include <stdio.h>   // 202402191.234834: a modal text editor written by dwrr. 
 #include <stdlib.h>  // new modal editor: rewritten on 202406075.165239
 #include <string.h>  // to be more stable, and display text with less bugs. 
@@ -697,7 +903,7 @@ loop:	display();
 			mode = edit_mode;
 			goto loop; 
 		}
-		else if (c == 27) { memset(S, 0, sizeof S); ss_len = 0; mode = edit_mode; goto loop; }
+		else if (c == 27) { memset(S, 0, sizeof S); ss_len = 0; mode = edit_mode; goto loop; } 
 		else if (c == 127) { if (ss_len) ss_len--; }
 		else if (c == 9) { search_backwards(S, ss_len); center(); } 
 		else if (c == 10) { search_forwards(S, ss_len); center(); } 
@@ -721,7 +927,7 @@ loop:	display();
 		else if (c == 'g') paste_global(); 
 		else if (c == 'h') half_page_up();
 		else if (c == 'i') right();
-		else if (c == 'j') { strlcpy(S, clipboard, sizeof S); ss_len = cliplength; mode = search_mode; }
+		else if (c == 'j') cursor = 0;
 		else if (c == 'k') up_begin();
 		else if (c == 'l') down_end();
 		else if (c == 'm') half_page_down();
@@ -733,12 +939,12 @@ loop:	display();
 		else if (c == 's') save();
 		else if (c == 't') mode = insert_mode;
 		else if (c == 'u') down();
-		else if (c == 'v') insert_dt();
+		else if (c == 'v') { strlcpy(S, clipboard, sizeof S); ss_len = cliplength; mode = search_mode; }
 		else if (c == 'w') paste();
 		else if (c == 'x') redo();
 		else if (c == 'y') copy_global();
 		else if (c == 'z') undo();
-		else { print("*:"); number((nat)c); print("|"); }
+		else { print("*:"); number((nat)c); print("|"); }		
 	}
 	goto loop;
 do_c:;	char* s = clipboard;
@@ -747,7 +953,6 @@ do_c:;	char* s = clipboard;
 	else if (not strcmp(s, "exit")) goto done;
 	else if (not strcmp(s, "quit")) goto done;
 	else if (not strcmp(s, "dt")) insert_dt();
-	else if (not strcmp(s, "search")) { strlcpy(S, taskboard, sizeof S); ss_len = tasklength; mode = search_mode; }
 	else if (not strcmp(s, "forwards")) search_forwards(taskboard, tasklength);
 	else if (not strcmp(s, "backwards")) search_backwards(taskboard, tasklength);
 	else if (not strcmp(s, "write")) write_string("./", taskboard, tasklength);
@@ -1003,6 +1208,15 @@ static void set_anchor(void) { anchor = cursor; }
 
 
 */
+
+
+
+
+
+
+
+
+
 
 
 
