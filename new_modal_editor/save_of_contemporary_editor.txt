@@ -103,11 +103,13 @@ static nat cursor_in_view(nat origin) {
 	return false;
 }
 
-static nat origin = 0;
+static void display(void) {
+	ioctl(0, TIOCGWINSZ, &window);
+	char screen[max_screen_size];
+	nat length = append("\033[H", 3, screen, 0);
 
-static void update_origin(void) {
+	static nat origin = 0;
 	if (origin > count) origin = count;
-
 	if (not cursor_in_view(origin)) {
 		if (cursor < origin) { 
 		while (origin and 
@@ -122,14 +124,7 @@ static void update_origin(void) {
 		(not origin or text[origin - 1] != 10));
 		} }
 	}
-}
 
-static void display(void) {
-	ioctl(0, TIOCGWINSZ, &window);
-	char screen[max_screen_size];
-	nat length = append("\033[H", 3, screen, 0);
-
-	update_origin();
 	nat i = origin, row = 0, column = 0;
 	for (; i < count; i++) {
 		if (row >= window.ws_row) break;
@@ -162,9 +157,9 @@ static void display(void) {
 	}
 
 	if (*status) {
-		length += append("\033[H", 3, screen, length);
+		length += append("\033[H\033[7m", 7, screen, length);
 		length += append(status, strlen(status), screen, length);
-		length += append("\033[7m/\033[0m", 9, screen, length);
+		length += append("\033[0m", 3, screen, length);
 		memset(status, 0, sizeof status);
 	}
 
@@ -594,18 +589,7 @@ static char remap(const char c) {
 	return c;
 }
 
-static void center(void) {
-	const nat saved = cursor;
-	half_page_down(); 
-	update_origin();
-	half_page_up();
-	half_page_up(); 
-	update_origin();
-	half_page_down();
-	cursor = saved;
-}
-
-int main(int argc, const char** argv) {
+int main(int argc, cchar** argv) {
 	struct sigaction action = {.sa_handler = window_resized}; 
 	sigaction(SIGWINCH, &action, NULL);
 	struct sigaction action2 = {.sa_handler = interrupted}; 
@@ -631,7 +615,7 @@ int main(int argc, const char** argv) {
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
 	int file = open(filename, O_RDONLY);
-	if (file < 0) { read_error: printf("could not open \"%s\"\n", filename); perror("editor: open"); exit(1); }
+	if (file < 0) { read_error: printf("could not open \"%s\"\n", filename); perror("load: read open file"); exit(1); }
 	struct stat ss; fstat(file, &ss);
 	count = (nat) ss.st_size;
 	text = malloc(count);
@@ -690,25 +674,24 @@ loop:	display();
 			history[4] == 'd'
 		) {
 			if (ss_len >= 5) ss_len -= 5;
-			cursor = 0; search_forwards(S, ss_len); center();
+			cursor = 0;
+			search_forwards(S, ss_len);
 			memset(history, 0, 5);
 			memset(S, 0, sizeof S); 
 			ss_len = 0;
 			mode = edit_mode;
-			goto loop; 
 		}
-		else if (c == 27) { memset(S, 0, sizeof S); ss_len = 0; mode = edit_mode; goto loop; } 
+		else if (c == 27) { memset(S, 0, sizeof S); ss_len = 0; mode = edit_mode; } 
 		else if (c == 127) { if (ss_len) ss_len--; }
-		else if (c == 9) { search_backwards(S, ss_len); center(); } 
-		else if (c == 10) { search_forwards(S, ss_len); center(); } 
+		else if (c == 9) search_backwards(S, ss_len);
+		else if (c == 10) search_forwards(S, ss_len);
 		else if ((unsigned char) c >= 32) { if (ss_len < sizeof S) S[ss_len++] = c; }
 		else goto loop;
 		memset(status, 0, sizeof status);
-		status[0] = '.';
-		memcpy(status + 1, S, ss_len);
+		memcpy(status, S, ss_len);
 		memmove(history + 1, history, sizeof history - 1);
 		history[0] = c;
-		if (c != 9 and c != 10) { cursor = 0; search_forwards(S, ss_len); center(); }
+		if (c != 9 and c != 10) { cursor = 0; search_forwards(S, ss_len); }
 	} else {
 		if (c == 27 or c == ' ') {}
 		else if (c == 127) { if (anchor == disabled) delete(1,1); else delete_selection(); }
@@ -721,7 +704,7 @@ loop:	display();
 		else if (c == 'g') paste_global(); 
 		else if (c == 'h') half_page_up();
 		else if (c == 'i') right();
-		else if (c == 'j') cursor = 0;
+		else if (c == 'j') { }
 		else if (c == 'k') up_begin();
 		else if (c == 'l') down_end();
 		else if (c == 'm') half_page_down();
@@ -733,7 +716,7 @@ loop:	display();
 		else if (c == 's') save();
 		else if (c == 't') mode = insert_mode;
 		else if (c == 'u') down();
-		else if (c == 'v') { strlcpy(S, clipboard, sizeof S); ss_len = cliplength; mode = search_mode; }
+		else if (c == 'v') { }
 		else if (c == 'w') paste();
 		else if (c == 'x') redo();
 		else if (c == 'y') copy_global();
