@@ -53,7 +53,7 @@ static struct action* actions = NULL;
 static char status[4096] = {0};
 static char filename[4096] = {0};
 static char autosavename[4096] = {0};
-static struct winsize window = {0};
+static volatile struct winsize window = {0};
 static struct termios terminal = {0};
 
 extern char** environ;
@@ -125,7 +125,6 @@ static void update_origin(void) {
 }
 
 static void display(void) {
-	ioctl(0, TIOCGWINSZ, &window);
 	char screen[max_screen_size];
 	nat length = append("\033[H", 3, screen, 0);
 
@@ -655,10 +654,11 @@ new: 	cursor = 0; anchor = disabled;
 	char S[1024] = {0};
 	nat ss_len = 0;
 
-loop:	display();
+loop:	ioctl(0, TIOCGWINSZ, &window);
+	display();
 	char c = 0;
 	const ssize_t n = read(0, &c, 1);
-	if (n < 0) { perror("read"); fflush(stderr); sleep(1); goto done; }
+	if (n < 0) { perror("read"); fflush(stderr); }
 	c = remap(c);
 	if (mode == insert_mode) {
 		if (
@@ -681,6 +681,31 @@ loop:	display();
 		history[0] = c;
 
 	} else if (mode == search_mode) {
+
+
+		/*   problem / feature / bug:
+
+
+			we need to assign  cursor   to be start    where start is where we were at the point of doing d   (or ie triggering the search)    we always start looking at start,   EXCEPT when we hit the end, in which we wrap around.    we need to make search_forwards return whether we found it, and then if we didnt find it using our { cursor = start; search_forwards()-->false }  then we must try using 
+
+				{ cursor = start; search_backwards() --> ?? }      and if that failsssss then we must put ourselves back where we started.   at start.
+
+							thats the correct semantics.   oh, and pressing enter should not move us, then. so yeah, tab and enter just do an additional searchf or searchb      without setting cursor to start. they max out at the rails,   0 and textlength. so yeah. 
+
+
+				drtpun must then   do      this whole sequence of logic as well,      to restore position, after saying drtpun. so yeah. 
+
+
+
+			that should make search perfect then. 
+
+
+
+
+
+
+		*/
+
 		if (
 			c == 'n' and 
 			history[0] == 'u' and 
@@ -747,6 +772,9 @@ do_c:;	char* s = clipboard;
 	else if (not strcmp(s, "exit")) goto done;
 	else if (not strcmp(s, "quit")) goto done;
 	else if (not strcmp(s, "dt")) insert_dt();
+	else if (not strcmp(s, "delete")) { if (anchor == disabled) delete(1,1); else delete_selection(); }
+	else if (not strcmp(s, "tab")) { c = 9; insert(&c, 1, 1); }
+	else if (not strcmp(s, "newline")) { c = 10; insert(&c, 1, 1); }
 	else if (not strcmp(s, "search")) { strlcpy(S, taskboard, sizeof S); ss_len = tasklength; mode = search_mode; }
 	else if (not strcmp(s, "forwards")) search_forwards(taskboard, tasklength);
 	else if (not strcmp(s, "backwards")) search_backwards(taskboard, tasklength);
