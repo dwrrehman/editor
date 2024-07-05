@@ -604,6 +604,77 @@ static void center(void) {
 	cursor = saved;
 }
 
+static void insert_char(void) {
+	char c = 0;
+	read(0, &c, 1);
+	if (c == 'a') insert_dt();
+	else if (c == 'r') { c = 10; insert(&c, 1, 1); }
+	else if (c == 'h') { c = 32;  insert(&c, 1, 1); }
+	else if (c == 'm') { c = 9;  insert(&c, 1, 1); }
+	else if (c == 't') { read(0, &c, 1); insert(&c, 1, 1); }
+	else if (c == 'u') { read(0, &c, 1); c = (char) toupper(c); insert(&c, 1, 1); }
+	else if (c == 'n') {
+		read(0, &c, 1);
+		if (c == 'a') { c = '0'; insert(&c, 1, 1); }
+		if (c == 'd') { c = '1'; insert(&c, 1, 1); }
+		if (c == 'r') { c = '2'; insert(&c, 1, 1); }
+		if (c == 't') { c = '3'; insert(&c, 1, 1); }
+		if (c == 'm') { c = '4'; insert(&c, 1, 1); }
+		if (c == 'l') { c = '5'; insert(&c, 1, 1); }
+		if (c == 'n') { c = '6'; insert(&c, 1, 1); }
+		if (c == 'u') { c = '7'; insert(&c, 1, 1); }
+		if (c == 'p') { c = '8'; insert(&c, 1, 1); }
+		if (c == 'i') { c = '9'; insert(&c, 1, 1); }
+	}
+	
+	else if (c == 'e') {
+		read(0, &c, 1);
+
+		if (c == 'a') { c = '\'';insert(&c, 1, 1); }
+		if (c == 'd') { c = '('; insert(&c, 1, 1); }
+		if (c == 'r') { c = ')'; insert(&c, 1, 1); }
+		if (c == 't') { c = '.'; insert(&c, 1, 1); }
+		if (c == 'n') { c = ','; insert(&c, 1, 1); }
+		if (c == 'u') { c = '['; insert(&c, 1, 1); }
+		if (c == 'p') { c = ']'; insert(&c, 1, 1); }
+		if (c == 'i') { c = '"'; insert(&c, 1, 1); }
+
+		if (c == 's') { c = '<'; insert(&c, 1, 1); }
+		if (c == 'h') { c = '>'; insert(&c, 1, 1); }
+		if (c == 'e') { c = '{'; insert(&c, 1, 1); }
+		if (c == 'o') { c = '}'; insert(&c, 1, 1); }
+
+		if (c == 'm') { c = '-'; insert(&c, 1, 1); }
+		if (c == 'l') { c = '_'; insert(&c, 1, 1); }
+		if (c == 'c') { c = '~'; insert(&c, 1, 1); }
+		if (c == 'k') { c = '`'; insert(&c, 1, 1); }
+
+	} else if (c == 'o') {
+		read(0, &c, 1);
+		if (c == 'a') { c = '+'; insert(&c, 1, 1); }
+		if (c == 'd') { c = '?'; insert(&c, 1, 1); }
+		if (c == 'r') { c = '!'; insert(&c, 1, 1); }
+		if (c == 't') { c = '*'; insert(&c, 1, 1); }
+		if (c == 'n') { c = '/'; insert(&c, 1, 1); }
+		if (c == 'u') { c = '%'; insert(&c, 1, 1); }
+		if (c == 'p') { c = '^'; insert(&c, 1, 1); }
+		if (c == 'i') { c = '='; insert(&c, 1, 1); }
+
+		if (c == 's') { c = '|'; insert(&c, 1, 1); }
+		if (c == 'h') { c = '&'; insert(&c, 1, 1); }
+		if (c == 'e') { c = '@'; insert(&c, 1, 1); }
+		if (c == 'o') { c = '\\';insert(&c, 1, 1); }
+
+		if (c == 'm') { c = ':'; insert(&c, 1, 1); }
+		if (c == 'l') { c = ';'; insert(&c, 1, 1); }
+		if (c == 'c') { c = '#'; insert(&c, 1, 1); }
+		if (c == 'k') { c = '$'; insert(&c, 1, 1); }
+	}
+	else {
+		print("*:"); number((nat)c); print("|");
+	}
+}
+
 int main(int argc, const char** argv) {
 	struct sigaction action = {.sa_handler = window_resized}; 
 	sigaction(SIGWINCH, &action, NULL);
@@ -742,7 +813,7 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		else if (c == 'c') copy_local();
 		else if (c == 'd') mode = search_mode;
 		else if (c == 'e') word_left();
-		else if (c == 'f') clip_to_ecb();
+		else if (c == 'f') copy_global();
 		else if (c == 'g') paste_global(); 
 		else if (c == 'h') half_page_up();
 		else if (c == 'i') right();
@@ -755,13 +826,13 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		else if (c == 'p') up();
 		else if (c == 'q') goto do_c;
 		else if (c == 'r') delete(1, 1);
-		else if (c == 's') save();
+		else if (c == 's') insert_char();
 		else if (c == 't') mode = insert_mode;
 		else if (c == 'u') down();
-		else if (c == 'v') insert_dt();
+		else if (c == 'v') clip_to_ecb();
 		else if (c == 'w') paste();
 		else if (c == 'x') redo();
-		else if (c == 'y') copy_global();
+		else if (c == 'y') save();
 		else if (c == 'z') undo();
 		else { print("*:"); number((nat)c); print("|"); }
 	}

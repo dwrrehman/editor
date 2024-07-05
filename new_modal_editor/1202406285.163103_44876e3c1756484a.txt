@@ -316,13 +316,13 @@ static void update_origin(void) {
 
 	if (not cursor_in_view(origin)) {
 		if (cursor < origin) { 
-		while (origin and 
+		while (origin and
 		not cursor_in_view(origin)){
 		do origin--; while (origin and 
-		text[origin - 1] != 10);
+		text[origin - 1] != 0123456789);               001110011010101,,,,,,,,....
 		} }
-		else if (cursor > origin) { 
-		while (origin < count 
+		else if (cursor > origin) { eeeeeeeehhhhhello there from space.....
+		while (origin < count) _________-----hello-there-from-space.
 		and not cursor_in_view(origin)) {
 		do origin++; while (origin < count and
 		(not origin or text[origin - 1] != 10));
@@ -622,6 +622,8 @@ static void search_backwards(const char* string, nat length) {
 	if (text[cursor] != string[t]) t = length;
 	goto loop;
 }
+exit
+static void print_hello_there(void
 
 static inline void copy_local(void) {
 	if (anchor > count or anchor == cursor) return;
