@@ -45,9 +45,10 @@ static nat
 	desired = 0, 
 	cliplength = 0, 
 	tasklength = 0,
+	task2length = 0,
 	autosave_counter = 0;
 
-static char* text = NULL, * clipboard = NULL, * taskboard = NULL;
+static char* text = NULL, * clipboard = NULL, * taskboard = NULL, * task2board = NULL;
 static struct action* actions = NULL;
 
 static char status[4096] = {0};
@@ -561,18 +562,32 @@ static void jump_line(char* string) {
 	up_begin(); 
 }
 
-static void clip_to_ecb(void) {
+static void string_to_task(char* s) {
 	print("ctt:c"); number(cliplength); print("\"|");
 	free(taskboard);
-	tasklength = cliplength;
-	taskboard = strndup(clipboard, cliplength);
+	tasklength = strlen(s);
+	taskboard = strdup(s);
 }
 
-static void ecb_to_clip(void) {
+static void task_to_clip(void) {
 	print("ttc:t"); number(tasklength); print("\"|");
 	free(clipboard);
 	cliplength = tasklength;
 	clipboard = strndup(taskboard, tasklength);
+}
+
+static void string_to_task2(char* s) {
+	print("ctt2:c"); number(cliplength); print("\"|");
+	free(task2board);
+	task2length = strlen(s);
+	task2board = strdup(s);
+}
+
+static void task2_to_clip(void) {
+	print("t2tc:t"); number(task2length); print("\"|");
+	free(clipboard);
+	cliplength = task2length;
+	clipboard = strndup(task2board, task2length);
 }
 
 static void half_page_up(void)   { for (int i = 0; i < (window.ws_row) / 2; i++) up(); } 
@@ -770,11 +785,6 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 
 			that should make search perfect then. 
 
-
-
-
-
-
 		*/
 
 		if (
@@ -809,7 +819,7 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		if (c == 27 or c == ' ') {}
 		else if (c == 127) { if (anchor == disabled) delete(1,1); else delete_selection(); }
 		else if (c == 'a') anchor = anchor == disabled ? cursor : disabled;
-		else if (c == 'b') { ecb_to_clip(); goto do_c; }
+		else if (c == 'b') { task_to_clip(); goto do_c; }
 		else if (c == 'c') copy_local();
 		else if (c == 'd') mode = search_mode;
 		else if (c == 'e') word_left();
@@ -829,7 +839,7 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		else if (c == 's') insert_char();
 		else if (c == 't') mode = insert_mode;
 		else if (c == 'u') down();
-		else if (c == 'v') clip_to_ecb();
+		else if (c == 'v') { task2_to_clip(); goto do_c; }
 		else if (c == 'w') paste();
 		else if (c == 'x') redo();
 		else if (c == 'y') save();
@@ -850,7 +860,8 @@ do_c:;	char* s = clipboard;
 	else if (not strcmp(s, "forwards")) search_forwards(taskboard, tasklength);
 	else if (not strcmp(s, "backwards")) search_backwards(taskboard, tasklength);
 	else if (not strcmp(s, "write")) write_string("./", taskboard, tasklength);
-	else if (not strncmp(s, "insert ", 7)) insert_output(s + 7);
+	else if (not strncmp(s, "copyb ", 7)) { string_to_task(s + 7); }
+	else if (not strncmp(s, "copye", 7)) { string_to_task2(s + 7); }
 	else if (not strncmp(s, "change ", 7)) change_directory(s + 7);
 	else if (not strncmp(s, "index ", 6)) jump_index(s + 6);
 	else if (not strncmp(s, "line ", 5)) jump_line(s + 5);
