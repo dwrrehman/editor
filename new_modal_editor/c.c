@@ -515,26 +515,33 @@ static void create_process(char** args) {
 }
 
 static void execute(char* command) {
+	if (not strlen(command)) return;
 	save();
-	const char* string = command;
-	const size_t length = strlen(command);
+	const char delimiter = command[0];
+	const char* string = command + 1;
+	const size_t length = strlen(command + 1);
+
 	char** arguments = NULL;
 	size_t argument_count = 0;
+
 	size_t start = 0, argument_length = 0;
 	for (size_t index = 0; index < length; index++) {
-		if (string[index] != 10) {
+		if (string[index] != delimiter) {
 			if (not argument_length) start = index;
-			argument_length++; continue;
-		} else if (not argument_length) continue;
-	process_word:
-		arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
-		arguments[argument_count++] = strndup(string + start, argument_length);
-		argument_length = 0;
-	}
+			argument_length++;
 
-	if (argument_length) goto process_word;
+		} else if (string[index] == delimiter) {
+		push:	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+			arguments[argument_count++] = strndup(string + start, argument_length);
+			start = index;
+			argument_length = 0; 
+		}
+	}
+	if (argument_length) goto push;
+
 	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
 	arguments[argument_count] = NULL;
+
 	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
 

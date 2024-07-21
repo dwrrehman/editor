@@ -97,10 +97,29 @@ wavefunction_program
 windowing_system
 
 
-
-
-
 change /Users/dwrr/root/projects/editor/new_modal_editor/
+
+
+do ,/bin/sh,-c,du -sh /Users/dwrr/root/projects/,
+
+do ,/bin/sh,-c,tree /Users/dwrr/root/projects/editor/new_modal_editor/,
+
+
+
+
+
+
+
+
+do ,/bin/sh,-c,echo hello world,
+
+do ,/bin/sh,-c,tree .,
+
+
+
+
+
+
 
 
 
