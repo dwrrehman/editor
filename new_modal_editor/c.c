@@ -860,8 +860,9 @@ do_c:;	char* s = clipboard;
 	else if (not strcmp(s, "forwards")) search_forwards(taskboard, tasklength);
 	else if (not strcmp(s, "backwards")) search_backwards(taskboard, tasklength);
 	else if (not strcmp(s, "write")) write_string("./", taskboard, tasklength);
-	else if (not strncmp(s, "copyb ", 7)) { string_to_task(s + 7); }
-	else if (not strncmp(s, "copye", 7)) { string_to_task2(s + 7); }
+	else if (not strncmp(s, "insert ", 7)) insert_output(s + 7);
+	else if (not strncmp(s, "copyb ", 6)) { string_to_task(s + 6); }
+	else if (not strncmp(s, "copya ", 6)) { string_to_task2(s + 6); }
 	else if (not strncmp(s, "change ", 7)) change_directory(s + 7);
 	else if (not strncmp(s, "index ", 6)) jump_index(s + 6);
 	else if (not strncmp(s, "line ", 5)) jump_line(s + 5);

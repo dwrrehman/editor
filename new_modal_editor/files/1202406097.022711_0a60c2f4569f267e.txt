@@ -47,3 +47,65 @@ OHHHH
 	yay
 
 
+
+
+
+
+
+copyb insert ls
+copya change ..
+
+nop
+
+
+new_modal_editor
+old_versions
+other_versions
+
+
+2048_game
+alarm
+asteroids_game
+block_game_dir
+build_system
+coding-tools
+compiler
+digital clock
+directory_webpage
+editor
+games
+hand_held_keyboard
+hardware
+languages
+music_utility
+my_website
+nbody_simulation
+other
+personal computer
+robots
+screenshots to sort
+solar_watch
+sudoku
+testing_editor_area
+testing_stuff
+text_adventure_game
+transistor computer
+ua
+useful
+voice shell
+wavefunction_program
+windowing_system
+
+
+
+
+
+change /Users/dwrr/root/projects/editor/new_modal_editor/
+
+
+
+
+
+
+
+
