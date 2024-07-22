@@ -866,7 +866,7 @@ do_c:;	char* s = clipboard;
 	else if (not strcmp(s, "search")) { snprintf(S, sizeof S - 1, "%s", taskboard); ss_len = tasklength; mode = search_mode; }
 	else if (not strcmp(s, "forwards")) search_forwards(taskboard, tasklength);
 	else if (not strcmp(s, "backwards")) search_backwards(taskboard, tasklength);
-	else if (not strcmp(s, "write")) write_string("./", taskboard, tasklength);
+	else if (not strncmp(s, "write ", 6)) write_string("./", clipboard + 6, cliplength - 6);
 	else if (not strncmp(s, "insert ", 7)) insert_output(s + 7);
 	else if (not strncmp(s, "copyb ", 6)) { string_to_task(s + 6); }
 	else if (not strncmp(s, "copya ", 6)) { string_to_task2(s + 6); }
