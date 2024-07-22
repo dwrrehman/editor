@@ -834,7 +834,7 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		else if (c == 'g') paste_global(); 
 		else if (c == 'h') half_page_up();
 		else if (c == 'i') right();
-		else if (c == 'j') { strlcpy(S, clipboard, sizeof S); ss_len = cliplength; mode = search_mode; }
+		else if (c == 'j') { snprintf(S, sizeof S - 1, "%s", clipboard); ss_len = cliplength; mode = search_mode; }
 		else if (c == 'k') up_begin();
 		else if (c == 'l') down_end();
 		else if (c == 'm') half_page_down();
@@ -863,7 +863,7 @@ do_c:;	char* s = clipboard;
 	else if (not strcmp(s, "delete")) { if (anchor == disabled) delete(1,1); else delete_selection(); }
 	else if (not strcmp(s, "tab")) { c = 9; insert(&c, 1, 1); }
 	else if (not strcmp(s, "newline")) { c = 10; insert(&c, 1, 1); }
-	else if (not strcmp(s, "search")) { strlcpy(S, taskboard, sizeof S); ss_len = tasklength; mode = search_mode; }
+	else if (not strcmp(s, "search")) { snprintf(S, sizeof S - 1, "%s", taskboard); ss_len = tasklength; mode = search_mode; }
 	else if (not strcmp(s, "forwards")) search_forwards(taskboard, tasklength);
 	else if (not strcmp(s, "backwards")) search_backwards(taskboard, tasklength);
 	else if (not strcmp(s, "write")) write_string("./", taskboard, tasklength);
