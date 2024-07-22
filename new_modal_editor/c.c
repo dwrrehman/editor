@@ -35,6 +35,8 @@ struct action {
 static const char* autosave_directory = "/Users/dwrr/root/personal/autosaves/";
 static const nat autosave_frequency = 200;
 
+static const bool use_qwerty_layout = false; // set to true if you want to use qwerty mappings. 
+
 static nat 
 	moved = 0,          // delete the need for this variable. just use desired, i think..? or nothing?
 	cursor = 0,  
@@ -602,15 +604,16 @@ static void half_page_down(void) { for (int i = 0; i < (window.ws_row) / 2; i++)
 
 static char remap(const char c) {
 
-	if (c == 13) return 10;
+	if (c == 13) return 10;	
 
-	/*  to use qwerty, uncomment these lines:  */
-	// const char upper_remap_alpha[26] = "AVMHRTGYUNEOLKP:QWSBFCDXJZ";
-	// const char lower_remap_alpha[26] = "avmhrtgyuneolkp;qwsbfcdxjz";
-	// if (c >= 'A' and c <= 'Z') upper_remap_alpha[c - 'A'];
-	// if (c >= 'a' and c <= 'z') lower_remap_alpha[c - 'a'];
-	// if (c == ';') return 'i';
-	// if (c == 'I') return 'I';
+	if (use_qwerty_layout) {
+		const char upper_remap_alpha[26] = "AVMHRTGYUNEOLKP:QWSBFCDXJZ";
+		const char lower_remap_alpha[26] = "avmhrtgyuneolkp;qwsbfcdxjz";
+		if (c >= 'A' and c <= 'Z') return upper_remap_alpha[c - 'A'];
+		if (c >= 'a' and c <= 'z') return lower_remap_alpha[c - 'a'];
+		if (c == ';') return 'i';
+		if (c == ':') return 'I';
+	}
 
 	return c;
 }
