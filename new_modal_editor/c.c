@@ -854,6 +854,12 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		else if (c == 'x') redo();
 		else if (c == 'y') save();
 		else if (c == 'z') undo();
+		else if (c == 'Q') {
+			char c = 0;
+			const ssize_t n = read(0, &c, 1);c = remap(c);
+			if (n < 0) { perror("read"); fflush(stderr); }
+			if (c == 'Q') goto done;
+		}
 		else { print("*:"); number((nat)c); print("|"); }
 	}
 	goto loop;
@@ -861,7 +867,6 @@ do_c:;	char* s = clipboard;
 	if (not s) {}
 	else if (not strcmp(s, "nop")) {}
 	else if (not strcmp(s, "exit")) goto done;
-	else if (not strcmp(s, "quit")) goto done;
 	else if (not strcmp(s, "dt")) insert_dt();
 	else if (not strcmp(s, "delete")) { if (anchor == disabled) delete(1,1); else delete_selection(); }
 	else if (not strcmp(s, "tab")) { c = 9; insert(&c, 1, 1); }
