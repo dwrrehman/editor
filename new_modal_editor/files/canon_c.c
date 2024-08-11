@@ -87,6 +87,25 @@ static void delete(nat length, bool should_record) {
 	text = realloc(text, count);
 	if (should_record) finish_action(node, string, length);
 }
+1202408084.192952
+
+
+ 	faishognarpiwugaiprwungaipudrnwtiapurwngiparunwgipnu   
+
+() {} [] <> 
+0123456789
+TWWWWWW
+WWWW
+
+
+
+
+
+
+
+
+1202408084.193002
+
 
 static void redo(void) {
 	nat chosen_child = 0, child_count = 0; 
@@ -96,13 +115,7 @@ static void redo(void) {
 		child_count++;
 	}
 	if (not child_count) return;
-	if (child_count >= 2) {
-		printf("note: choice = %llu, however there are "
-			"%llu possible histories to choose.\n", 
-			actions[head].choice, child_count
-		); 
-		actions[head].choice = (actions[head].choice + 1) % child_count;
-	}
+
 	head = chosen_child;
 	const struct action node = actions[head];
 	cursor = node.pre; 
@@ -840,10 +853,78 @@ user manual:
 
 */
 
+hello world!
+this is another shell output yay!
+hello world!
+this is another shell output yay!
+hello world!
+hello world!
+hello world!
+this is another shell output yay!
+this is another shell output yay!
+hello world!
+hello world!
+hello world!
+this is another shell output yay!
+hello world!
+this is another shell output yay!
+hello world!
+hello world!
+hello world!
+this is another shell output yay!
+this is another shell output yay!
+this is another shell output yay!
+hello world!
+hello world!
+hello world!
+this is another shell output yay!
+hello world!
+this is another shell output yay!
+this is another shell output yay!
+this is another shell output yay!
+this is another shell output yay!
+hello world!
+hello world!
+hello world!
+hello world!
+hello world!
+this is another shell output yay!
+hello world!
+hello world!
+hello world!
+this is another shell output yay!
+this is another shell output yay!
+this is another shell output yay!
+hello world!
+hello world!
+this is another shell output yay!
+hello world!
+this is another shell output yay!
+hello world!
+this is another shell output yay!
+hello world!
+this is another shell output yay!
 
 
 
+hello world!
+hello world!
+hello world!
+hello world!
+hello world!
+hello world!
+hello world!
+hello world!
+hello world!
+hello world!
+hello world!
+hello world!
 
+
+copyb do ,/usr/bin/python3
+
+
+copya insert echo this is another shell output yay!
 
 //static const char* autosave_directory = "/Users/dwrr/Documents/personal/autosaves/";     // autosaving unimplementd yet.
 // static const nat autosave_frequency = 100; // (nat) -1; // -1 disables autosaving
