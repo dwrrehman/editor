@@ -424,7 +424,6 @@ static inline void copy_local(void) {
 	cliplength = anchor < cursor ? cursor - anchor : anchor - cursor;
 	free(clipboard);
 	clipboard = strndup(text + (anchor < cursor ? anchor : cursor), cliplength);
-	anchor = disabled;
 	print("cl:l"); number(cliplength);
 	print(",c"); number(cursor); print("|");
 }
@@ -440,7 +439,6 @@ static inline void copy_global(void) {
 	}
 	fwrite(text + (anchor < cursor ? anchor : cursor), 1, length, globalclip);
 	pclose(globalclip);
-	anchor = disabled;
 	print("cg:l"); number(length);
 	print(",c"); number(cursor); print("|");
 }
@@ -633,6 +631,11 @@ static void insert_char(void) {
 	char c = 0;
 	read(0, &c, 1);c = remap(c);
 	if (c == 'a') insert_dt();
+	else if (c == 'd') { read(0, &c, 1);c = remap(c);
+		if (c == 'e') { read(0, &c, 1);c = remap(c);
+			if (c == 'l') { if (anchor == disabled) delete(1,1); else delete_selection(); }
+		}
+	}
 	else if (c == 'r') { c = 10; insert(&c, 1, 1); }
 	else if (c == 'h') { c = 32;  insert(&c, 1, 1); }
 	else if (c == 'm') { c = 9;  insert(&c, 1, 1); }
@@ -754,7 +757,7 @@ new: 	cursor = 0; anchor = disabled;
 loop:	ioctl(0, TIOCGWINSZ, &window);
 	display();
 	char c = 0;
-	const ssize_t n = read(0, &c, 1);c = remap(c);
+	ssize_t n = read(0, &c, 1);c = remap(c);
 	if (n < 0) { perror("read"); fflush(stderr); }
 	if (mode == insert_mode) {
 		if (
@@ -855,8 +858,8 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		else if (c == 'y') save();
 		else if (c == 'z') undo();
 		else if (c == 'Q') {
-			char c = 0;
-			const ssize_t n = read(0, &c, 1);c = remap(c);
+			c = 0;
+			n = read(0, &c, 1);c = remap(c);
 			if (n < 0) { perror("read"); fflush(stderr); }
 			if (c == 'Q') goto done;
 		}
