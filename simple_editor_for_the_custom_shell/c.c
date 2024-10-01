@@ -215,7 +215,7 @@ load_file:
 			}
 
 		} else {
-			puts("error: bad input");fflush(stdout);
+			printf("error: bad input: %d\n", input[0]);fflush(stdout);
 		}
 
 		if (input[0] != 's') saved = 0;
