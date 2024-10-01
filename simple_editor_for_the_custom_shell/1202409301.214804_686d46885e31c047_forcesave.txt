@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-int main(void) {		// a simple program to test my command based editor.
+int main(void) {
 	puts("hello world");
 	int array[6] = {4, 2, 6, 5, 7, 6 };
 	const int length = 6;

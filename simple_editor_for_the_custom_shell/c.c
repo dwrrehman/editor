@@ -45,7 +45,7 @@ load_file:
 	char* last_saved = strdup(ctime(&attr_.st_mtime));
 	printf("Last modified time: %s\n", last_saved); fflush(stdout);
 
-	nat cursor = 0, anchor = 0, page_size = 100;
+	nat cursor = 0, anchor = 0, page_size = 1000;
 
 	char input[4096] = {0};
 	printf("read %llu bytes\n", text_length); fflush(stdout);
@@ -141,11 +141,20 @@ load_file:
 			}
 			const nat len = cursor - anchor;
 			char* deleted = strndup(text + anchor, len);
+
+			printf("warning: about to remove %llub: <<<%s>>>\nconfirm: (y/n) ", len, deleted); fflush(stdout);
+			char c[3] = {0};
+			read(0, &c, 2);
+			if (c[0] == 'y') { puts("removing..."); fflush(stdout); } 
+			else { puts("not removing"); fflush(stdout); goto skip_remove; } 
+
 			memmove(text + anchor, text + cursor, text_length - cursor);
 			text_length -= len;
 			cursor = anchor;
 			text = realloc(text, text_length);
 			printf("info: removed %llub: <<<%s>>>\n", len, deleted); fflush(stdout);
+		skip_remove:;
+			free(deleted);
 
 		} else if (input[0] == 's') {
 
@@ -168,6 +177,10 @@ load_file:
 				} 
 				write(output_file, text, text_length);
 				close(output_file);
+				free(last_saved);
+				struct stat attrn;
+				stat(filename, &attrn);
+				last_saved = strdup(ctime(&attrn.st_mtime));
 				saved = 1;
 
 			} else {
@@ -181,8 +194,8 @@ load_file:
 				gettimeofday(&t, NULL);
 				struct tm* tm = localtime(&t.tv_sec);
 				strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-				snprintf(name, sizeof name, "%s_%08x%08x_%s", 
-					datetime, rand(), rand(), filename);
+				snprintf(name, sizeof name, "%s_%08x%08x_forcesave.txt", 
+					datetime, rand(), rand());
 				int flags = O_WRONLY | O_CREAT | O_EXCL;
 
 				printf("saving: %s: %llub\n", name, text_length);fflush(stdout);
@@ -194,9 +207,9 @@ load_file:
 				close(output_file);
 
 				printf("would you like to reload the file? (y/n)");fflush(stdout);
-				char c = 0;
-				read(0, &c, 1);
-				if (c == 'y') { puts("reloading.."); fflush(stdout);free(text); goto load_file; } 
+				char c[3] = {0};
+				read(0, &c, 2);
+				if (c[0] == 'y') { puts("reloading.."); fflush(stdout);free(text); goto load_file; } 
 				else puts("warning: not reloading."); 
 				fflush(stdout);
 			}
