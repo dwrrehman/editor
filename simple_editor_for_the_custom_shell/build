@@ -1,5 +1,7 @@
 #!/bin/zsh
 
+# wrote on 1202410211.221617
+
 if [ "release" = "$1" ]; then
 	clang -Ofast c.c -o run
 
