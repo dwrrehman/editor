@@ -1,0 +1,3 @@
+manual for the commandline text editor
+----------------------------------
+

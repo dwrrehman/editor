@@ -13,6 +13,9 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <stdnoreturn.h>
+#include <signal.h>
+
 
 typedef uint64_t nat;
 
@@ -25,48 +28,86 @@ q d r w b j f u p ;
   z x m c v k l , .
 
 
-left:
-. . . . b j . . . ; 
- . . . . . y . . . i 
-  z x . . v . . 
+keys left:
+. . . . b j f . . ; 
+ . . . . g y . . . . 
+  z x . . v . l , .
+
 
 */
 
 static const char* help_string = 
 "q	quit, must be saved first.\n"
-"h	this help string.\n"
-"s	save the file. if lastwritten time doesnt matter, or if \n"
-"	   unable to get write access, then performs an emengency save.\n"
-"c	display cursor/file information.\n"
-"p<N>	set page size to N.\n"
-"d	display page of text starting from cursor.\n"
-"w	display page of text starting from anchor.\n"
-"a	place anchor at cursors position.\n"
-"u	next, cursor increment.\n"
-"n	previous, cursor decrement.\n"
-"o	beginning cursor setzero.\n"
-"e	end, cursor set to document length.\n"
-"m	inserts the current datetime at the position\n"
-"	   of the cursor, and advances the cursor.\n"
-"g<N>	set the cursor to a file offset N.\n"
-"f<s>	search forwards starting from cursor for string \"s\".\n"
-"t<s>	insert string \"s\" at position of cursor, and advance \n"
-"	   cursor by length of s.\n"
-"l	insert neline character at position of \n"
-"	   cursor, and advance cursor by 1\n"
-"r	removes all characters between anchor and \n"
-"	   cursor. requires confirming.\n"
-"x	unused\n";
+"z	this help string.\n"
+"s	save the current file contents.\n"
+"<sp>	exit insert mode.\n"
+"<sp>	move up one line.\n"
+"<nl>	move down one line.\n"
+"a	anchor at cursor.\n"
+"p	display cursor/file information.\n"
+"t	go into insert mode.\n"
+"u<N>	cursor += N.\n"
+"n<N>	cursor -= N.\n"
+"c<N>	cursor = N.\n"
+"d[N]	display page of text starting from cursor.\n"
+"w[N]	display page of text starting from anchor.\n"
+"m<S>	search forwards from cursor for string S.\n"
+"h<S>	search backwards from cursor for string S.\n"
+"o	copy current selection to clipboard.\n"
+"k	inserts current datetime at cursor and advances.\n"
+"e<S>	inserts S at cursor and advances.\n"
+"i	inserts clipboard at cursor, and advances.\n"
+"r	removes current selection. requires confirming.\n";
 
+static char* text = NULL;
+static nat text_length = 0;
 
-int main(void) {
+static noreturn void interrupted(int _) {if(_){} 
+	puts("interrupted, saving and exiting...");
+	fflush(stdout);
+	puts("force saving file contents to a new file...");
+	fflush(stdout);
+	char name[4096] = {0};
+	char datetime[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+	snprintf(name, sizeof name, "%s_%08x%08x_forcesave.txt", 
+		datetime, rand(), rand());
+	const int flags = O_WRONLY | O_CREAT | O_EXCL;
+	const mode_t permissions = 
+		S_IRUSR | S_IWUSR | S_IROTH | S_IRGRP;
+
+	printf("saving: %s: %llub\n", name, text_length);
+	fflush(stdout);
+	
+	int output_file = open(name, flags, permissions);
+	if (output_file < 0) { 
+		printf("error: save: %s\n", strerror(errno));
+		fflush(stdout);
+	} 
+
+	write(output_file, text, text_length); // TODO: check these. 
+	close(output_file);
+	puts("done force saving, exiting");
+	exit(1); 
+}
+
+int main(int argc, __attribute__((unused)) const char** argv) {
+	struct sigaction action2 = {.sa_handler = interrupted}; 
+	sigaction(SIGINT, &action2, NULL);
+
 	srand((unsigned) time(NULL)); rand();
 
+	if (argc > 1) return puts("usage error, no arguments should be given.");
 	char filename[4096] = {0};
 	write(1, "filename: ", 10);
 	read(0, filename, sizeof filename);
 	size_t filename_length = strlen(filename);
 	if (filename_length) filename[--filename_length] = 0;
+
+	puts("type 'z' and enter for help.");
 
 load_file:
 	printf("loading file: %s\n", filename); 
@@ -79,9 +120,9 @@ load_file:
 		exit(1);
 	}
 
-	nat text_length = (nat) lseek(file, 0, SEEK_END);
+	text_length = (nat) lseek(file, 0, SEEK_END);
 	lseek(file, 0, SEEK_SET);
-	char* text = malloc(text_length);
+	text = malloc(text_length);
 	read(file, text, text_length);
 	close(file);
 
@@ -91,21 +132,53 @@ load_file:
 	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", 
 		localtime(&attr_.st_mtime)
 	);
-	printf("Last modified time: %s\n", last_modified); 
+	printf("last modified time: %s\n", last_modified); 
 	fflush(stdout);
 
-	nat cursor = 0, anchor = 0, page_size = 1000, saved = 1;
+	nat cursor = 0, anchor = 0, saved = 1, inserting = 0;
 	char input[4096] = {0};
 
+	char* clipboard = NULL;
+	nat cliplength = 0;
+
 	printf("read %llu bytes\n", text_length); 
-	fflush(stdout);	
+	fflush(stdout);
 
 	while (1) {
-		write(1, ": ", 2);
 		memset(input, 0, sizeof input);
 		ssize_t n = read(0, input, sizeof input);
-		if (n < 0) { printf("%s", strerror(errno)); sleep(1); } 
-		else if (n == 0) { write(1, "EOF???", 6); sleep(1); } 
+		if (n < 0) { 
+			printf("read: %s\n", strerror(errno));
+			fflush(stdout); 
+			sleep(1); 
+		} 
+		else if (n == 0) { 
+			write(1, "EOF???", 6); 
+			sleep(1); 
+		}
+
+		if (inserting) {
+			if (n == 2 and input[0] == ' ') { write(1, ".\n", 2); inserting = 0; continue; }
+
+			const char* string = input;
+			const nat string_length = (nat) n;
+
+			//printf("inserting %llub at %llu: \"%.*s\"\n", 
+			//	string_length, cursor, 
+			//	(int) string_length, string
+			//); 
+			//fflush(stdout);
+
+			text = realloc(text, text_length + string_length);
+			memmove(text + cursor + string_length, 
+				text + cursor, text_length - cursor
+			);
+			memcpy(text + cursor, string, string_length);
+			cursor += string_length;
+			text_length += string_length;
+			saved = 0;
+			continue;
+		} 
 
 		nat input_length = (nat) n;
 		if (input_length) input[--input_length] = 0;
@@ -114,75 +187,49 @@ load_file:
 		const char* string = input + 1;
 		const nat string_length = input_length - 1;
 
-		if (input[0] == 'q') { 
-			if (saved) break; 
-			else puts("unsaved"); 
-		} 
-		else if (input[0] == 'h') { 
-			puts(help_string); 
-			fflush(stdout); 
-		}
+		if (not input[0]) {}
+		else if (input[0] == ' ') write(1, "\033[2A", 4); 
+		else if (input[0] == 'z') { puts(help_string); fflush(stdout); }
+		else if (input[0] == 'q') { if (saved) break; else puts("unsaved"); }
+		else if (input[0] == 'a') { anchor = cursor; } 
+		else if (input[0] == 't') { inserting = 1; }
 		else if (input[0] == 'u') { 
-			puts("incr"); 
+			cursor += (nat) atoi(string); 
+			if (cursor > text_length) cursor = text_length; 
+			printf("c%llu\n", cursor); 
 			fflush(stdout); 
-			if (cursor < text_length) cursor++; 
-		} 
-		else if (input[0] == 'n') { 
-			puts("decr"); 
+		} else if (input[0] == 'n') { 
+			cursor -= (nat) atoi(string); 
+			if ((int64_t) cursor < (int64_t) 0) cursor = 0; 
+			printf("c%llu\n", cursor); 
 			fflush(stdout); 
-			if (cursor) cursor--; 
-		} 
-		else if (input[0] == 'o') { 
-			puts("cursor at begin"); 
-			fflush(stdout); 
-			cursor = 0; 
-		}
-		else if (input[0] == 'e') { 
-			puts("cursor at end"); 
-			fflush(stdout); 
-			cursor = text_length; 
-		} 
-		else if (input[0] == 'a') { 
-			puts("anchored at cursor"); 
-			fflush(stdout); 
-			anchor = cursor; 
-		} 
-		else if (input[0] == 'p') { 
-			puts("set page size"); 
-			fflush(stdout); 
-			page_size = (nat) atoi(string); 
-		}
-		else if (input[0] == 'c') {
-			printf("filename: %s %s\n"
-				"last modified: %s\n"
-				"c%llu,a%llu,p%llu,l%llu\n", 
-				filename, 
-				saved ? "(saved)" : 
-				"[contains unsaved changes]", 
-				last_modified,
-				cursor, anchor, page_size, text_length
-			); fflush(stdout);
-
-		} else if (input[0] == 'g') { 
+		} else if (input[0] == 'c') { 
 			cursor = (nat) atoi(string); 
-			if (cursor >= text_length) cursor = text_length;
-			printf("set: c%llu\n", cursor); 
-			fflush(stdout);
-
+			if (cursor > text_length) cursor = text_length; 
+			printf("c%llu\n", cursor); 
+			fflush(stdout); 
+		} else if (input[0] == 'p') {
+			printf("file: %s %s\nlast modified: %s\nc%llu,a%llu,len%llu\n", 
+				filename, saved ? "(saved)" : "[contains unsaved changes]", 
+				last_modified, cursor, anchor, text_length
+			); fflush(stdout);
 		} else if (input[0] == 'd') {
-			nat amount = text_length - cursor;
-			if (amount > page_size) amount = page_size;
-			fwrite(text + cursor, 1, amount, stdout); 
-			fflush(stdout);
+			nat start = cursor;
+			nat k = (nat) atoi(string); 
+			if (not k) k = 1000;
+			nat amount = text_length - start;
+			if (k and k < amount) amount = k;
+			fwrite(text + start, 1, amount, stdout); fflush(stdout);
 
 		} else if (input[0] == 'w') {
-			if (anchor > text_length) anchor = text_length;
-			nat amount = text_length - anchor;
-			if (amount > page_size) amount = page_size;
-			fwrite(text + anchor, 1, amount, stdout); 
-			fflush(stdout);
+			nat start = anchor;
+			nat k = (nat) atoi(string); 
+			if (not k) k = 1000;
+			nat amount = text_length - start;
+			if (k and k < amount) amount = k;
+			fwrite(text + start, 1, amount, stdout); fflush(stdout);
 
-		} else if (input[0] == 'f') {
+		} else if (input[0] == 'm') {
 			nat t = 0;
 			for (nat i = cursor; i < text_length; i++) {
 				if (text[i] == string[t]) {
@@ -198,10 +245,29 @@ load_file:
 			);
 			fflush(stdout);
 			continue;
-		found:	printf("found: c%llu\n", cursor); 
+		found:	printf("c%llu\n", cursor); 
 			fflush(stdout);
 
-		} else if (input[0] == 't') {
+		} else if (input[0] == 'h') {
+			nat t = string_length;
+			for (nat i = cursor; i--; ) {
+				t--;
+				if (text[i] == string[t]) {	
+					if (not t) { 
+						cursor = i; 
+						goto foundb; 
+					} 
+				} else t = string_length;
+			}
+			printf("not found: \"%.*s\"\n", 
+				(int) string_length, string
+			);
+			fflush(stdout);
+			continue;
+		foundb:	printf("c%llu\n", cursor); 
+			fflush(stdout);
+
+		} else if (input[0] == 'e') {
 			printf("inserting %llub at %llu: \"%.*s\"\n", 
 				string_length, cursor, 
 				(int) string_length, string
@@ -214,6 +280,21 @@ load_file:
 			memcpy(text + cursor, string, string_length);
 			cursor += string_length;
 			text_length += string_length;
+			saved = 0;
+
+		} else if (input[0] == 'i') {
+			printf("inserting clipboard of %llub at %llu: \"%.*s\"\n", 
+				cliplength, cursor, 
+				(int) cliplength, clipboard
+			); 
+			fflush(stdout);
+			text = realloc(text, text_length + cliplength);
+			memmove(text + cursor + cliplength, 
+				text + cursor, text_length - cursor
+			);
+			memcpy(text + cursor, clipboard, cliplength);
+			cursor += cliplength;
+			text_length += cliplength;
 			saved = 0;
 
 		} else if (input[0] == 'k') {
@@ -238,14 +319,33 @@ load_file:
 			text_length += dt_length;
 			saved = 0;
 
-		} else if (input[0] == 'l') { // required from canonical mode.
-			printf("inserting newline at %llu: \n", cursor);
-			text = realloc(text, text_length + 1);
-			memmove(text + cursor + 1, text + cursor, text_length - cursor);
-			memcpy(text + cursor, "\n", 1);
-			cursor += 1; 
-			text_length += 1;
-			saved = 0;
+
+		} else if (input[0] == 'o') {
+
+			printf("copying: range %llu .. %llu\n", 
+				anchor, cursor
+			);
+			fflush(stdout);
+			nat swapped = 0;
+			if (anchor > cursor) {
+				swapped = 1;
+				nat temp = anchor;
+				anchor = cursor;
+				cursor = temp;
+			}
+
+			cliplength = cursor - anchor;
+			free(clipboard);
+			clipboard = strndup(text + anchor, cliplength);
+
+			printf("copied %llub: <<<%s>>>\n", cliplength, clipboard);
+			fflush(stdout);
+
+			if (swapped) {
+				nat temp = anchor;
+				anchor = cursor;
+				cursor = temp;
+			}
 
 		} else if (input[0] == 'r') {
 			printf("removing: range %llu .. %llu\n", 
@@ -438,5 +538,41 @@ load_file:
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+else if (input[0] == 'p') { 
+			puts("set page size"); 
+			fflush(stdout); 
+			page_size = (nat) atoi(string); 
+		}
+
+
+*/
 
 
