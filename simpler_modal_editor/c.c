@@ -31,10 +31,11 @@ struct action {
 };
 
 static nat cursor = 0,  count = 0, anchor = 0, origin = 0,
-	cliplength = 0, head = 0, action_count = 0;
+	cliplength = 0, head = 0, action_count = 0, writable = 0;
 static char* text = NULL, * clipboard = NULL;
 static struct action* actions = NULL;
 static char filename[4096] = {0};
+static char last_modified[32] = {0};
 static char status[4096] = {0};
 static volatile struct winsize window = {0};
 static struct termios terminal = {0};
@@ -184,13 +185,163 @@ static void insert_dt(void) {
 
 static void save(void) {
 
+	const mode_t permissions = 
+		S_IRUSR | S_IWUSR | S_IROTH | S_IRGRP;
+	printf("saving: %s: %llub: testing timestamps...\n", 
+		filename, count
+	);
+	fflush(stdout);
+
+	char new_last_modified[32] = {0};
+	struct stat attr;
+	stat(filename, &attr);
+	strftime(new_last_modified, 32, "1%Y%m%d%u.%H%M%S", 
+		localtime(&attr.st_mtime)
+	);
+	printf("save: current last modified time: %s\n", new_last_modified);
+	fflush(stdout);
+	printf("save: existing last modfied time: %s\n", last_modified);
+	fflush(stdout);
+
+	if (not strcmp(new_last_modified, last_modified)) {
+
+		puts("matched timestamps: saving...");
+		fflush(stdout);
+
+		printf("saving: %s: %llub\n", filename, count);
+		fflush(stdout);
+
+		int output_file = open(filename, O_WRONLY | O_TRUNC, permissions);
+		if (output_file < 0) { 
+			printf("error: save: %s\n", strerror(errno));
+			fflush(stdout);
+			goto emergency_save;
+		}
+
+		write(output_file, text, count);  // TODO: check these. 
+		close(output_file);
+
+		struct stat attrn;
+		stat(filename, &attrn);
+		strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", 
+			localtime(&attrn.st_mtime)
+		);
+
+	} else {
+		puts("timestamp mismatch: refusing to save to prior path");
+		fflush(stdout);
+		puts("force saving file contents to a new file...");
+		fflush(stdout);
+
+		char name[4096] = {0};
+		char datetime[32] = {0};
+		struct timeval t = {0};
+		gettimeofday(&t, NULL);
+		struct tm* tm = localtime(&t.tv_sec);
+		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+		snprintf(name, sizeof name, "%s_%08x%08x_forcesave.txt", 
+			datetime, rand(), rand());
+		int flags = O_WRONLY | O_CREAT | O_EXCL;
+
+		printf("saving: %s: %llub\n", name, count);
+		fflush(stdout);
+		int output_file = open(name, flags, permissions);
+		if (output_file < 0) { 
+			printf("error: save: %s\n", strerror(errno));
+			fflush(stdout);
+			goto emergency_save;
+		} 
+		write(output_file, text, count); // TODO: check these. 
+		close(output_file);
+
+		printf("please reload the file, to see the external changes.\n");
+		fflush(stdout);
+		puts("warning: not reloading."); 
+		fflush(stdout);
+	}
+	return;
+
+emergency_save:
+	puts("printing stored document so far: ");
+	fflush(stdout);
+	fwrite(text, 1, count, stdout);
+	fflush(stdout);
+	fwrite(text, 1, count, stdout);
+	fflush(stdout);
+	puts("emergency save: force saving to the home directory.");
+	fflush(stdout);
+	puts("force saving file contents to a new file at /Users/dwrr/...");
+	fflush(stdout);
+
+	char name[4096] = {0};
+	char datetime[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+	snprintf(name, sizeof name, 
+		"/Users/dwrr/%s_%08x%08x_emergency_save.txt", 
+		datetime, rand(), rand()
+	);
+	int flags = O_WRONLY | O_CREAT | O_EXCL;
+
+	printf("saving: %s: %llub\n", name, count);
+	fflush(stdout);
+
+	int output_file = open(name, flags, permissions);
+	if (output_file < 0) { 
+		printf("error: save: %s\n", strerror(errno));
+		fflush(stdout);
+		puts("failed emergency save. try again? ");
+		char c[3] = {0};
+		read(0, &c, 2);
+		if (c[0] == 'y') { 
+			puts("trying to emergency save again..."); 
+			fflush(stdout);
+			goto emergency_save; 
+		} else 
+		puts("warning: not saving again, exiting editor."); 
+		fflush(stdout);
+		abort();
+	} 
+	write(output_file, text, count); // TODO: check these. 
+	close(output_file);
+	return;
+
 }
+
+
+
+
+
+
+
+
+/*
+	char name[4096] = {0};
+	strlcpy(name, filename, sizeof name);
+
+	nat saved = 0;
+loop:
+	if (not *name) {
+		
+	}
+	
+
+
+	if (not saved) goto loop;
+
+
+
+*/
+
+
 
 static void window_resized(int _) { if(_){} ioctl(0, TIOCGWINSZ, &window); }
 static noreturn void interrupted(int _) {if(_){} 
 	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
-	save(); exit(0); 
+	if (writable) save(); exit(0); 
 }
 
 int main(int argc, const char** argv) {
@@ -201,20 +352,14 @@ int main(int argc, const char** argv) {
 	if (argc == 1) goto new;
 	else if (argc == 2 or argc == 3) strlcpy(filename, argv[1], sizeof filename);
 	else exit(puts("usage: ./editor [file]"));
-
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
 	int file = open(filename, O_RDONLY);
-	if (file < 0) { 
-		read_error: printf("open: %s: %s\n", filename, strerror(errno)); 
-		exit(1); 
-	}
+	if (file < 0) read_error: exit(printf("open: %s: %s\n", filename, strerror(errno)));
 	struct stat ss; fstat(file, &ss);
 	count = (nat) ss.st_size;
 	text = malloc(count);
-	read(file, text, count);
-	close(file);
-
+	read(file, text, count); close(file);
 new: 	cursor = 0; anchor = (nat) -1;
 	finish_action((struct action) {0}, NULL, (int64_t) 0);
 	tcgetattr(0, &terminal);
@@ -224,9 +369,18 @@ new: 	cursor = 0; anchor = (nat) -1;
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSANOW, &terminal_copy);
 	write(1, "\033[?25l", 6);
-	const bool writable = argc < 3;
+	writable = argc < 3;
 	nat mode = 2, saved = 1, target_length = 0, home = 0;
 	char history[6] = {0}, target[4096] = {0};
+
+	
+	struct stat attr_;
+	stat(filename, &attr_);
+	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", 
+		localtime(&attr_.st_mtime)
+	);
+
+
 
 loop:	ioctl(0, TIOCGWINSZ, &window);
 	display();
@@ -246,12 +400,11 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		*history = c;
 	} else if (mode == 1) {
 		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
-			memset(history, 0, sizeof history);
-			if (target_length >= 5) target_length -= 5;
-			mode = 2; if (c == 27) goto loop; 
+			mode = 2;  memset(history, 0, sizeof history); 
+			if (c == 'n') { if (target_length >= 5) target_length -= 5; } else goto loop;
 		} else if (c == 127) { if (target_length) target_length--; }
 		else if (c == 9 or c == 10 or (uint8_t) c >= 32) { 
-			if (target_length < sizeof target) target[target_length++] = c; 
+			if (target_length < sizeof target - 1) target[target_length++] = c; 
 		} 
 		memmove(history + 1, history, sizeof history - 1);
 		*history = c;
@@ -311,7 +464,7 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 	goto loop;
 done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
-	exit(0);
+	if (writable) save(); exit(0);
 }
 
 
