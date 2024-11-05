@@ -103,6 +103,8 @@ static void display(void) {
 			append("\033[7m", 4, screen, &length);
 
 		if (c == 10) {
+			if (i == cursor or i == anchor) 
+				append(" \033[0m", 5, screen, &length);
 		print_newline:
 			append("\033[K", 3, screen, &length);
 			if (row < window.ws_row - 1) 
@@ -220,7 +222,7 @@ int main(int argc, const char** argv) {
 	read(file, text, count);
 	close(file);
 
-new: 	cursor = 0; anchor = 0;
+new: 	cursor = 0; anchor = (nat) -1;
 	finish_action((struct action) {0}, NULL, (int64_t) 0);
 	tcgetattr(0, &terminal);
 	struct termios terminal_copy = terminal; 
@@ -251,11 +253,45 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		if (c == 'Q') goto done;
 		else if (c == 'y') save();
 		else if (c == 't') mode = 0;
-		else if (c == 'a') anchor = cursor;
 		else if (c == 'v') insert_dt();
 		else if (c == 'r') delete(1, 1);
 		else if (c == 'i') { if (cursor < count) cursor++; }
 		else if (c == 'n') { if (cursor) cursor--; }
+		else if (c == 'p' or c == 'h') {
+			nat times = 1;
+			if (c == 'h') times = window.ws_row >> 1;
+			for (nat i = 0; i < times; i++) 
+				while (cursor) { 
+					cursor--; 
+					if (not cursor or text[cursor - 1] == 10) break;
+				}
+		} else if (c == 'u' or c == 'm') {
+			nat times = 1;
+			if (c == 'm') times = window.ws_row >> 1;
+			for (nat i = 0; i < times; i++) 
+				while (cursor < count) { 
+					cursor++; 
+					if (cursor < count and text[cursor] == 10) break;
+				}
+		} else if (c == 'e') {
+			while (cursor) { 
+				cursor--; 
+				if (not cursor) break;
+				if (text[cursor - 1] == 10) break;
+				if (isalnum(text[cursor]) and not isalnum(text[cursor - 1])) break;
+			}
+		} else if (c == 'o') {
+			while (cursor < count) { 
+				cursor++; 
+				if (cursor >= count) break;
+				if (text[cursor] == 10) break;
+				if (not isalnum(text[cursor]) and isalnum(text[cursor - 1])) break;
+			}
+		}
+
+		else if (c == 'a') anchor = anchor == (nat)-1 ? cursor : (nat) -1;
+		//else if (c == 'k') search_forward();
+		//else if (c == 'l') search_backwards();
 	}
 	goto loop;
 
@@ -300,6 +336,34 @@ done:	write(1, "\033[?25h", 6);
 
 
 /*
+
+
+
+
+
+
+
+	left();
+	while (cursor) {
+		if (not (not isalnum(text[cursor]) or isalnum(text[cursor - 1]))) break;
+		if (text[cursor - 1] == 10) break;
+		left();
+	}
+}
+
+	right();
+	while (cursor < count) {
+		if (not (isalnum(text[cursor]) or not isalnum(text[cursor - 1]))) break;
+		if (text[cursor] == 10) break;
+		right();
+	}
+
+
+
+
+
+
+
 	//printf("length = %llu, screen = <<<%.*s>>>\n", 
 	//	length, (int) length, screen);
 
