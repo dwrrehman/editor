@@ -69,14 +69,14 @@ static nat cursor_in_view(nat given_origin) {
 		if (i == cursor) return true;
 		if (c == 10) {
 			print_newline: row++; column = 0;
-			if (row >= window.ws_row - 1) break;
+			if (row >= window.ws_row) break;
 		} else if (c == 9) {
 			nat amount = 8 - column % 8;
 			column += amount;
 		} else if ((unsigned char) c >= 32) { column++; } else { column += 4; }
 		if (column >= window.ws_col - 2) goto print_newline;
 	} 
-	if (i == cursor) return true; return false;
+	if (i == cursor and i == count) return true; return false;
 }
 
 static void update_origin(void) {
@@ -111,10 +111,7 @@ static void display(void) {
 			append("\033[K", 3, screen, &length);
 			if (row < window.ws_row - 1) append("\n", 1, screen, &length);
 			row++; column = 0;
-			if (row >= window.ws_row - 1) {
-				append("\033[0m", 4, screen, &length);
-				break;
-			}
+			if (row >= window.ws_row) break;
 		} else if (c == 9) {
 			nat amount = 8 - column % 8;
 			column += amount;
@@ -133,10 +130,10 @@ static void display(void) {
 			append("\033[0m", 4, screen, &length); 
 			column += 4;
 		}
-		if (column >= window.ws_col - 2) goto print_newline;
 		if (i == cursor or i == anchor) append("\033[0m", 4, screen, &length);
+		if (column >= window.ws_col - 2) goto print_newline;
 	}
-	if (i == cursor or i == anchor) append("\033[7m \033[0m", 9, screen, &length);
+	if (i == count and (i == cursor or i == anchor)) append("\033[7m \033[0m", 9, screen, &length);
 	while (row < window.ws_row) {
 		append("\033[K", 3, screen, &length);
 		if (row < window.ws_row - 1) append("\n", 1, screen, &length);
@@ -394,44 +391,6 @@ static void insert_char(void) {
 		if (c == 'p') { c = '8'; insert(&c, 1, 1); }
 		if (c == 'i') { c = '9'; insert(&c, 1, 1); }
 	}
-	
-	else if (c == 'e') {
-		read(0, &c, 1);c = remap(c);
-		if (c == 'a') { c = '\'';insert(&c, 1, 1); }
-		if (c == 'd') { c = '('; insert(&c, 1, 1); }
-		if (c == 'r') { c = ')'; insert(&c, 1, 1); }
-		if (c == 't') { c = '.'; insert(&c, 1, 1); }
-		if (c == 'n') { c = ','; insert(&c, 1, 1); }
-		if (c == 'u') { c = '['; insert(&c, 1, 1); }
-		if (c == 'p') { c = ']'; insert(&c, 1, 1); }
-		if (c == 'i') { c = '"'; insert(&c, 1, 1); }
-		if (c == 's') { c = '<'; insert(&c, 1, 1); }
-		if (c == 'h') { c = '>'; insert(&c, 1, 1); }
-		if (c == 'e') { c = '{'; insert(&c, 1, 1); }
-		if (c == 'o') { c = '}'; insert(&c, 1, 1); }
-		if (c == 'm') { c = '-'; insert(&c, 1, 1); }
-		if (c == 'l') { c = '_'; insert(&c, 1, 1); }
-		if (c == 'c') { c = '~'; insert(&c, 1, 1); }
-		if (c == 'k') { c = '`'; insert(&c, 1, 1); }
-	} else if (c == 'o') {
-		read(0, &c, 1);c = remap(c);
-		if (c == 'a') { c = '+'; insert(&c, 1, 1); }
-		if (c == 'd') { c = '?'; insert(&c, 1, 1); }
-		if (c == 'r') { c = '!'; insert(&c, 1, 1); }
-		if (c == 't') { c = '*'; insert(&c, 1, 1); }
-		if (c == 'n') { c = '/'; insert(&c, 1, 1); }
-		if (c == 'u') { c = '%'; insert(&c, 1, 1); }
-		if (c == 'p') { c = '^'; insert(&c, 1, 1); }
-		if (c == 'i') { c = '='; insert(&c, 1, 1); }
-		if (c == 's') { c = '|'; insert(&c, 1, 1); }
-		if (c == 'h') { c = '&'; insert(&c, 1, 1); }
-		if (c == 'e') { c = '@'; insert(&c, 1, 1); }
-		if (c == 'o') { c = '\\';insert(&c, 1, 1); }
-		if (c == 'm') { c = ':'; insert(&c, 1, 1); }
-		if (c == 'l') { c = ';'; insert(&c, 1, 1); }
-		if (c == 'c') { c = '#'; insert(&c, 1, 1); }
-		if (c == 'k') { c = '$'; insert(&c, 1, 1); }
-	}
 }
 
 static void window_resized(int _) { if(_){} ioctl(0, TIOCGWINSZ, &window); }
@@ -504,7 +463,7 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		cursor = home;
 		for (nat t = 0; cursor < count; cursor++) {
 			if (text[cursor] != target[t]) { t = 0; continue; }
-			t++; if (t == target_length) goto found;
+			t++; if (t == target_length) { cursor++; goto found; }
 		}
 		cursor = home; found:; 
 		memset(status, 0, sizeof status);
@@ -566,11 +525,11 @@ do_command:
 	char* s = get_selection();
 	if (not s) goto loop;
 	else if (not strncmp(s, "do ", 3)) {}
-	else if (not strncmp(s, "del ", 4)) delete_selection();
-	else if (not strcmp(s, "insert hello")) insert("hello world", 11, 1);
-	else if (not strcmp(s, "dt")) insert_dt();
-	else if (not strcmp(s, "exit")) goto done;
+	//else if (not strcmp(s, "insert hello")) insert("hello world", 11, 1);
+	//else if (not strcmp(s, "dt")) insert_dt();
+	//else if (not strcmp(s, "exit")) goto done;
 	free(s);
+	goto loop;
 done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
 	if (writable) save(); exit(0);
@@ -615,6 +574,60 @@ done:	write(1, "\033[?25h", 6);
 
 
 /*
+
+
+
+
+
+
+
+
+	else if (c == 'e') {
+		read(0, &c, 1);c = remap(c);
+		if (c == 'a') { c = '\'';insert(&c, 1, 1); }
+		if (c == 'd') { c = '('; insert(&c, 1, 1); }
+		if (c == 'r') { c = ')'; insert(&c, 1, 1); }
+		if (c == 't') { c = '.'; insert(&c, 1, 1); }
+		if (c == 'n') { c = ','; insert(&c, 1, 1); }
+		if (c == 'u') { c = '['; insert(&c, 1, 1); }
+		if (c == 'p') { c = ']'; insert(&c, 1, 1); }
+		if (c == 'i') { c = '"'; insert(&c, 1, 1); }
+		if (c == 's') { c = '<'; insert(&c, 1, 1); }
+		if (c == 'h') { c = '>'; insert(&c, 1, 1); }
+		if (c == 'e') { c = '{'; insert(&c, 1, 1); }
+		if (c == 'o') { c = '}'; insert(&c, 1, 1); }
+		if (c == 'm') { c = '-'; insert(&c, 1, 1); }
+		if (c == 'l') { c = '_'; insert(&c, 1, 1); }
+		if (c == 'c') { c = '~'; insert(&c, 1, 1); }
+		if (c == 'k') { c = '`'; insert(&c, 1, 1); }
+	} else if (c == 'o') {
+		read(0, &c, 1);c = remap(c);
+		if (c == 'a') { c = '+'; insert(&c, 1, 1); }
+		if (c == 'd') { c = '?'; insert(&c, 1, 1); }
+		if (c == 'r') { c = '!'; insert(&c, 1, 1); }
+		if (c == 't') { c = '*'; insert(&c, 1, 1); }
+		if (c == 'n') { c = '/'; insert(&c, 1, 1); }
+		if (c == 'u') { c = '%'; insert(&c, 1, 1); }
+		if (c == 'p') { c = '^'; insert(&c, 1, 1); }
+		if (c == 'i') { c = '='; insert(&c, 1, 1); }
+		if (c == 's') { c = '|'; insert(&c, 1, 1); }
+		if (c == 'h') { c = '&'; insert(&c, 1, 1); }
+		if (c == 'e') { c = '@'; insert(&c, 1, 1); }
+		if (c == 'o') { c = '\\';insert(&c, 1, 1); }
+		if (c == 'm') { c = ':'; insert(&c, 1, 1); }
+		if (c == 'l') { c = ';'; insert(&c, 1, 1); }
+		if (c == 'c') { c = '#'; insert(&c, 1, 1); }
+		if (c == 'k') { c = '$'; insert(&c, 1, 1); }
+	}
+
+
+
+
+
+
+
+
+
 	char name[4096] = {0};
 	strlcpy(name, filename, sizeof name);
 

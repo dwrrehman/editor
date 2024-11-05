@@ -1,0 +1,23 @@
+hello there from space!!
+
+	this is a text document to test my editor making new documents, 
+
+
+and also to see if it is able to display the cursor properly lol. 
+
+	so yeah i think it is able to actually display it properly!!! which is quite cool lol. yay. 
+
+
+	i want to revise how the ascii character insertion function works, so that we can type all ascii characters without leaving the home row,  but  yeah thats a small thing honestly. just kinda a nice to have honestly lol. so yeah 
+
+
+yay
+
+
+
+it also looks like saving works well, and    yeah i am going to try to cut a selection of text, and also do some searching in this document and see how that works. 
+
+
+	lets say that i wanted to change the  fourth line, lets try to do it yayyy
+
+

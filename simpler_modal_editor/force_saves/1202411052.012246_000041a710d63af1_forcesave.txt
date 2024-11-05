@@ -21,6 +21,26 @@ typedef uint64_t nat;
 
 /*
 
+
+
+
+	this is a text editor that i have written on 1202411052.124538 
+
+		basically i wanted to simplify things to minimize the possible places that a infinite loop bug could arise from, and i think i did it pretty well! theres this char insertion system that i am not too keen on and might remove, but other than that, everything works quite welllll yayy
+
+		the main problem right now, is that we dont have any sort of   global paste. thats the thing that is currently making it not perfectlyyyy usable, but other than that its quite good. i like the functionality ive implemented lol. so yeah yay
+
+
+
+
+
+
+
+
+
+
+
+
 workman key layout:
 
 q d r w b j f u p ; 
