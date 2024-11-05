@@ -35,6 +35,7 @@ static nat cursor = 0,  count = 0, anchor = 0, origin = 0,
 static char* text = NULL, * clipboard = NULL;
 static struct action* actions = NULL;
 static char filename[4096] = {0};
+static char status[4096] = {0};
 static volatile struct winsize window = {0};
 static struct termios terminal = {0};
 
@@ -131,6 +132,13 @@ static void display(void) {
 		if (row < window.ws_row - 1) append("\n", 1, screen, &length);
 		row++;
 	}
+
+	if (*status) {
+		append("\033[H", 3, screen, &length);
+		append(status, strlen(status), screen, &length);
+		append("\033[7m \033[0m", 9, screen, &length);
+		memset(status, 0, sizeof status);
+	}
 	write(1, screen, length);
 }
 
@@ -216,8 +224,9 @@ new: 	cursor = 0; anchor = (nat) -1;
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSANOW, &terminal_copy);
 	write(1, "\033[?25l", 6);
-	nat mode = argc < 3 ? 1 : 3, saved = 1;
-	char history[6] = {0};
+	const bool writable = argc < 3;
+	nat mode = 2, saved = 1, target_length = 0, home = 0;
+	char history[6] = {0}, target[4096] = {0};
 
 loop:	ioctl(0, TIOCGWINSZ, &window);
 	display();
@@ -229,18 +238,35 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 	if (mode == 0) {
 		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
 			memset(history, 0, sizeof history);
-			delete(5, 1); mode = 1; 
+			if (c == 'n') delete(5, 1); 
+			mode = 2; goto loop;
 		} else if (c == 127) delete(1, 1);
 		else if (c == 9 or c == 10 or (uint8_t) c >= 32) insert(&c, 1, 1);
 		memmove(history + 1, history, sizeof history - 1);
 		*history = c;
 	} else if (mode == 1) {
-		
+		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
+			memset(history, 0, sizeof history);
+			if (target_length >= 5) target_length -= 5;
+			mode = 2; if (c == 27) goto loop; 
+		} else if (c == 127) { if (target_length) target_length--; }
+		else if (c == 9 or c == 10 or (uint8_t) c >= 32) { 
+			if (target_length < sizeof target) target[target_length++] = c; 
+		} 
+		memmove(history + 1, history, sizeof history - 1);
+		*history = c;
+		cursor = home;
+		for (nat t = 0; cursor < count; cursor++) {
+			if (text[cursor] != target[t]) { t = 0; continue; }
+			t++; if (t == target_length) goto found;
+		}
+		cursor = home; found:; 
+		memset(status, 0, sizeof status);
+		memcpy(status, target, target_length);
 	} else {
-		const bool writable = mode == 2;
 		if (c == 'Q') goto done;
 		else if (c == 'q') {}
-		else if (c == 'd') mode = 1;
+		else if (c == 'd' or c == 's') { mode = 1; target_length = 0; home = c == 'd' ? 0 : cursor; }
 		else if (c == 'z' and writable) {}
 		else if (c == 'x' and writable) {}
 		else if (c == 'y' and writable) save();
