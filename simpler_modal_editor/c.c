@@ -18,8 +18,8 @@
 #include <stdint.h>
 #include <signal.h>
 #include <stdnoreturn.h>
-
 typedef uint64_t nat;
+#define max_screen_size  1 << 20
 
 struct action {
 	nat parent;
@@ -30,9 +30,6 @@ struct action {
 	char* string;
 };
 
-#define max_screen_size  1 << 20
-
-//static const bool use_qwerty_layout = false; 
 static nat cursor = 0,  count = 0, anchor = 0, origin = 0,
 	cliplength = 0, head = 0, action_count = 0;
 static char* text = NULL, * clipboard = NULL;
@@ -65,12 +62,10 @@ static nat cursor_in_view(nat given_origin) {
 		} else if (c == 9) {
 			nat amount = 8 - column % 8;
 			column += amount;
-		} else if ((unsigned char) c >= 32) { column++; } 
-		else { column += 4; }
+		} else if ((unsigned char) c >= 32) { column++; } else { column += 4; }
 		if (column >= window.ws_col - 2) goto print_newline;
 	} 
-	if (i == cursor) return true; 
-	return false;
+	if (i == cursor) return true; return false;
 }
 
 static void update_origin(void) {
@@ -93,28 +88,22 @@ static void update_origin(void) {
 static void display(void) {
 	char screen[max_screen_size];
 	nat length = 0, column = 0, row = 0;
-
 	update_origin();
 	append("\033[H", 3, screen, &length);
 	nat i = origin;
 	for (; i < count; i++) {
 		const char c = text[i];
-		if (i == cursor or i == anchor) 
-			append("\033[7m", 4, screen, &length);
-
+		if (i == cursor or i == anchor) append("\033[7m", 4, screen, &length);
 		if (c == 10) {
-			if (i == cursor or i == anchor) 
-				append(" \033[0m", 5, screen, &length);
+			if (i == cursor or i == anchor) append(" \033[0m", 5, screen, &length);
 		print_newline:
 			append("\033[K", 3, screen, &length);
-			if (row < window.ws_row - 1) 
-				append("\n", 1, screen, &length);
+			if (row < window.ws_row - 1) append("\n", 1, screen, &length);
 			row++; column = 0;
 			if (row >= window.ws_row - 1) {
 				append("\033[0m", 4, screen, &length);
 				break;
 			}
-
 		} else if (c == 9) {
 			nat amount = 8 - column % 8;
 			column += amount;
@@ -123,13 +112,12 @@ static void display(void) {
 				amount--; 
 			}
 			append("        ", amount, screen, &length);
-
 		} else if ((unsigned char) c >= 32) {
 			append(text + i, 1, screen, &length); 
 			column++;
 		} else {
 			const char control_code = c + 'A';
-			append("\033[7mCTL", 4, screen, &length); 
+			append("\033[7m^", 5, screen, &length); 
 			append(&control_code, 1, screen, &length);
 			append("\033[0m", 4, screen, &length); 
 			column += 4;
@@ -137,7 +125,6 @@ static void display(void) {
 		if (column >= window.ws_col - 2) goto print_newline;
 		if (i == cursor or i == anchor) append("\033[0m", 4, screen, &length);
 	}
-
 	if (i == cursor or i == anchor) append("\033[7m \033[0m", 9, screen, &length);
 	while (row < window.ws_row) {
 		append("\033[K", 3, screen, &length);
@@ -203,17 +190,15 @@ int main(int argc, const char** argv) {
 	sigaction(SIGWINCH, &action, NULL);
 	struct sigaction action2 = {.sa_handler = interrupted}; 
 	sigaction(SIGINT, &action2, NULL);
-
 	if (argc == 1) goto new;
-	else if (argc == 2) strlcpy(filename, argv[1], sizeof filename);
+	else if (argc == 2 or argc == 3) strlcpy(filename, argv[1], sizeof filename);
 	else exit(puts("usage: ./editor [file]"));
 
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
 	int file = open(filename, O_RDONLY);
 	if (file < 0) { 
-	read_error: 
-		printf("editor: open: %s: %s\n", filename, strerror(errno)); 
+		read_error: printf("open: %s: %s\n", filename, strerror(errno)); 
 		exit(1); 
 	}
 	struct stat ss; fstat(file, &ss);
@@ -231,7 +216,7 @@ new: 	cursor = 0; anchor = (nat) -1;
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSANOW, &terminal_copy);
 	write(1, "\033[?25l", 6);
-	nat mode = 1;
+	nat mode = argc < 3 ? 1 : 3, saved = 1;
 	char history[6] = {0};
 
 loop:	ioctl(0, TIOCGWINSZ, &window);
@@ -241,7 +226,7 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 	c = remap(c);
 	if (n < 0) { perror("read"); fflush(stderr); }
 
-	if (not mode) {
+	if (mode == 0) {
 		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
 			memset(history, 0, sizeof history);
 			delete(5, 1); mode = 1; 
@@ -249,12 +234,20 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		else if (c == 9 or c == 10 or (uint8_t) c >= 32) insert(&c, 1, 1);
 		memmove(history + 1, history, sizeof history - 1);
 		*history = c;
+	} else if (mode == 1) {
+		
 	} else {
+		const bool writable = mode == 2;
 		if (c == 'Q') goto done;
-		else if (c == 'y') save();
-		else if (c == 't') mode = 0;
-		else if (c == 'v') insert_dt();
-		else if (c == 'r') delete(1, 1);
+		else if (c == 'q') {}
+		else if (c == 'd') mode = 1;
+		else if (c == 'z' and writable) {}
+		else if (c == 'x' and writable) {}
+		else if (c == 'y' and writable) save();
+		else if (c == 't' and writable) mode = 0;
+		else if (c == 's' and writable) insert_dt();
+		else if (c == 'r' and writable) delete(1, 1);
+		else if (c == 'a') anchor = anchor == (nat)-1 ? cursor : (nat) -1;
 		else if (c == 'i') { if (cursor < count) cursor++; }
 		else if (c == 'n') { if (cursor) cursor--; }
 		else if (c == 'p' or c == 'h') {
@@ -276,28 +269,23 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		} else if (c == 'e') {
 			while (cursor) { 
 				cursor--; 
-				if (not cursor) break;
-				if (text[cursor - 1] == 10) break;
-				if (isalnum(text[cursor]) and not isalnum(text[cursor - 1])) break;
+				if (not cursor or text[cursor - 1] == 10) break;
+				if (isalnum(text[cursor]) and 
+				not isalnum(text[cursor - 1])) break;
 			}
 		} else if (c == 'o') {
 			while (cursor < count) { 
 				cursor++; 
-				if (cursor >= count) break;
-				if (text[cursor] == 10) break;
-				if (not isalnum(text[cursor]) and isalnum(text[cursor - 1])) break;
+				if (cursor >= count or text[cursor] == 10) break;
+				if (not isalnum(text[cursor]) and 
+				isalnum(text[cursor - 1])) break;
 			}
 		}
-
-		else if (c == 'a') anchor = anchor == (nat)-1 ? cursor : (nat) -1;
-		//else if (c == 'k') search_forward();
-		//else if (c == 'l') search_backwards();
 	}
 	goto loop;
-
 done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
-	save(); exit(0);
+	exit(0);
 }
 
 
