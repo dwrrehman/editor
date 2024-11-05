@@ -21,3 +21,54 @@ it also looks like saving works well, and    yeah i am going to try to cut a sel
 	lets say that i wanted to change the  fourth line, lets try to do it yayyy
 
 
+0123456789
+`~!@#$%^&*(){}[]<>|\+=_-:;?/.,'"
+
+						array[0] = 6;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+						
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

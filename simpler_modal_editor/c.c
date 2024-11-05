@@ -3,7 +3,7 @@
 #include <string.h>  // supposed to be a simpler version of
 #include <iso646.h>  // the modal editor that we wrote.
 #include <unistd.h>  
-#include <fcntl.h>
+#include <fcntl.h>   // finished on 1202411052.131234
 #include <termios.h>
 #include <time.h>
 #include <stdbool.h>
@@ -18,7 +18,9 @@
 #include <stdint.h>
 #include <signal.h>
 #include <stdnoreturn.h>
+
 typedef uint64_t nat;
+
 #define max_screen_size  1 << 20
 
 struct action {
@@ -365,9 +367,10 @@ static void local_copy(void) {
 }
 
 static void insert_char(void) {
-	char c = 0;
-	read(0, &c, 1); c = remap(c);
+	char c = 0; read(0, &c, 1); c = remap(c);
 	if (c == 'a') insert_dt();
+	else if (c == 'n') insert("0123456789", 10, 1);
+	else if (c == 'p') insert("`~!@#$%^&*(){}[]<>|\\+=_-:;?/.,'\"", 32, 1);
 	else if (c == 'd') { read(0, &c, 1); c = remap(c);
 		if (c == 'e') { read(0, &c, 1); c = remap(c);
 			if (c == 'l') delete_selection();
@@ -376,21 +379,58 @@ static void insert_char(void) {
 	else if (c == 'r') { c = 10; insert(&c, 1, 1); }
 	else if (c == 'h') { c = 32; insert(&c, 1, 1); }
 	else if (c == 'm') { c = 9;  insert(&c, 1, 1); }
-	else if (c == 't') { read(0, &c, 1);c = remap(c); insert(&c, 1, 1); }
-	else if (c == 'u') { read(0, &c, 1);c = remap(c); c = (char) toupper(c); insert(&c, 1, 1); }
-	else if (c == 'n') {
-		read(0, &c, 1);c = remap(c);
-		if (c == 'a') { c = '0'; insert(&c, 1, 1); }
-		if (c == 'd') { c = '1'; insert(&c, 1, 1); }
-		if (c == 'r') { c = '2'; insert(&c, 1, 1); }
-		if (c == 't') { c = '3'; insert(&c, 1, 1); }
-		if (c == 'm') { c = '4'; insert(&c, 1, 1); }
-		if (c == 'l') { c = '5'; insert(&c, 1, 1); }
-		if (c == 'n') { c = '6'; insert(&c, 1, 1); }
-		if (c == 'u') { c = '7'; insert(&c, 1, 1); }
-		if (c == 'p') { c = '8'; insert(&c, 1, 1); }
-		if (c == 'i') { c = '9'; insert(&c, 1, 1); }
+	else if (c == 't') { read(0, &c, 1); c = remap(c); insert(&c, 1, 1); }
+	else if (c == 'u' and cursor < count) {
+		c = (char) toupper(text[cursor]);
+		cursor++; delete(1, 1); insert(&c, 1, 1); cursor--;
 	}
+	else if (c == 'e' and cursor < count and text[cursor] < 126) { 
+		c = text[cursor] + 1; 
+		cursor++; delete(1, 1); insert(&c, 1, 1); cursor--;
+	}
+	else if (c == 'o' and cursor < count and text[cursor] > 32) { 
+		c = text[cursor] - 1;
+		cursor++; delete(1, 1); insert(&c, 1, 1); cursor--;
+	}
+}
+
+static inline void copy_global(void) {
+	if (anchor > count or anchor == cursor) return;
+	const nat length = anchor < cursor ? cursor - anchor : anchor - cursor;
+	FILE* globalclip = popen("pbcopy", "w");
+	if (not globalclip) {
+		//print("cpy:*:\"");
+		//print(strerror(errno));
+		//print("\"|"); return;
+	}
+	fwrite(text + (anchor < cursor ? anchor : cursor), 1, length, globalclip);
+	pclose(globalclip);
+}
+
+static void insert_output(const char* input_command) {
+	save();
+	char command[4096] = {0};
+	strlcpy(command, input_command, sizeof command);
+	strlcat(command, " 2>&1", sizeof command);
+	//snprintf(command, sizeof command, "%s 2>&1", input_command);
+
+	FILE* f = popen(command, "r");
+	if (not f) {
+		//print("iop:*:popen\""); print(strerror(errno)); print("\"|");
+		return;
+	}
+	char* string = NULL;
+	size_t length = 0;
+	char line[2048] = {0};
+	while (fgets(line, sizeof line, f)) {
+		size_t l = strlen(line);
+		string = realloc(string, length + l);
+		memcpy(string + length, line, l);
+		length += l;
+	}
+	pclose(f);
+	insert(string, length, 1);
+	free(string);
 }
 
 static void window_resized(int _) { if(_){} ioctl(0, TIOCGWINSZ, &window); }
@@ -405,7 +445,6 @@ int main(int argc, const char** argv) {
 	sigaction(SIGWINCH, &action, NULL);
 	struct sigaction action2 = {.sa_handler = interrupted}; 
 	sigaction(SIGINT, &action2, NULL);
-
 	if (argc == 1) goto new;
 	else if (argc == 2 or argc == 3) strlcpy(filename, argv[1], sizeof filename);
 	else exit(puts("usage: ./editor [file]"));
@@ -478,7 +517,9 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		else if (c == 's' and writable) insert_char();
 		else if (c == 'r' and writable) delete(1, 1);
 		else if (c == 'w' and writable) insert(clipboard, cliplength, 1);
+		else if (c == 'g' and writable) insert_output("pbpaste");
 		else if (c == 'c') local_copy();
+		else if (c == 'f') copy_global();
 		else if (c == 'a') anchor = anchor == (nat)-1 ? cursor : (nat) -1;
 		else if (c == 'i') { if (cursor < count) cursor++; }
 		else if (c == 'n') { if (cursor) cursor--; }
@@ -525,11 +566,7 @@ do_command:
 	char* s = get_selection();
 	if (not s) goto loop;
 	else if (not strncmp(s, "do ", 3)) {}
-	//else if (not strcmp(s, "insert hello")) insert("hello world", 11, 1);
-	//else if (not strcmp(s, "dt")) insert_dt();
-	//else if (not strcmp(s, "exit")) goto done;
-	free(s);
-	goto loop;
+	free(s); goto loop;
 done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
 	if (writable) save(); exit(0);
@@ -578,7 +615,9 @@ done:	write(1, "\033[?25h", 6);
 
 
 
-
+	//else if (not strcmp(s, "insert hello")) insert("hello world", 11, 1);
+	//else if (not strcmp(s, "dt")) insert_dt();
+	//else if (not strcmp(s, "exit")) goto done;
 
 
 
