@@ -14,7 +14,7 @@ elif [ "clean" = "$1" ]; then
 	rm -rf c.plist
 
 elif [ "" = "$1" ]; then 
-	clang -g -O0 -Weverything -Wno-poison-system-directories -Wno-declaration-after-statement -fsanitize=address,undefined c.c -o editor -ferror-limit=1
+	clang -g -O0 -Weverything -Wno-declaration-after-statement -fsanitize=address,undefined c.c -o editor -ferror-limit=1
 
 elif [ "check" = "$1" ]; then 
 	clang -Weverything --analyze -Wno-declaration-after-statement -Wno-poison-system-directories c.c

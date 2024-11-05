@@ -50,14 +50,51 @@ static void append(
 	const char* string, nat length, 
 	char* screen, nat* screen_length) {
 	if (*screen_length + length >= max_screen_size) return;
-	memcpy(screen, string, length);
+	memcpy(screen + *screen_length, string, length);
 	*screen_length += length;
+}
+
+static nat cursor_in_view(nat given_origin) {
+	nat i = given_origin, column = 0, row = 0;
+	for (; i < count; i++) {
+		const char c = text[i];
+		if (i == cursor) return true;
+		if (c == 10) {
+			print_newline: row++; column = 0;
+			if (row >= window.ws_row - 1) break;
+		} else if (c == 9) {
+			nat amount = 8 - column % 8;
+			column += amount;
+		} else if ((unsigned char) c >= 32) { column++; } 
+		else { column += 4; }
+		if (column >= window.ws_col - 2) goto print_newline;
+	} 
+	if (i == cursor) return true; 
+	return false;
+}
+
+static void update_origin(void) {
+	if (origin > count) origin = count;
+	if (not cursor_in_view(origin)) {
+		if (cursor < origin) { 
+			while (origin and not cursor_in_view(origin)) {
+				do origin--; 
+				while (origin and text[origin - 1] != 10);
+			} 
+		} else if (cursor > origin) { 
+			while (origin < count and not cursor_in_view(origin)) {
+				do origin++; 
+				while (origin < count and text[origin - 1] != 10);
+			} 
+		}
+	}
 }
 
 static void display(void) {
 	char screen[max_screen_size];
 	nat length = 0, column = 0, row = 0;
 
+	update_origin();
 	append("\033[H", 3, screen, &length);
 	nat i = origin;
 	for (; i < count; i++) {
@@ -98,6 +135,7 @@ static void display(void) {
 		if (column >= window.ws_col - 2) goto print_newline;
 		if (i == cursor or i == anchor) append("\033[0m", 4, screen, &length);
 	}
+
 	if (i == cursor or i == anchor) append("\033[7m \033[0m", 9, screen, &length);
 	while (row < window.ws_row) {
 		append("\033[K", 3, screen, &length);
@@ -118,7 +156,6 @@ static void finish_action(struct action node, char* string, int64_t length) {
 	actions[action_count++] = node;
 }
 
-
 static void insert(char* string, nat length, bool should_record) {
 	struct action node = { .pre = cursor };
 	text = realloc(text, count + length);
@@ -138,12 +175,21 @@ static void delete(nat length, bool should_record) {
 	if (should_record) finish_action(node, string, (int64_t) -length);
 }
 
+static void insert_dt(void) {
+	char datetime[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+	printf("insert_dt: inserted datetime \"%s\" at cursor %llu...\n", datetime, cursor);
+	insert(datetime, strlen(datetime), 1);
+}
+
 static void save(void) {
 
 }
 
 static void window_resized(int _) { if(_){} ioctl(0, TIOCGWINSZ, &window); }
-
 static noreturn void interrupted(int _) {if(_){} 
 	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
@@ -163,7 +209,11 @@ int main(int argc, const char** argv) {
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
 	int file = open(filename, O_RDONLY);
-	if (file < 0) { read_error: printf("could not open \"%s\"\n", filename); perror("editor: open"); exit(1); }
+	if (file < 0) { 
+	read_error: 
+		printf("editor: open: %s: %s\n", filename, strerror(errno)); 
+		exit(1); 
+	}
 	struct stat ss; fstat(file, &ss);
 	count = (nat) ss.st_size;
 	text = malloc(count);
@@ -179,28 +229,33 @@ new: 	cursor = 0; anchor = 0;
 	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
 	tcsetattr(0, TCSANOW, &terminal_copy);
 	write(1, "\033[?25l", 6);
-
-	nat mode = 0;
+	nat mode = 1;
+	char history[6] = {0};
 
 loop:	ioctl(0, TIOCGWINSZ, &window);
 	display();
-
 	char c = 0;
 	ssize_t n = read(0, &c, 1); 
 	c = remap(c);
 	if (n < 0) { perror("read"); fflush(stderr); }
 
 	if (not mode) {
-		if (c == 27) mode = 1;
-		else if (c == 127) delete(1, 1);
-		else if (c == 9 or c == 10 or 
-			(unsigned char) c >= 32)
-			insert(&c, 1, 1);
+		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
+			memset(history, 0, sizeof history);
+			delete(5, 1); mode = 1; 
+		} else if (c == 127) delete(1, 1);
+		else if (c == 9 or c == 10 or (uint8_t) c >= 32) insert(&c, 1, 1);
+		memmove(history + 1, history, sizeof history - 1);
+		*history = c;
 	} else {
-		if (c == 27 or c == ' ') {}
+		if (c == 'Q') goto done;
+		else if (c == 'y') save();
 		else if (c == 't') mode = 0;
-		else if (c == 'Q') goto done;
-		else if (c ==
+		else if (c == 'a') anchor = cursor;
+		else if (c == 'v') insert_dt();
+		else if (c == 'r') delete(1, 1);
+		else if (c == 'i') { if (cursor < count) cursor++; }
+		else if (c == 'n') { if (cursor) cursor--; }
 	}
 	goto loop;
 
@@ -244,11 +299,15 @@ done:	write(1, "\033[?25h", 6);
 
 
 
-
-
-
 /*
+	//printf("length = %llu, screen = <<<%.*s>>>\n", 
+	//	length, (int) length, screen);
 
+	for (nat ii = 0; ii < length; ii++) {
+		printf("[c=%d]", screen[ii]);
+	}
+	puts("");
+	fflush(stdout);
 
 
 		
