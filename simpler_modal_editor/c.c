@@ -30,6 +30,7 @@ struct action {
 	char* string;
 };
 
+static const bool use_qwerty_layout = false;
 static nat cursor = 0,  count = 0, anchor = 0, origin = 0,
 	cliplength = 0, head = 0, action_count = 0, writable = 0;
 static char* text = NULL, * clipboard = NULL;
@@ -40,9 +41,17 @@ static char status[4096] = {0};
 static volatile struct winsize window = {0};
 static struct termios terminal = {0};
 
-static char remap(char c) {
-	if (c == 13) return 10;
-	return c; 
+static char remap(const char c) {
+	if (c == 13) return 10;	
+	if (use_qwerty_layout) {
+		const char upper_remap_alpha[26] = "AVMHRTGYUNEOLKP:QWSBFCDXJZ";
+		const char lower_remap_alpha[26] = "avmhrtgyuneolkp;qwsbfcdxjz";
+		if (c >= 'A' and c <= 'Z') return upper_remap_alpha[c - 'A'];
+		if (c >= 'a' and c <= 'z') return lower_remap_alpha[c - 'a'];
+		if (c == ';') return 'i';
+		if (c == ':') return 'I';
+	}
+	return c;
 }
 
 static void append(
@@ -183,8 +192,35 @@ static void insert_dt(void) {
 	insert(datetime, strlen(datetime), 1);
 }
 
-static void save(void) {
+static void redo(void) {
+	nat chosen_child = 0, child_count = 0; 
+	for (nat i = 0; i < action_count; i++) {
+		if (actions[i].parent != head) continue;
+		if (child_count == actions[head].choice) chosen_child = i;
+		child_count++;
+	}
+	if (not child_count) return;
+	if (child_count >= 2) 
+		actions[head].choice = (actions[head].choice + 1) % child_count;
+	head = chosen_child;
+	const struct action node = actions[head];
+	cursor = node.pre; 
+	if (node.length > 0) insert(node.string, (nat) node.length, 0); 
+	else delete((nat) -node.length, 0);
+	cursor = node.post;
+}
 
+static void undo(void) {
+	if (not head) return;
+	struct action node = actions[head];
+	cursor = node.post;
+	if (node.length > 0) delete((nat) node.length, 0); 
+	else insert(node.string, (nat) -node.length, 0); 
+	cursor = node.pre;
+	head = node.parent;
+}
+
+static void save(void) {
 	const mode_t permissions = 
 		S_IRUSR | S_IWUSR | S_IROTH | S_IRGRP;
 	printf("saving: %s: %llub: testing timestamps...\n", 
@@ -306,36 +342,97 @@ emergency_save:
 	} 
 	write(output_file, text, count); // TODO: check these. 
 	close(output_file);
-	return;
-
 }
 
+static void delete_selection(void) {
+	if (anchor > count or anchor == cursor) return;
+	if (anchor > cursor) { nat t = anchor; anchor = cursor; cursor = t; }
+	const nat len = cursor - anchor;
+	delete(len, 1);
+	anchor = (nat) -1;
+}
 
+static char* get_selection(void) {
+	if (anchor > count) return NULL;
+	if (anchor > cursor) { nat t = anchor; anchor = cursor; cursor = t; }
+	char* selection = strndup(text + anchor, cursor - anchor);
+	return selection;
+}
 
+static void local_copy(void) {
+	if (anchor > count or anchor == cursor) return;
+	if (anchor > cursor) { nat t = anchor; anchor = cursor; cursor = t; }
+	cliplength = cursor - anchor;
+	free(clipboard);
+	clipboard = strndup(text + anchor, cliplength);
+}
 
-
-
-
-
-/*
-	char name[4096] = {0};
-	strlcpy(name, filename, sizeof name);
-
-	nat saved = 0;
-loop:
-	if (not *name) {
-		
+static void insert_char(void) {
+	char c = 0;
+	read(0, &c, 1); c = remap(c);
+	if (c == 'a') insert_dt();
+	else if (c == 'd') { read(0, &c, 1); c = remap(c);
+		if (c == 'e') { read(0, &c, 1); c = remap(c);
+			if (c == 'l') delete_selection();
+		}
+	}
+	else if (c == 'r') { c = 10; insert(&c, 1, 1); }
+	else if (c == 'h') { c = 32; insert(&c, 1, 1); }
+	else if (c == 'm') { c = 9;  insert(&c, 1, 1); }
+	else if (c == 't') { read(0, &c, 1);c = remap(c); insert(&c, 1, 1); }
+	else if (c == 'u') { read(0, &c, 1);c = remap(c); c = (char) toupper(c); insert(&c, 1, 1); }
+	else if (c == 'n') {
+		read(0, &c, 1);c = remap(c);
+		if (c == 'a') { c = '0'; insert(&c, 1, 1); }
+		if (c == 'd') { c = '1'; insert(&c, 1, 1); }
+		if (c == 'r') { c = '2'; insert(&c, 1, 1); }
+		if (c == 't') { c = '3'; insert(&c, 1, 1); }
+		if (c == 'm') { c = '4'; insert(&c, 1, 1); }
+		if (c == 'l') { c = '5'; insert(&c, 1, 1); }
+		if (c == 'n') { c = '6'; insert(&c, 1, 1); }
+		if (c == 'u') { c = '7'; insert(&c, 1, 1); }
+		if (c == 'p') { c = '8'; insert(&c, 1, 1); }
+		if (c == 'i') { c = '9'; insert(&c, 1, 1); }
 	}
 	
-
-
-	if (not saved) goto loop;
-
-
-
-*/
-
-
+	else if (c == 'e') {
+		read(0, &c, 1);c = remap(c);
+		if (c == 'a') { c = '\'';insert(&c, 1, 1); }
+		if (c == 'd') { c = '('; insert(&c, 1, 1); }
+		if (c == 'r') { c = ')'; insert(&c, 1, 1); }
+		if (c == 't') { c = '.'; insert(&c, 1, 1); }
+		if (c == 'n') { c = ','; insert(&c, 1, 1); }
+		if (c == 'u') { c = '['; insert(&c, 1, 1); }
+		if (c == 'p') { c = ']'; insert(&c, 1, 1); }
+		if (c == 'i') { c = '"'; insert(&c, 1, 1); }
+		if (c == 's') { c = '<'; insert(&c, 1, 1); }
+		if (c == 'h') { c = '>'; insert(&c, 1, 1); }
+		if (c == 'e') { c = '{'; insert(&c, 1, 1); }
+		if (c == 'o') { c = '}'; insert(&c, 1, 1); }
+		if (c == 'm') { c = '-'; insert(&c, 1, 1); }
+		if (c == 'l') { c = '_'; insert(&c, 1, 1); }
+		if (c == 'c') { c = '~'; insert(&c, 1, 1); }
+		if (c == 'k') { c = '`'; insert(&c, 1, 1); }
+	} else if (c == 'o') {
+		read(0, &c, 1);c = remap(c);
+		if (c == 'a') { c = '+'; insert(&c, 1, 1); }
+		if (c == 'd') { c = '?'; insert(&c, 1, 1); }
+		if (c == 'r') { c = '!'; insert(&c, 1, 1); }
+		if (c == 't') { c = '*'; insert(&c, 1, 1); }
+		if (c == 'n') { c = '/'; insert(&c, 1, 1); }
+		if (c == 'u') { c = '%'; insert(&c, 1, 1); }
+		if (c == 'p') { c = '^'; insert(&c, 1, 1); }
+		if (c == 'i') { c = '='; insert(&c, 1, 1); }
+		if (c == 's') { c = '|'; insert(&c, 1, 1); }
+		if (c == 'h') { c = '&'; insert(&c, 1, 1); }
+		if (c == 'e') { c = '@'; insert(&c, 1, 1); }
+		if (c == 'o') { c = '\\';insert(&c, 1, 1); }
+		if (c == 'm') { c = ':'; insert(&c, 1, 1); }
+		if (c == 'l') { c = ';'; insert(&c, 1, 1); }
+		if (c == 'c') { c = '#'; insert(&c, 1, 1); }
+		if (c == 'k') { c = '$'; insert(&c, 1, 1); }
+	}
+}
 
 static void window_resized(int _) { if(_){} ioctl(0, TIOCGWINSZ, &window); }
 static noreturn void interrupted(int _) {if(_){} 
@@ -349,9 +446,11 @@ int main(int argc, const char** argv) {
 	sigaction(SIGWINCH, &action, NULL);
 	struct sigaction action2 = {.sa_handler = interrupted}; 
 	sigaction(SIGINT, &action2, NULL);
+
 	if (argc == 1) goto new;
 	else if (argc == 2 or argc == 3) strlcpy(filename, argv[1], sizeof filename);
 	else exit(puts("usage: ./editor [file]"));
+
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
 	int file = open(filename, O_RDONLY);
@@ -370,17 +469,11 @@ new: 	cursor = 0; anchor = (nat) -1;
 	tcsetattr(0, TCSANOW, &terminal_copy);
 	write(1, "\033[?25l", 6);
 	writable = argc < 3;
-	nat mode = 2, saved = 1, target_length = 0, home = 0;
+	nat mode = 2, target_length = 0, home = 0;
 	char history[6] = {0}, target[4096] = {0};
-
-	
 	struct stat attr_;
 	stat(filename, &attr_);
-	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", 
-		localtime(&attr_.st_mtime)
-	);
-
-
+	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr_.st_mtime));
 
 loop:	ioctl(0, TIOCGWINSZ, &window);
 	display();
@@ -418,17 +511,23 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		memcpy(status, target, target_length);
 	} else {
 		if (c == 'Q') goto done;
-		else if (c == 'q') {}
-		else if (c == 'd' or c == 's') { mode = 1; target_length = 0; home = c == 'd' ? 0 : cursor; }
-		else if (c == 'z' and writable) {}
-		else if (c == 'x' and writable) {}
+		else if (c == 'q') goto do_command;
+		else if (c == 'z' and writable) undo();
+		else if (c == 'x' and writable) redo();
 		else if (c == 'y' and writable) save();
 		else if (c == 't' and writable) mode = 0;
-		else if (c == 's' and writable) insert_dt();
+		else if (c == 's' and writable) insert_char();
 		else if (c == 'r' and writable) delete(1, 1);
+		else if (c == 'w' and writable) insert(clipboard, cliplength, 1);
+		else if (c == 'c') local_copy();
 		else if (c == 'a') anchor = anchor == (nat)-1 ? cursor : (nat) -1;
 		else if (c == 'i') { if (cursor < count) cursor++; }
 		else if (c == 'n') { if (cursor) cursor--; }
+		else if (c == 'd' or c == 'k') { 
+			mode = 1; 
+			target_length = 0; 
+			home = c == 'd' ? 0 : cursor; 
+		}
 		else if (c == 'p' or c == 'h') {
 			nat times = 1;
 			if (c == 'h') times = window.ws_row >> 1;
@@ -462,6 +561,16 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		}
 	}
 	goto loop;
+do_command:
+	if (not writable) goto done;
+	char* s = get_selection();
+	if (not s) goto loop;
+	else if (not strncmp(s, "do ", 3)) {}
+	else if (not strncmp(s, "del ", 4)) delete_selection();
+	else if (not strcmp(s, "insert hello")) insert("hello world", 11, 1);
+	else if (not strcmp(s, "dt")) insert_dt();
+	else if (not strcmp(s, "exit")) goto done;
+	free(s);
 done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
 	if (writable) save(); exit(0);
@@ -502,11 +611,49 @@ done:	write(1, "\033[?25h", 6);
 
 
 
+
+
+
+/*
+	char name[4096] = {0};
+	strlcpy(name, filename, sizeof name);
+
+	nat saved = 0;
+loop:
+	if (not *name) {
+		
+	}
+	
+
+
+	if (not saved) goto loop;
+
+
+
+*/
+
+
+
 /*
 
 
 
+		print("rd:c"); number(actions[head].choice); 
+		print("/"); number(child_count); print("|");
 
+
+
+	print("rd:"); if (node.length < 0) print("-"); else print("+");
+	number((nat)(node.length < 0 ? -node.length : node.length)); 
+	print(",h"); number(head); print("|");
+
+
+
+
+
+	//print("ud:"); if (node.length < 0) print("-"); else print("+");
+	//number((nat) (node.length < 0 ? -node.length : node.length)); 
+	//print(",h"); number(head); print("|");
 
 
 

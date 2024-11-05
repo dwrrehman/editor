@@ -2,6 +2,7 @@
 // the asychronous shell that we wrote recently. 
 // written on 1202409297.214859 by dwrr. 
 #include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
@@ -228,7 +229,7 @@ load_file:
 			nat amount = text_length - start;
 			if (k and k < amount) amount = k;
 			fwrite(text + start, 1, amount, stdout); fflush(stdout);
-
+exit
 		} else if (input[0] == 'm') {
 			nat t = 0;
 			for (nat i = cursor; i < text_length; i++) {
