@@ -2,23 +2,20 @@
 #include <stdlib.h>  // 1202411041.210238 an editor that
 #include <string.h>  // supposed to be a simpler version of
 #include <iso646.h>  // the modal editor that we wrote.
-#include <unistd.h>  
-#include <fcntl.h>   // finished on 1202411052.131234
-#include <termios.h>
-#include <time.h>
+#include <unistd.h>  // finished on 1202411052.131234
 #include <stdbool.h>
+#include <stdnoreturn.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <ctype.h>
+#include <poll.h>
 #include <time.h>
+#include <signal.h>
+#include <termios.h>
 #include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/ioctl.h>
 #include <sys/time.h> 
 #include <sys/wait.h> 
-#include <stdint.h>
-#include <signal.h>
-#include <stdnoreturn.h>
-
 typedef uint64_t nat;
 
 #define max_screen_size  1 << 20
@@ -42,6 +39,7 @@ static char last_modified[32] = {0};
 static char status[4096] = {0};
 static volatile struct winsize window = {0};
 static struct termios terminal = {0};
+extern char** environ;
 
 static char remap(const char c) {
 	if (c == 13) return 10;	
@@ -375,50 +373,50 @@ static void insert_char(void) {
 		if (c == 'e') { read(0, &c, 1); c = remap(c);
 			if (c == 'l') delete_selection();
 		}
-	}
-	else if (c == 'r') { c = 10; insert(&c, 1, 1); }
+	} else if (c == 'r') { c = 10; insert(&c, 1, 1); }
 	else if (c == 'h') { c = 32; insert(&c, 1, 1); }
 	else if (c == 'm') { c = 9;  insert(&c, 1, 1); }
 	else if (c == 't') { read(0, &c, 1); c = remap(c); insert(&c, 1, 1); }
 	else if (c == 'u' and cursor < count) {
 		c = (char) toupper(text[cursor]);
 		cursor++; delete(1, 1); insert(&c, 1, 1); cursor--;
-	}
-	else if (c == 'e' and cursor < count and text[cursor] < 126) { 
+	} else if (c == 'l' and cursor < count) {
+		c = (char) tolower(text[cursor]);
+		cursor++; delete(1, 1); insert(&c, 1, 1); cursor--;
+	} else if (c == 'e' and cursor < count and text[cursor] < 126) { 
 		c = text[cursor] + 1; 
 		cursor++; delete(1, 1); insert(&c, 1, 1); cursor--;
-	}
-	else if (c == 'o' and cursor < count and text[cursor] > 32) { 
+	} else if (c == 'o' and cursor < count and text[cursor] > 32) { 
 		c = text[cursor] - 1;
 		cursor++; delete(1, 1); insert(&c, 1, 1); cursor--;
 	}
+}
+
+static void insert_error(const char* call) {
+	char message[4096] = {0};
+	snprintf(message, sizeof message, 
+		"error: %s: %s\n", 
+		call, strerror(errno)
+	);
+	insert(message, strlen(message), 1);
 }
 
 static inline void copy_global(void) {
 	if (anchor > count or anchor == cursor) return;
 	const nat length = anchor < cursor ? cursor - anchor : anchor - cursor;
 	FILE* globalclip = popen("pbcopy", "w");
-	if (not globalclip) {
-		//print("cpy:*:\"");
-		//print(strerror(errno));
-		//print("\"|"); return;
-	}
+	if (not globalclip) { insert_error("popen:pbcopy"); return; }
 	fwrite(text + (anchor < cursor ? anchor : cursor), 1, length, globalclip);
 	pclose(globalclip);
 }
 
 static void insert_output(const char* input_command) {
-	save();
+	if (writable) save();
 	char command[4096] = {0};
 	strlcpy(command, input_command, sizeof command);
 	strlcat(command, " 2>&1", sizeof command);
-	//snprintf(command, sizeof command, "%s 2>&1", input_command);
-
 	FILE* f = popen(command, "r");
-	if (not f) {
-		//print("iop:*:popen\""); print(strerror(errno)); print("\"|");
-		return;
-	}
+	if (not f) { insert_error("popen"); return; }
 	char* string = NULL;
 	size_t length = 0;
 	char line[2048] = {0};
@@ -433,6 +431,169 @@ static void insert_output(const char* input_command) {
 	free(string);
 }
 
+static char** parse_arguments(const char delimiter, const char* string, const size_t length) {
+	char** arguments = NULL;
+	size_t argument_count = 0;
+	size_t start = 0, argument_length = 0;
+	for (size_t index = 0; index < length; index++) {
+		if (string[index] != delimiter) {
+			if (not argument_length) start = index;
+			argument_length++;
+		} else {
+		push:	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+			arguments[argument_count++] = strndup(string + start, argument_length);
+			start = index;
+			argument_length = 0; 
+		}
+	}
+	if (argument_length) goto push;
+	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+	arguments[argument_count] = NULL;
+	return arguments;
+}
+
+static char* path_lookup(const char* executable_name) {
+	const nat executable_length = (nat) strlen(executable_name);
+	if (not executable_length) return NULL;
+	const char* path = getenv("PATH");
+	const nat length = (nat) strlen(path);
+	size_t start = 0, prefix_length = 0;
+	for (size_t index = 0; index < length; index++) {
+		if (path[index] != ':') {
+			if (not prefix_length) start = index;
+			prefix_length++;
+		} else {
+		push:;	char* file = calloc(prefix_length + 1 + executable_length + 1, 1);
+			memcpy(file, path + start, prefix_length);
+			file[prefix_length] = '/';
+			memcpy(file + prefix_length + 1, executable_name, executable_length);
+			if (not access(file, X_OK)) return file; else free(file);
+			start = index; prefix_length = 0; 
+		}
+	}
+	if (prefix_length) goto push;
+	return NULL;
+}
+
+static int job_fdo[2] = {0};
+static int job_rfd[2] = {0};
+static int job_fdm[2] = {0};
+static int job_status = 0;
+static pid_t pid = 0;
+
+static void read_output(void) {
+	char buffer[65536] = {0};
+	if (poll(&(struct pollfd){ .fd = job_fdo[0], .events = POLLIN }, 1, 0) == 1) {
+		ssize_t nbytes = read(job_fdo[0], buffer, sizeof buffer);
+		if (nbytes <= 0) insert_error("read"); else insert(buffer, (nat) nbytes, 1);
+	}
+	if (poll(&(struct pollfd){ .fd = job_fdm[0], .events = POLLIN }, 1, 0) == 1) {
+		ssize_t nbytes = read(job_fdm[0], buffer, sizeof buffer);
+		if (nbytes <= 0) insert_error("read"); else insert(buffer, (nat) nbytes, 1);
+	} 
+}
+
+static void start_job(const char* input) {
+	if (writable) save();
+	const nat length = (nat) strlen(input);
+	if (not length) return;
+	char** arguments = parse_arguments(*input, input + 1, length - 1);
+	if (arguments[0][0] != '.' and arguments[0][0] != '/') {
+		char* path = path_lookup(arguments[0]);
+		if (not path) { errno = ENOENT; insert_error("pathlookup"); return; }
+		free(arguments[0]);
+		arguments[0] = path;
+	}
+	pipe(job_fdo);
+	pipe(job_rfd);
+	pipe(job_fdm);
+	pid = fork();
+	if (pid < 0) { insert_error("fork"); } 
+	else if (not pid) {
+		close(job_fdo[0]);  dup2(job_fdo[1], 1);
+		close(job_fdo[1]);
+		close(job_fdm[0]);  dup2(job_fdm[1], 2);
+		close(job_fdm[1]);
+		close(job_rfd[1]);  dup2(job_rfd[0], 0);
+		close(job_rfd[0]);
+		execve(arguments[0], arguments, environ);
+		insert_error("execve");
+		exit(1);
+	} else {
+		close(job_fdo[1]);
+		close(job_fdm[1]);
+		close(job_rfd[0]);
+		job_status = 1;
+	}
+}
+
+static void finish_job(void) {
+	close(job_fdo[0]);
+	close(job_rfd[1]);
+	close(job_fdm[0]);
+	int s = 0;
+	if (waitpid(pid, &s, WNOHANG) == -1) insert_error("wait");
+	char dt[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(dt, 32, "1%Y%m%d%u.%H%M%S", tm);
+	char message[4096] = {0};
+	if (WIFEXITED(s)) 
+		snprintf(message, sizeof message, 
+			"[%s:(%d) exited with code %d]\n", 
+			dt, pid, WEXITSTATUS(s)
+		);
+	else if (WIFSIGNALED(s)) 
+		snprintf(message, sizeof message, 
+			"[%s:(%d) was terminated by signal %s]\n", 
+			dt, pid, strsignal(WTERMSIG(s))
+		);
+	else if (WIFSTOPPED(s)) 
+		snprintf(message, sizeof message, 
+			"[%s:(%d) was stopped by signal %s]\n", 	
+			dt, pid, strsignal(WSTOPSIG(s))
+		);
+	else snprintf(message, sizeof message, 
+		"[%s:(%d) terminated for an unknown reason]\n", 
+		dt, pid
+	);
+	insert(message, strlen(message), 1);
+	job_status = 0;
+}
+
+
+static void open_file(const char* argument) {
+	if (writable) save();
+	if (not strlen(argument)) { 
+		free(text); text = NULL; 
+		count = 0; goto new; 
+	} 
+	int df = open(argument, O_RDONLY | O_DIRECTORY);
+	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
+
+	int file = open(argument, O_RDONLY);
+	if (file < 0) {
+		read_error: insert_error("open");
+		return;
+	}
+	struct stat ss; fstat(file, &ss);
+	count = (nat) ss.st_size;
+	free(text); text = malloc(count);
+	read(file, text, count); 
+	close(file);
+new: 	cursor = 0; origin = 0;
+	anchor = (nat) -1; writable = 1;
+	strlcpy(filename, argument, sizeof filename);
+	for (nat i = 0; i < action_count; i++) free(actions[i].string);
+	free(actions); actions = NULL;
+	head = 0; action_count = 0;
+	finish_action((struct action) {0}, NULL, (int64_t) 0);
+	struct stat attr_;
+	stat(filename, &attr_);
+	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr_.st_mtime));
+}
+
 static void window_resized(int _) { if(_){} ioctl(0, TIOCGWINSZ, &window); }
 static noreturn void interrupted(int _) {if(_){} 
 	write(1, "\033[?25h", 6);
@@ -441,10 +602,12 @@ static noreturn void interrupted(int _) {if(_){}
 }
 
 int main(int argc, const char** argv) {
+	signal(SIGPIPE, SIG_IGN);
 	struct sigaction action = {.sa_handler = window_resized}; 
 	sigaction(SIGWINCH, &action, NULL);
 	struct sigaction action2 = {.sa_handler = interrupted}; 
 	sigaction(SIGINT, &action2, NULL);
+
 	if (argc == 1) goto new;
 	else if (argc == 2 or argc == 3) strlcpy(filename, argv[1], sizeof filename);
 	else exit(puts("usage: ./editor [file]"));
@@ -565,7 +728,18 @@ do_command:
 	if (not writable) goto done;
 	char* s = get_selection();
 	if (not s) goto loop;
-	else if (not strncmp(s, "do ", 3)) {}
+	if (not strcmp(s, "exit")) goto done;
+	else if (not strncmp(s, "open ", 5)) open_file(s + 5); 
+	else if (not strcmp(s, "read") and job_status) read_output(); 
+	else if (not strcmp(s, "wait") and job_status) finish_job();
+	else if (not strncmp(s, "do", 2) and not job_status) start_job(s + 2);
+	else if (not strncmp(s, "cd ", 3) and not job_status) { 
+		if (chdir(s + 3) < 0) insert_error("chdir"); 
+	} else if (not strcmp(s, "close") and job_status) { 
+		if (close(job_rfd[1]) < 0) insert_error("close"); 
+	} else if (not strncmp(s, "write ", 6) and job_status) {
+		if (write(job_rfd[1], s + 6, strlen(s + 6)) <= 0) insert_error("write");
+	} else insert("\ncommand not found\n", 19, 1);
 	free(s); goto loop;
 done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
@@ -579,344 +753,5 @@ done:	write(1, "\033[?25h", 6);
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-/*
-
-
-
-
-	//else if (not strcmp(s, "insert hello")) insert("hello world", 11, 1);
-	//else if (not strcmp(s, "dt")) insert_dt();
-	//else if (not strcmp(s, "exit")) goto done;
-
-
-
-	else if (c == 'e') {
-		read(0, &c, 1);c = remap(c);
-		if (c == 'a') { c = '\'';insert(&c, 1, 1); }
-		if (c == 'd') { c = '('; insert(&c, 1, 1); }
-		if (c == 'r') { c = ')'; insert(&c, 1, 1); }
-		if (c == 't') { c = '.'; insert(&c, 1, 1); }
-		if (c == 'n') { c = ','; insert(&c, 1, 1); }
-		if (c == 'u') { c = '['; insert(&c, 1, 1); }
-		if (c == 'p') { c = ']'; insert(&c, 1, 1); }
-		if (c == 'i') { c = '"'; insert(&c, 1, 1); }
-		if (c == 's') { c = '<'; insert(&c, 1, 1); }
-		if (c == 'h') { c = '>'; insert(&c, 1, 1); }
-		if (c == 'e') { c = '{'; insert(&c, 1, 1); }
-		if (c == 'o') { c = '}'; insert(&c, 1, 1); }
-		if (c == 'm') { c = '-'; insert(&c, 1, 1); }
-		if (c == 'l') { c = '_'; insert(&c, 1, 1); }
-		if (c == 'c') { c = '~'; insert(&c, 1, 1); }
-		if (c == 'k') { c = '`'; insert(&c, 1, 1); }
-	} else if (c == 'o') {
-		read(0, &c, 1);c = remap(c);
-		if (c == 'a') { c = '+'; insert(&c, 1, 1); }
-		if (c == 'd') { c = '?'; insert(&c, 1, 1); }
-		if (c == 'r') { c = '!'; insert(&c, 1, 1); }
-		if (c == 't') { c = '*'; insert(&c, 1, 1); }
-		if (c == 'n') { c = '/'; insert(&c, 1, 1); }
-		if (c == 'u') { c = '%'; insert(&c, 1, 1); }
-		if (c == 'p') { c = '^'; insert(&c, 1, 1); }
-		if (c == 'i') { c = '='; insert(&c, 1, 1); }
-		if (c == 's') { c = '|'; insert(&c, 1, 1); }
-		if (c == 'h') { c = '&'; insert(&c, 1, 1); }
-		if (c == 'e') { c = '@'; insert(&c, 1, 1); }
-		if (c == 'o') { c = '\\';insert(&c, 1, 1); }
-		if (c == 'm') { c = ':'; insert(&c, 1, 1); }
-		if (c == 'l') { c = ';'; insert(&c, 1, 1); }
-		if (c == 'c') { c = '#'; insert(&c, 1, 1); }
-		if (c == 'k') { c = '$'; insert(&c, 1, 1); }
-	}
-
-
-
-
-
-
-
-
-
-	char name[4096] = {0};
-	strlcpy(name, filename, sizeof name);
-
-	nat saved = 0;
-loop:
-	if (not *name) {
-		
-	}
-	
-
-
-	if (not saved) goto loop;
-
-
-
-*/
-
-
-
-/*
-
-
-
-		print("rd:c"); number(actions[head].choice); 
-		print("/"); number(child_count); print("|");
-
-
-
-	print("rd:"); if (node.length < 0) print("-"); else print("+");
-	number((nat)(node.length < 0 ? -node.length : node.length)); 
-	print(",h"); number(head); print("|");
-
-
-
-
-
-	//print("ud:"); if (node.length < 0) print("-"); else print("+");
-	//number((nat) (node.length < 0 ? -node.length : node.length)); 
-	//print(",h"); number(head); print("|");
-
-
-
-	left();
-	while (cursor) {
-		if (not (not isalnum(text[cursor]) or isalnum(text[cursor - 1]))) break;
-		if (text[cursor - 1] == 10) break;
-		left();
-	}
-}
-
-	right();
-	while (cursor < count) {
-		if (not (isalnum(text[cursor]) or not isalnum(text[cursor - 1]))) break;
-		if (text[cursor] == 10) break;
-		right();
-	}
-
-
-
-
-
-
-
-	//printf("length = %llu, screen = <<<%.*s>>>\n", 
-	//	length, (int) length, screen);
-
-	for (nat ii = 0; ii < length; ii++) {
-		printf("[c=%d]", screen[ii]);
-	}
-	puts("");
-	fflush(stdout);
-
-
-		
-		else if (c == 't') mode = insert_mode;
-
-		else if (c == 'd') mode = search_mode;
-
-		else if (c == 'r') delete(1, 1);
-
-
-		else if (c == 'a') anchor = anchor == disabled ? cursor : disabled;
-		else if (c == 'w') paste();
-		else if (c == 'c') copy_local();
-
-		else if (c == 'q') goto do_c;
-		else if (c == 'y') save();
-		
-		else if (c == 'i') right();
-		else if (c == 'n') left();
-		else if (c == 'p') up();
-		else if (c == 'u') down();
-
-		else if (c == 'h') half_page_up();
-		else if (c == 'm') half_page_down();
-
-		
-
-
-
-
-
-
-
-else if (c == 'b') { task_to_clip(); goto do_c; }
-else if (c == 'v') { task2_to_clip(); goto do_c; }
-
-else if (c == 'x') redo();
-else if (c == 'z') undo();
-
-else if (c == 'g') paste_global(); 
-else if (c == 'f') copy_global();
-
-
-else if (c == 'e') word_left();
-else if (c == 'o') word_right();
-
-
-else if (c == 's') insert_char();
-
-
-else if (c == 127) { if (anchor == disabled) delete(1,1); else delete_selection(); }
-
-
-
-
-
-
-	static const char* help_string = 
-	"q	quit, must be saved first.\n"                              q
-	"z	this help string.\n"					  ...
-	"s	save the current file contents.\n"                         y
-	"<sp>	exit insert mode.\n"                                       drtpun
-	"<sp>	move up one line.\n"                                      ...
-	"<nl>	move down one line.\n"                                    ...
-	"a	anchor at cursor.\n"                                       a
-	"p	display cursor/file information.\n"                       ...
-	"t	go into insert mode.\n"                                    t
-	"u<N>	cursor += N.\n"                                           i u m
-	"n<N>	cursor -= N.\n"                                           n p h
-	"c<N>	cursor = N.\n"                                             d
-	"d[N]	display page of text starting from cursor.\n"             ...
-	"w[N]	display page of text starting from anchor.\n"             ...
-	"m<S>	search forwards from cursor for string S.\n"               d
-	"h<S>	search backwards from cursor for string S.\n"             ...
-	"o	copy current selection to clipboard.\n"                    c
-	"k	inserts current datetime at cursor and advances.\n"       ...
-	"e<S>	inserts S at cursor and advances.\n"                      ...
-	"i	inserts clipboard at cursor, and advances.\n"              w
-	"r	removes current selection. requires confirming.\n";        r 
-
-
-
-
-
-
-
-
-
-*/
-
-
-
-
-
-
-
-
-
-
-
-/*	nat column = 0, row = 0;
-	for (nat i = origin; i < count; i++) {
-
-		const char c = text[i]; 
-
-		if (i == cursor or i == anchor) printf("\033[7m");
-		if (c == 10) putchar(' ');
-
-		if (c == 9) {
-			const nat amount = 8 - column % 8;
-			for (nat _ = 0; _ < amount; _++) putchar(32);
-			column += amount;
-
-		} else if (c == 10) {
-		print_newline: 
-			puts("");
-			column = 0; row++;
-			if (row >= max_row_count) { 
-				at_bottom = false; 
-				printf("\033[0m"); 
-				break; 
-			}
-
-		} else if (c >= 32) {
-			putchar(c);
-			column++;
-		} else {
-			printf("\033[7mCTL%2hhu\033[0m", c);
-			column += 5;
-		}
-		if (column >= wrap_width) goto print_newline;
-
-		if (i == this->cursor or i == this->anchor) printf("\033[0m");
-	}
-
-	bool at_bottom = true;
-{
-
-	nat column = 0;
-	nat row = 0;
-	for (nat i = this->origin; i < this->length; i++) {
-
-		const char c = this->output[i]; 
-
-		if (i == this->cursor or i == this->anchor) printf("\033[7m");
-		if (c == 10) putchar(' ');
-
-		if (c == 9) {
-			const nat amount = 8 - column % 8;
-			for (nat _ = 0; _ < amount; _++) putchar(32);
-			column += amount;
-
-		} else if (c == 10) {
-		print_newline: 
-			puts("");
-			column = 0; row++;
-			if (row >= max_row_count) { at_bottom = false; printf("\033[0m"); break; }
-
-		} else if (c >= 32) {
-			putchar(c);
-			column++;
-		} else {
-			printf("\033[7mCTL%2hhu\033[0m", c);
-			column += 5;
-		}
-		if (column >= wrap_width) goto print_newline;
-
-		if (i == this->cursor or i == this->anchor) printf("\033[0m");
-	}
-	
-}
-	if (not at_bottom) printf("\033[7m[scrolling back]\033[0m");
-	else printf("\033[7m(head)\033[0m");
-
-	fflush(stdout);
-
-
-
-
-*/
 
 

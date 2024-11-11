@@ -1,0 +1,2293 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+	open filename
+	write string
+	exec command arguments
+	read
+	close
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	else if (action == nextjob) {
+			if (not job_count) goto next;
+			job_pointer = (job_pointer + 1) % job_count;
+		}
+
+		else if (action == newjob) {
+			jobs = realloc(jobs, sizeof(struct job) * (job_count + 1));
+			jobs[job_count] = (struct job) {0};
+			job_pointer = job_count;
+			job_count++;
+		}
+
+
+		else if (action == closejob) {
+			if (not job_count) goto next;
+			const struct job save = jobs[job_pointer];
+			jobs[job_pointer] = jobs[job_count - 1];
+			jobs[job_count - 1] = save;
+			free(jobs[job_count - 1].output);
+			free(jobs[job_count - 1].arguments);
+			jobs[job_count - 1].length = 0;
+			job_count--;
+			if (job_count) job_pointer %= job_count; else job_pointer = 0;
+		}
+
+
+
+
+
+
+
+
+
+
+
+open filename
+write string
+exec command arguments
+read
+close
+
+
+
+*/	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+
+
+	//else if (not strcmp(s, "insert hello")) insert("hello world", 11, 1);
+	//else if (not strcmp(s, "dt")) insert_dt();
+	//else if (not strcmp(s, "exit")) goto done;
+
+
+
+	else if (c == 'e') {
+		read(0, &c, 1);c = remap(c);
+		if (c == 'a') { c = '\'';insert(&c, 1, 1); }
+		if (c == 'd') { c = '('; insert(&c, 1, 1); }
+		if (c == 'r') { c = ')'; insert(&c, 1, 1); }
+		if (c == 't') { c = '.'; insert(&c, 1, 1); }
+		if (c == 'n') { c = ','; insert(&c, 1, 1); }
+		if (c == 'u') { c = '['; insert(&c, 1, 1); }
+		if (c == 'p') { c = ']'; insert(&c, 1, 1); }
+		if (c == 'i') { c = '"'; insert(&c, 1, 1); }
+		if (c == 's') { c = '<'; insert(&c, 1, 1); }
+		if (c == 'h') { c = '>'; insert(&c, 1, 1); }
+		if (c == 'e') { c = '{'; insert(&c, 1, 1); }
+		if (c == 'o') { c = '}'; insert(&c, 1, 1); }
+		if (c == 'm') { c = '-'; insert(&c, 1, 1); }
+		if (c == 'l') { c = '_'; insert(&c, 1, 1); }
+		if (c == 'c') { c = '~'; insert(&c, 1, 1); }
+		if (c == 'k') { c = '`'; insert(&c, 1, 1); }
+	} else if (c == 'o') {
+		read(0, &c, 1);c = remap(c);
+		if (c == 'a') { c = '+'; insert(&c, 1, 1); }
+		if (c == 'd') { c = '?'; insert(&c, 1, 1); }
+		if (c == 'r') { c = '!'; insert(&c, 1, 1); }
+		if (c == 't') { c = '*'; insert(&c, 1, 1); }
+		if (c == 'n') { c = '/'; insert(&c, 1, 1); }
+		if (c == 'u') { c = '%'; insert(&c, 1, 1); }
+		if (c == 'p') { c = '^'; insert(&c, 1, 1); }
+		if (c == 'i') { c = '='; insert(&c, 1, 1); }
+		if (c == 's') { c = '|'; insert(&c, 1, 1); }
+		if (c == 'h') { c = '&'; insert(&c, 1, 1); }
+		if (c == 'e') { c = '@'; insert(&c, 1, 1); }
+		if (c == 'o') { c = '\\';insert(&c, 1, 1); }
+		if (c == 'm') { c = ':'; insert(&c, 1, 1); }
+		if (c == 'l') { c = ';'; insert(&c, 1, 1); }
+		if (c == 'c') { c = '#'; insert(&c, 1, 1); }
+		if (c == 'k') { c = '$'; insert(&c, 1, 1); }
+	}
+
+
+
+
+
+
+
+
+
+	char name[4096] = {0};
+	strlcpy(name, filename, sizeof name);
+
+	nat saved = 0;
+loop:
+	if (not *name) {
+		
+	}
+	
+
+
+	if (not saved) goto loop;
+
+
+
+*/
+
+
+
+/*
+
+
+
+		print("rd:c"); number(actions[head].choice); 
+		print("/"); number(child_count); print("|");
+
+
+
+	print("rd:"); if (node.length < 0) print("-"); else print("+");
+	number((nat)(node.length < 0 ? -node.length : node.length)); 
+	print(",h"); number(head); print("|");
+
+
+
+
+
+	//print("ud:"); if (node.length < 0) print("-"); else print("+");
+	//number((nat) (node.length < 0 ? -node.length : node.length)); 
+	//print(",h"); number(head); print("|");
+
+
+
+	left();
+	while (cursor) {
+		if (not (not isalnum(text[cursor]) or isalnum(text[cursor - 1]))) break;
+		if (text[cursor - 1] == 10) break;
+		left();
+	}
+}
+
+	right();
+	while (cursor < count) {
+		if (not (isalnum(text[cursor]) or not isalnum(text[cursor - 1]))) break;
+		if (text[cursor] == 10) break;
+		right();
+	}
+
+
+
+
+
+
+
+	//printf("length = %llu, screen = <<<%.*s>>>\n", 
+	//	length, (int) length, screen);
+
+	for (nat ii = 0; ii < length; ii++) {
+		printf("[c=%d]", screen[ii]);
+	}
+	puts("");
+	fflush(stdout);
+
+
+		
+		else if (c == 't') mode = insert_mode;
+
+		else if (c == 'd') mode = search_mode;
+
+		else if (c == 'r') delete(1, 1);
+
+
+		else if (c == 'a') anchor = anchor == disabled ? cursor : disabled;
+		else if (c == 'w') paste();
+		else if (c == 'c') copy_local();
+
+		else if (c == 'q') goto do_c;
+		else if (c == 'y') save();
+		
+		else if (c == 'i') right();
+		else if (c == 'n') left();
+		else if (c == 'p') up();
+		else if (c == 'u') down();
+
+		else if (c == 'h') half_page_up();
+		else if (c == 'm') half_page_down();
+
+		
+
+
+
+
+
+
+
+else if (c == 'b') { task_to_clip(); goto do_c; }
+else if (c == 'v') { task2_to_clip(); goto do_c; }
+
+else if (c == 'x') redo();
+else if (c == 'z') undo();
+
+else if (c == 'g') paste_global(); 
+else if (c == 'f') copy_global();
+
+
+else if (c == 'e') word_left();
+else if (c == 'o') word_right();
+
+
+else if (c == 's') insert_char();
+
+
+else if (c == 127) { if (anchor == disabled) delete(1,1); else delete_selection(); }
+
+
+
+
+
+
+	static const char* help_string = 
+	"q	quit, must be saved first.\n"                              q
+	"z	this help string.\n"					  ...
+	"s	save the current file contents.\n"                         y
+	"<sp>	exit insert mode.\n"                                       drtpun
+	"<sp>	move up one line.\n"                                      ...
+	"<nl>	move down one line.\n"                                    ...
+	"a	anchor at cursor.\n"                                       a
+	"p	display cursor/file information.\n"                       ...
+	"t	go into insert mode.\n"                                    t
+	"u<N>	cursor += N.\n"                                           i u m
+	"n<N>	cursor -= N.\n"                                           n p h
+	"c<N>	cursor = N.\n"                                             d
+	"d[N]	display page of text starting from cursor.\n"             ...
+	"w[N]	display page of text starting from anchor.\n"             ...
+	"m<S>	search forwards from cursor for string S.\n"               d
+	"h<S>	search backwards from cursor for string S.\n"             ...
+	"o	copy current selection to clipboard.\n"                    c
+	"k	inserts current datetime at cursor and advances.\n"       ...
+	"e<S>	inserts S at cursor and advances.\n"                      ...
+	"i	inserts clipboard at cursor, and advances.\n"              w
+	"r	removes current selection. requires confirming.\n";        r 
+
+
+
+
+
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+/*	nat column = 0, row = 0;
+	for (nat i = origin; i < count; i++) {
+
+		const char c = text[i]; 
+
+		if (i == cursor or i == anchor) printf("\033[7m");
+		if (c == 10) putchar(' ');
+
+		if (c == 9) {
+			const nat amount = 8 - column % 8;
+			for (nat _ = 0; _ < amount; _++) putchar(32);
+			column += amount;
+
+		} else if (c == 10) {
+		print_newline: 
+			puts("");
+			column = 0; row++;
+			if (row >= max_row_count) { 
+				at_bottom = false; 
+				printf("\033[0m"); 
+				break; 
+			}
+
+		} else if (c >= 32) {
+			putchar(c);
+			column++;
+		} else {
+			printf("\033[7mCTL%2hhu\033[0m", c);
+			column += 5;
+		}
+		if (column >= wrap_width) goto print_newline;
+
+		if (i == this->cursor or i == this->anchor) printf("\033[0m");
+	}
+
+	bool at_bottom = true;
+{
+
+	nat column = 0;
+	nat row = 0;
+	for (nat i = this->origin; i < this->length; i++) {
+
+		const char c = this->output[i]; 
+
+		if (i == this->cursor or i == this->anchor) printf("\033[7m");
+		if (c == 10) putchar(' ');
+
+		if (c == 9) {
+			const nat amount = 8 - column % 8;
+			for (nat _ = 0; _ < amount; _++) putchar(32);
+			column += amount;
+
+		} else if (c == 10) {
+		print_newline: 
+			puts("");
+			column = 0; row++;
+			if (row >= max_row_count) { at_bottom = false; printf("\033[0m"); break; }
+
+		} else if (c >= 32) {
+			putchar(c);
+			column++;
+		} else {
+			printf("\033[7mCTL%2hhu\033[0m", c);
+			column += 5;
+		}
+		if (column >= wrap_width) goto print_newline;
+
+		if (i == this->cursor or i == this->anchor) printf("\033[0m");
+	}
+	
+}
+	if (not at_bottom) printf("\033[7m[scrolling back]\033[0m");
+	else printf("\033[7m(head)\033[0m");
+
+	fflush(stdout);
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// a shell which only requires the 
+// tab and enter keys to use.
+// written on 1202408117.173609 by dwrr. 
+
+// added the shell functionality on 1202409253.003056 
+// to allow this to be used for programming,
+// running shell commands, and editing files, 
+// using an external program for opening/writing to files.
+
+
+
+/*
+
+
+	todo:
+
+		- implement sending aribitrary signals to processes
+
+		- handle control c, etc to make those do nothing, or pop up a diaglog to choose what to do.
+
+		- test using the ed-like editor with this shell. 
+
+		- fix the weird buggy output wehn doing cd ..   plz 
+
+		- 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	current state of things:
+
+		- we need to have a pipeset (0, 1, 2)  for each job,   a name/command
+			and a  read-write  cli interface   and job index 
+						for each job
+
+				and we should be able to go inbetween them easily!
+
+				note:   each job actually has its own   terminal. they don't share stdout. or stderr.  rather, they have their own seperate places where they can output data lol. 
+
+
+
+								thus, outputting doesnt happen automatically. but rather, when we open the terminal or that job,  a read command is issued to grab all the ready output. 
+
+
+		- we need to have a way of going btewen jobs, 
+		we need to have a way of    issueing a read command, 
+
+			we need a way of issueing a write command,   ie, submitting input. 
+
+
+					a submit button, 
+
+
+			and we need a way of scrolling up in the output,  
+
+				ie, the output has an origin. it is a large string, which is printed out, from a particular position, for exactly a page worth of data. simple as that! nice. 
+
+
+		- we also have to do path lookup, for the command. 
+
+		- 	we need to have a job    be just   a   terminal window, 
+
+			and we need to have  an option for creating a new terminal window.
+
+			and closing a terminal window if theres a job running, or if theres not one running. 
+
+
+		- we need a way of switching between jobs too. thats also important. 
+
+
+		- also sending a particular signal to a job is important too. we'll recreate that eventually, i think. hmm wow. interesting. 
+
+
+
+		- 
+
+
+
+
+
+
+
+list of things to do:
+
+	- store the job data in a struct 
+
+	- make mulitple jobs, be able to switch between them, and give reads/writes good still. 
+
+	- then parse the input string given from the two key system, into a series of strings, 
+		via using   the escape character as the argument demarkater. i thinkkk...
+
+						either that, or a dedicated symbol.
+
+	- then do path look up on the first element of that array of strings, 
+		trying to find the full executable name. 
+
+	- then pipe that revised/modified list of strings    to the execute function, which will start a new job, and give that list to execve, and also fork and start up the parent-side code for interacting with that. 
+
+			here is where we will implement the scroll back buffer with the job too. thats also important. so yeah. 
+
+
+
+
+
+
+
+
+
+
+
+
+static struct winsize window = {0};
+static struct termios terminal = {0};
+extern char** environ;
+typedef uint64_t nat;
+
+
+static nat wrap_width = 60;
+static nat max_row_count = 20;
+
+static const char select_key = ' ';
+static const char select_key_alt = 'm';
+
+static const char cycle1_key = 'n';
+static const char cycle2_key = 'u';
+static const char cycle4_key = 'p';
+static const char cycle8_key = 'i';
+
+static const char cycle1_key_alt = 't';
+static const char cycle2_key_alt = 'r';
+static const char cycle4_key_alt = 'd';
+static const char cycle8_key_alt = 'a';
+
+enum commands {
+	root, back, in, delete, left, right, up, down, 
+	space, newline, tab, escape, caps,
+	read_output, submit, finishjob, sendeof, newjob, closejob, nextjob, quit, 
+
+	incr_wrap, decr_wrap,
+	incr_mrc, decr_mrc,
+	jump_to_end, 
+	cycle_reset,
+
+	oc_copy,
+	oc_paste,
+	oc_anchor,
+	oc_left,
+	oc_right,
+	oc_left10,
+	oc_right10,
+
+
+	ins_e,
+	ins_t,
+	ins_a,
+	ins_o,
+	ins_i,
+	ins_dot,
+	ins_comma,
+	ins_open_paren,
+	ins_close_paren,
+
+	ins_n,
+	ins_s,
+	ins_r,
+	ins_h,
+	ins_d,
+	ins_apostrophe,
+	ins_question_mark,
+	ins_open_square,
+	ins_close_square,
+	
+	ins_l,
+	ins_u,
+	ins_c,
+	ins_m,
+	ins_f,
+	ins_quote,
+	ins_exclamation_mark,
+	ins_open_brace,
+	ins_close_brace,
+
+	ins_y,
+	ins_w,
+	ins_g,
+	ins_p,
+	ins_b,
+	ins_hyphen,
+	ins_colon,
+	ins_less,
+	ins_greater,
+	
+	ins_v,
+	ins_k,
+	ins_x,
+	ins_q,
+	ins_j,
+	ins_z,
+	ins_underscore,
+	ins_semicolon,
+	ins_ampersand,
+	ins_vertical,
+
+	ins_0,
+	ins_1,
+	ins_2,
+	ins_3,
+	ins_4,
+	ins_equals,
+	ins_plus,
+	ins_star,
+	ins_pound,
+	ins_at_sign,
+	
+	ins_5,
+	ins_6,
+	ins_7,
+	ins_8,
+	ins_9,
+	ins_slash,
+	ins_percent,
+	ins_caret,
+	ins_backslash,
+	ins_grave,
+	ins_tilde,
+	
+	command_count,
+};
+
+static const char* spelling[command_count] = {
+	" ", "\\", "/", "!", "<", ">", "^", "v", 
+	"sp", "nl", "tab", "esc", "cap", 
+	"rd", "wr", "wt", "eof", "new", "clo", "sw", "exit",
+
+	"ww+", "ww-",
+	"mrc+", "mrc-",
+	"end", "rst", 
+	"cpy", "pst", "anc",
+	"<", ">", "<<", ">>",
+
+
+	"e","t","a","o","i",".",",","(",")",
+	"n","s","r","h","d","'","?","[","]",
+	"l","u","c","m","f","\"","!","{","}",
+	"y","w","g","p","b","-",":","<",">",
+	"v","k","x","q","j","z","_",";","&","|",
+	"0","1","2","3","4","=","+","*","#","@",
+	"5","6","7","8","9","/","%","^","\\","`","~",
+};
+
+
+struct job {
+	char** arguments;
+	char* output;
+	nat status;
+	nat origin;
+	nat cursor;
+	nat anchor;
+	nat length;
+	int fd[2];
+	int rfd[2];
+	int fdm[2];
+	int padding;
+	pid_t pid;
+};
+
+
+static void window_resized(int _) { if(_){} ioctl(0, TIOCGWINSZ, &window); } 
+
+static noreturn void interrupted(int _) {if(_){} 
+	write(1, "\033[?25h", 6);
+	tcsetattr(0, TCSANOW, &terminal);
+	puts(""); 
+	exit(0); 
+}
+
+static void change_directory(const char* d) {
+	if (chdir(d) < 0) {
+		printf("crp:err\""); printf("%s\n", d); printf("\"chdir\""); 
+		printf("%s\n", strerror(errno)); 
+		return;
+	}
+	
+	//sleep(5);
+}
+
+
+
+
+
+static void create_process(char** args) {
+	pid_t pid = fork();
+	if (pid < 0) { 
+		printf("crp:*:fork\""); printf("%s\n", strerror(errno)); 
+		return;
+	}
+	if (not pid) {
+		if (execve(args[0], args, environ) < 0) { perror("execve"); exit(1); }
+	} 
+	int s = 0;
+	if ((pid = wait(&s)) == -1) { 
+		printf("crp:*:wait\""); printf("%s\n", strerror(errno)); 
+		return;
+	}
+	char dt[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(dt, 32, "1%Y%m%d%u.%H%M%S", tm);
+	if (WIFEXITED(s)) 	printf("[%s:(%d) exited with code %d]\n", dt, pid, WEXITSTATUS(s));
+	else if (WIFSIGNALED(s))printf("[%s:(%d) was terminated by signal %s]\n", dt, pid, strsignal(WTERMSIG(s)));
+	else if (WIFSTOPPED(s)) printf("[%s:(%d) was stopped by signal %s]\n", 	dt, pid, strsignal(WSTOPSIG(s)));
+	else 			printf("[%s:(%d) terminated for an unknown reason]\n", dt, pid);
+	fflush(stdout);
+	getchar();
+}
+
+static void execute_shell_command(char* command) {
+	if (not strlen(command)) return;
+	//save();
+	const char delimiter = command[0];
+	const char* string = command + 1;
+	const size_t length = strlen(command + 1);
+
+	char** arguments = NULL;
+	size_t argument_count = 0;
+
+	size_t start = 0, argument_length = 0;
+	for (size_t index = 0; index < length; index++) {
+		if (string[index] != delimiter) {
+			if (not argument_length) start = index;
+			argument_length++;
+
+		} else if (string[index] == delimiter) {
+		push:	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+			arguments[argument_count++] = strndup(string + start, argument_length);
+			start = index;
+			argument_length = 0; 
+		}
+	}
+	if (argument_length) goto push;
+
+	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+	arguments[argument_count] = NULL;
+
+	write(1, "\033[?25h", 6);
+	//tcsetattr(0, TCSANOW, &terminal);
+
+	for (nat i = 0; i < (nat) (window.ws_row * 2); i++) puts("");
+	printf("\033[H"); fflush(stdout);
+
+
+	create_process(arguments);
+
+
+	//struct termios terminal_copy = terminal; 
+	//terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
+	//tcsetattr(0, TCSANOW, &terminal_copy);
+	write(1, "\033[?25l", 6);
+	free(arguments);
+}
+
+static void signal_handler_sigpipe(int event) {
+	printf("WARNING: %d: program received a SIGPIPE signal.\n", event);
+	puts("ignoring this signal.");
+	fflush(stdout);
+}
+
+
+
+cd , .. 
+(head)CHILD ERROR stdout read(). 
+error: No such file or directory
+CHILD ERROR stderr read(). 
+error: No such file or directory
+changed directories to ..
+
+
+
+
+
+
+
+
+static char** parse_arguments(const char* string) {
+	const char delimiter = 27;
+	const size_t length = strlen(string);
+	char** arguments = NULL;
+	size_t argument_count = 0;
+	size_t start = 0, argument_length = 0;
+	for (size_t index = 0; index < length; index++) {
+		if (string[index] != delimiter) {
+			if (not argument_length) start = index;
+			argument_length++;
+
+		} else {
+		push:	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+			arguments[argument_count++] = strndup(string + start, argument_length);
+			start = index;
+			argument_length = 0; 
+		}
+	}
+	if (argument_length) goto push;
+	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+	arguments[argument_count] = NULL;
+	return arguments;
+}
+
+
+static char* path_lookup(const char* executable_name) {
+	const nat executable_length = (nat) strlen(executable_name);
+	if (not executable_length) return NULL;
+
+	const char* path = getenv("PATH");
+	const nat length = (nat) strlen(path);
+	//puts(path);
+	size_t start = 0, argument_length = 0;
+	for (size_t index = 0; index < length; index++) {
+		if (path[index] != ':') {
+			if (not argument_length) start = index;
+			argument_length++;
+		} else {
+		push:;	
+			char* file = calloc(argument_length + 1 + executable_length + 1, 1);
+			memcpy(file, path + start, argument_length);
+			file[argument_length] = '/';
+			memcpy(file + argument_length + 1, executable_name, executable_length);
+			//printf("testing: %s  ---> ", file);
+			if (not access(file, X_OK)) {
+				//printf("\033[32mGOOD\033[0m");
+				return file;
+			} else {
+				//printf("\033[31mERROR\033[0m");
+				free(file);
+			}
+			//puts("");
+
+			start = index;
+			argument_length = 0; 
+		}
+	}
+	if (argument_length) goto push;
+	return NULL;
+}
+
+
+int main(void) {
+	//puts("a shell which only requires tab and enter to use.");
+
+	signal(SIGPIPE, SIG_IGN);
+	struct sigaction s_action = {.sa_handler = window_resized}; 
+	sigaction(SIGWINCH, &s_action, NULL);
+	struct sigaction s_action2 = {.sa_handler = interrupted}; 
+	sigaction(SIGINT, &s_action2, NULL);
+	//struct sigaction s_action3 = {.sa_handler = signal_handler_sigpipe}; 
+	//sigaction(SIGPIPE, &s_action3, NULL);
+
+	tcgetattr(0, &terminal);
+	struct termios terminal_copy = terminal; 
+	terminal_copy.c_cc[VMIN] = 0; 
+	terminal_copy.c_cc[VTIME] = 1;
+	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
+	tcsetattr(0, TCSANOW, &terminal_copy);
+
+	nat counts[128] = {0};
+	nat array[128][128] = {0};
+
+	array[0][0] = root;
+	array[0][1] = in;
+	array[0][2] = delete;
+	array[0][3] = left;
+	array[0][4] = right;
+	array[0][5] = up;
+	array[0][6] = down;
+	array[0][7] = escape;
+	array[0][8] = space;
+	array[0][9] = newline;
+	array[0][10] = tab;
+	array[0][11] = read_output;
+	array[0][12] = submit;
+	array[0][13] = finishjob;
+	array[0][14] = sendeof;
+	array[0][15] = jump_to_end;
+	array[0][16] = cycle_reset;
+	counts[0] = 17;
+
+	array[1][0] = back;
+	array[1][1] = in;
+	array[1][2] = ins_e;
+	array[1][3] = ins_t;
+	array[1][4] = ins_a;
+	array[1][5] = ins_o;
+	array[1][6] = ins_i;
+	array[1][7] = ins_dot;
+	array[1][8] = ins_comma;
+	array[1][9] = ins_open_paren;
+	array[1][10]= ins_close_paren;
+	array[1][11] = newjob;
+	array[1][12] = closejob;
+	array[1][13] = nextjob;
+	counts[1] = 14;
+
+	array[2][0] = back;
+	array[2][1] = in;
+	array[2][2] = ins_n;
+	array[2][3] = ins_s;
+	array[2][4] = ins_r;
+	array[2][5] = ins_h;
+	array[2][6] = ins_d;
+	array[2][7] = ins_apostrophe;
+	array[2][8] = ins_question_mark;
+	array[2][9] = ins_open_square;
+	array[2][10]= ins_close_square;
+	array[2][11]= oc_left;
+	array[2][12]= oc_right;
+	array[2][13]= oc_left10;
+	array[2][14]= oc_right10;
+	array[2][15]= oc_copy;
+	array[2][16]= oc_paste;
+	array[2][17]= oc_anchor;
+	counts[2] = 18;
+
+	array[3][0] = back;
+	array[3][1] = in;
+	array[3][2] = ins_l;
+	array[3][3] = ins_u;
+	array[3][4] = ins_c;
+	array[3][5] = ins_m;
+	array[3][6] = ins_f;
+	array[3][7] = ins_quote;
+	array[3][8] = ins_exclamation_mark;
+	array[3][9] = ins_open_brace;
+	array[3][10]= ins_close_brace;
+	counts[3] = 11;
+
+	array[4][0] = back;
+	array[4][1] = in;
+	array[4][2] = ins_y;
+	array[4][3] = ins_w;
+	array[4][4] = ins_g;
+	array[4][5] = ins_p;
+	array[4][6] = ins_b;
+	array[4][7] = ins_hyphen;
+	array[4][8] = ins_colon;
+	array[4][9] = ins_less;
+	array[4][10]= ins_greater;
+	counts[4] = 11;
+
+	array[5][0] = back;
+	array[5][1] = in;
+	array[5][2] = ins_v;
+	array[5][3] = ins_k;
+	array[5][4] = ins_x;
+	array[5][5] = ins_q;
+	array[5][6] = ins_j;
+	array[5][7] = ins_z;
+	array[5][7] = ins_underscore;
+	array[5][8] = ins_semicolon;
+	array[5][9] = ins_ampersand;
+	array[5][10]= ins_vertical;
+	counts[5] = 11;
+
+	array[6][0] = back;
+	array[6][1] = in;
+	array[6][2] = ins_0;
+	array[6][3] = ins_1;
+	array[6][4] = ins_2;
+	array[6][5] = ins_3;
+	array[6][6] = ins_4;
+	array[6][7] = ins_equals;
+	array[6][8] = ins_plus;
+	array[6][9] = ins_star;
+	array[6][10]= ins_pound;
+	array[6][11]= ins_at_sign;
+	array[6][12]= incr_mrc;
+	array[6][13]= decr_mrc;
+	counts[6] = 14;
+
+	array[7][0] = back;
+	array[7][1] = in;
+	array[7][2] = ins_5;
+	array[7][3] = ins_6;
+	array[7][4] = ins_7;
+	array[7][5] = ins_8;
+	array[7][6] = ins_9;
+	array[7][7] = ins_slash;
+	array[7][8] = ins_percent;
+	array[7][9] = ins_caret;
+	array[7][10] = ins_backslash;
+	array[7][11]= ins_grave;;
+	array[7][12]= ins_tilde;
+	array[7][13]= incr_wrap;
+	array[7][14]= decr_wrap;
+	counts[7] = 15;
+
+	array[8][0] = back;
+	array[8][1] = root;
+	array[8][2] = quit;
+	counts[8] = 3;
+
+	ioctl(STDOUT_FILENO, TIOCGWINSZ, &window);
+	wrap_width = window.ws_col - 3;
+	max_row_count = window.ws_row - 7;
+
+	nat last = 8;
+	nat n = 0, m = 0;
+	char message[2048] = {0};
+	char* input = NULL;
+	nat length = 0, cursor = 0;
+	struct job* jobs = calloc(1, sizeof(struct job));
+	nat job_count = 1;
+	nat job_pointer = 0;
+
+	char* clipboard = NULL;
+	nat cliplength = 0;
+
+	nat should_cycle_reset = true;
+	nat caps_lock = false;
+
+	write(1, "\033[?25l", 6);
+loop:;	
+	struct job* this = jobs + job_pointer;
+	printf("\033[H\033[2J");
+	for (nat i = 0; i < counts[n]; i++) {
+		if (i == m) printf("\033[7m");
+		printf(" %s ", spelling[array[n][i]]);
+		if (i == m) printf("\033[0m");
+	}
+	printf("\n[%llu:%llu]:%c: %s\n", job_pointer, job_count, caps_lock ? 'l' : 'C', message);
+	if (job_count) {
+		printf("%llu: ", this->status);
+		for (nat i = 0; this->arguments and this->arguments[i]; i++) {
+			printf("%s, ", this->arguments[i]);
+		}
+		printf("\n");
+	}
+
+	for (nat i = 0; i < length; i++) {
+		if (cursor == i) printf("\033[7m");
+		if (input[i] == 27) printf(" , "); else putchar(input[i]); 
+		if (cursor == i) printf("\033[0m");
+	}
+	if (cursor == length) printf("\033[7m \033[0m\n"); else puts("");
+
+	bool at_bottom = true;
+{
+
+	nat column = 0;
+	nat row = 0;
+	for (nat i = this->origin; i < this->length; i++) {
+
+		const char c = this->output[i]; 
+
+		if (i == this->cursor or i == this->anchor) printf("\033[7m");
+		if (c == 10) putchar(' ');
+
+		if (c == 9) {
+			const nat amount = 8 - column % 8;
+			for (nat _ = 0; _ < amount; _++) putchar(32);
+			column += amount;
+
+		} else if (c == 10) {
+		print_newline: 
+			puts("");
+			column = 0; row++;
+			if (row >= max_row_count) { at_bottom = false; printf("\033[0m"); break; }
+
+		} else if (c >= 32) {
+			putchar(c);
+			column++;
+		} else {
+			printf("\033[7mCTL%2hhu\033[0m", c);
+			column += 5;
+		}
+		if (column >= wrap_width) goto print_newline;
+
+		if (i == this->cursor or i == this->anchor) printf("\033[0m");
+	}
+	
+}
+	if (not at_bottom) printf("\033[7m[scrolling back]\033[0m");
+	else printf("\033[7m(head)\033[0m");
+
+	fflush(stdout);
+
+	char c = 0;
+	const ssize_t nn = read(0, &c, 1);
+	if (nn < 0) { perror("read"); fflush(stderr); }
+	if (n == 0 and job_count and this->status == 1) {
+		char buffer[65536] = {0};
+		if (poll(&(struct pollfd){ .fd = this->fd[0], .events = POLLIN }, 1, 0) == 1) {
+			ssize_t nbytes = read(this->fd[0], buffer, sizeof buffer);
+			if (nbytes <= 0) {
+				printf("CHILD ERROR stdout read(). \n");
+				printf("error: %s\n", strerror(errno));
+			} else {
+				this->output = realloc(this->output, this->length + (size_t) nbytes);
+				memcpy(this->output + this->length, buffer, (size_t) nbytes);
+				this->length += (size_t) nbytes;
+			}
+		}
+		if (poll(&(struct pollfd){ .fd = this->fdm[0], .events = POLLIN }, 1, 0) == 1) {
+			ssize_t nbytes = read(this->fdm[0], buffer, sizeof buffer);
+			if (nbytes <= 0) {
+				printf("CHILD ERROR stderr read(). \n");
+				printf("error: %s\n", strerror(errno));
+			} else {
+				this->output = realloc(this->output, this->length + (size_t) nbytes);
+				memcpy(this->output + this->length, buffer, (size_t) nbytes);
+				this->length += (size_t) nbytes;
+			}
+		}
+
+		if (job_count and this->status == 1) {
+			int s = 0;
+			pid_t pid = this->pid;
+			int r = waitpid(pid, &s, WNOHANG);
+			if (r == -1) { 
+				printf("crp:*:wait\""); printf("%s\n", strerror(errno)); 
+			}
+			else if (r == 0) goto done_with_waiting;
+			char dt[32] = {0};
+			struct timeval t = {0};
+			gettimeofday(&t, NULL);
+			struct tm* tm = localtime(&t.tv_sec);
+			strftime(dt, 32, "1%Y%m%d%u.%H%M%S", tm);
+			if (WIFEXITED(s)) 
+				snprintf(message, sizeof message, 
+					"[%s:(%d) exited with code %d]\n", 
+					dt, pid, WEXITSTATUS(s)
+				);
+			else if (WIFSIGNALED(s)) 
+				snprintf(message, sizeof message, 
+					"[%s:(%d) was terminated by signal %s]\n", 
+					dt, pid, strsignal(WTERMSIG(s))
+				);
+			else if (WIFSTOPPED(s)) 
+				snprintf(message, sizeof message, 
+					"[%s:(%d) was stopped by signal %s]\n", 	
+					dt, pid, strsignal(WSTOPSIG(s))
+				);
+			else snprintf(message, sizeof message, 
+				"[%s:(%d) terminated for an unknown reason]\n", 
+				dt, pid
+			);
+			this->status = 0;
+			this->arguments = NULL;
+		}
+		done_with_waiting:;
+	}
+
+
+	if (c == 13) c = 10;
+
+	if (c == ',' or c == '\t' or c == cycle1_key or c == cycle1_key_alt) { 
+		if (m == counts[n] - 1) m = 0; else m++; 
+	}
+
+	else if (c == cycle2_key or c == cycle2_key_alt) { 
+		for (int i = 0; i < 2; i++) { 
+			if (m == counts[n] - 1) m = 0; else m++; 
+		} 
+	}
+
+	else if (c == cycle4_key or c == cycle4_key_alt) { 
+		for (int i = 0; i < 4; i++) { 
+			if (m == counts[n] - 1) m = 0; else m++; 
+		} 
+	}
+
+	else if (c == cycle8_key or c == cycle8_key_alt) { 
+		for (int i = 0; i < 8; i++) { 
+			if (m == counts[n] - 1) m = 0; else m++; 
+		} 
+	}
+
+	else if (c == '.' or c == '\n' or c == select_key or c == select_key_alt) {
+		const nat action = array[n][m];
+
+		if (action == back) {}
+		else if (action == in) {}
+		else if (action == root) {}
+
+		else if (action == read_output) {
+			if (not job_count) goto next;
+			
+			char buffer[65536] = {0};
+			if (poll(&(struct pollfd){ .fd = this->fd[0], .events = POLLIN }, 1, 0) == 1) {
+				ssize_t nbytes = read(this->fd[0], buffer, sizeof buffer);
+				if (nbytes <= 0) {
+					printf("CHILD ERROR stdout read(). \n");
+					printf("error: %s\n", strerror(errno));
+				} else {
+					this->output = realloc(this->output, this->length + (size_t) nbytes);
+					memcpy(this->output + this->length, buffer, (size_t) nbytes);
+					this->length += (size_t) nbytes;
+				}
+			}
+			if (poll(&(struct pollfd){ .fd = this->fdm[0], .events = POLLIN }, 1, 0) == 1) {
+				ssize_t nbytes = read(this->fdm[0], buffer, sizeof buffer);
+				if (nbytes <= 0) {
+					printf("CHILD ERROR stderr read(). \n");
+					printf("error: %s\n", strerror(errno));
+				} else {
+					this->output = realloc(this->output, this->length + (size_t) nbytes);
+					memcpy(this->output + this->length, buffer, (size_t) nbytes);
+					this->length += (size_t) nbytes;
+				}
+			} 
+		}
+
+		else if (action == submit) {
+			if (not job_count) goto next;
+			if (not length) goto finish_submit;
+
+			if (this->status == 0) {
+
+				this->output = realloc(this->output, this->length + (size_t) length + 1);
+				memcpy(this->output + this->length, input, (size_t) length);
+				memcpy(this->output + this->length + (size_t) length, "\n", (size_t) 1);
+				this->length += (size_t) length + 1;
+
+				char* my_input = strndup(input, length);
+				char** arguments = parse_arguments(my_input);
+				if (not strcmp(arguments[0], "cd")) {
+					const char* path = arguments[1] ? arguments[1] : getenv("HOME");
+					change_directory(path);
+					snprintf(message, sizeof message, 
+						"changed directories to %s", path
+					);
+					goto finish_submit;
+				} 
+				if (arguments[0][0] != '.' and arguments[0][0] != '/') {
+					char* path = path_lookup(arguments[0]);
+					if (not path) {
+						snprintf(message, sizeof message, 
+							"error: shell executable not found: \"%s\".", 
+							arguments[0]
+						);
+						goto finish_submit;
+					}
+					free(arguments[0]);
+					arguments[0] = path;
+				}
+
+				pipe(this->fd);
+				pipe(this->rfd);
+				pipe(this->fdm);
+
+				const pid_t pid = fork();
+				if (pid < 0) { 
+					printf("crp:*:fork\""); printf("%s\n", strerror(errno)); 
+					fflush(stdout);
+					sleep(4);
+				} else if (not pid) {
+					close(this->fd[0]);
+					dup2(this->fd[1], 1);
+					close(this->fd[1]);
+					close(this->fdm[0]);
+					dup2(this->fdm[1], 2);
+					close(this->fdm[1]);
+					close(this->rfd[1]);
+					dup2(this->rfd[0], 0);
+					close(this->rfd[0]);
+					execve(arguments[0], arguments, environ);
+					printf("error: could not execute \"%s\": %s", 
+						arguments[0], strerror(errno)
+					);
+					fflush(stdout);
+					sleep(4);
+					exit(1);
+				} else {
+					close(this->fd[1]);
+					close(this->fdm[1]);
+					close(this->rfd[0]);
+					this->status = 1;
+					this->arguments = arguments;
+					this->pid = pid;
+				}
+			} else {
+				ssize_t nbytes = write(this->rfd[1], input, length);
+				if (nbytes <= 0) {
+					printf("CHILD ERROR write(). \n");
+					printf("error: %s\n", strerror(errno));
+					fflush(stdout);
+					sleep(4);
+				}	
+				this->output = realloc(this->output, this->length + (size_t) nbytes);
+				memcpy(this->output + this->length, input, (size_t) nbytes);
+				this->length += (size_t) nbytes;
+			}			
+		finish_submit:;
+			length = 0; cursor = 0;
+		}
+
+		else if (action == nextjob) {
+			if (not job_count) goto next;
+			job_pointer = (job_pointer + 1) % job_count;
+		}
+
+		else if (action == newjob) {
+			jobs = realloc(jobs, sizeof(struct job) * (job_count + 1));
+			jobs[job_count] = (struct job) {0};
+			job_pointer = job_count;
+			job_count++;
+		}
+
+
+		else if (action == closejob) {
+			if (not job_count) goto next;
+			const struct job save = jobs[job_pointer];
+			jobs[job_pointer] = jobs[job_count - 1];
+			jobs[job_count - 1] = save;
+			free(jobs[job_count - 1].output);
+			free(jobs[job_count - 1].arguments);
+			jobs[job_count - 1].length = 0;
+			job_count--;
+			if (job_count) job_pointer %= job_count; else job_pointer = 0;
+		}
+
+		else if (action == sendeof) {
+			if (not job_count) goto next;
+			if (this->status != 1) goto next;
+			snprintf(message, sizeof message, 
+				"sent eof: [%llu][%llu]: %s", 
+				n, m, spelling[array[n][m]]
+			);
+			close(this->rfd[1]);
+		}
+
+		else if (action == finishjob) {
+			if (not job_count) goto next;
+			if (this->status != 1) goto next;
+			close(this->fd[0]);
+			close(this->rfd[1]);
+			close(this->fdm[0]);
+			int s = 0;
+			pid_t pid = this->pid;
+			if (waitpid(pid, &s, WNOHANG) == -1) {
+				printf("crp:*:wait\""); printf("%s\n", strerror(errno)); 
+			}
+			char dt[32] = {0};
+			struct timeval t = {0};
+			gettimeofday(&t, NULL);
+			struct tm* tm = localtime(&t.tv_sec);
+			strftime(dt, 32, "1%Y%m%d%u.%H%M%S", tm);
+			if (WIFEXITED(s)) 
+				snprintf(message, sizeof message, 
+					"[%s:(%d) exited with code %d]\n", 
+					dt, pid, WEXITSTATUS(s)
+				);
+			else if (WIFSIGNALED(s)) 
+				snprintf(message, sizeof message, 
+					"[%s:(%d) was terminated by signal %s]\n", 
+					dt, pid, strsignal(WTERMSIG(s))
+				);
+			else if (WIFSTOPPED(s)) 
+				snprintf(message, sizeof message, 
+					"[%s:(%d) was stopped by signal %s]\n", 	
+					dt, pid, strsignal(WSTOPSIG(s))
+				);
+			else snprintf(message, sizeof message, 
+				"[%s:(%d) terminated for an unknown reason]\n", 
+				dt, pid
+			);
+			this->status = 0;
+			this->arguments = NULL;
+		}
+
+		else if (action == up) {
+			snprintf(message, sizeof message, 
+				"scroll up: [%llu][%llu]: %s", 
+				n, m, spelling[array[n][m]]
+			);
+			// modifies origin.
+
+	
+			nat count = 0;
+
+			if (this->origin) {
+				this->origin--;
+				count++;
+			}
+
+			while (	this->origin and
+				this->origin < this->length and
+				this->output[this->origin - 1] != 10
+			) {
+				this->origin--;
+				count++;
+				if (count >= wrap_width) break;
+			}
+		}
+
+		else if (action == down) {
+			snprintf(message, sizeof message, 
+				"scroll down: [%llu][%llu]: %s", 
+				n, m, spelling[array[n][m]]
+			);
+			// modifies origin.
+
+
+			
+			nat count = 0;
+
+			if (this->origin < this->length) {
+				this->origin++;
+				count++;
+			}
+
+			
+			while (	this->origin and
+				this->origin < this->length and
+				this->output[this->origin - 1] != 10
+			) {
+				this->origin++;
+				count++;
+				if (count >= wrap_width) break;
+			}
+		}
+
+		else if (action == jump_to_end) {
+			this->origin = this->length;
+
+		} else if (action == left) {
+			if (cursor) cursor--;
+		} else if (action == right) {
+			if (cursor < length) cursor++;
+
+
+		} else if (action == oc_left10) {    if (this->cursor >= 10) this->cursor -= 10;
+		} else if (action == oc_right10) {    if (this->cursor + 10 <= this->length) this->cursor += 10;
+		} else if (action == oc_left) {    if (this->cursor) this->cursor--;
+		} else if (action == oc_right) {    if (this->cursor < this->length) this->cursor++;
+		} else if (action == oc_anchor) {  this->anchor = this->cursor;
+
+
+		} else if (action == oc_copy) { 
+			if (this->anchor > this->cursor) {
+				nat t = this->anchor;
+				this->anchor = this->cursor;
+				this->cursor = t;
+			}
+			cliplength = this->cursor - this->anchor;
+			clipboard = strndup(this->output + this->anchor, cliplength);
+
+			snprintf(message, sizeof message, "copied %llu output bytes.\n", cliplength);
+
+		} else if (action == oc_paste) { 
+
+			input = realloc(input, length + cliplength);
+			memmove(input + cursor + cliplength, input + cursor, length - cursor);
+			memcpy(input + cursor, clipboard, cliplength);
+			cursor += cliplength;
+			length += cliplength;
+
+			snprintf(message, sizeof message, "pasted %llub at c=%llu\n", 
+				cliplength, cursor
+			);
+			
+		} else if (action == decr_wrap) {
+			if (wrap_width > 6) wrap_width--;
+		} else if (action == incr_wrap) {
+			wrap_width++;
+
+		} else if (action == decr_mrc) {
+			if (max_row_count > 1) max_row_count--;
+		} else if (action == incr_mrc) {
+			max_row_count++;
+
+
+
+		} else if (action == delete) {
+			if (cursor and length) {
+				cursor--;
+				length--;
+				memmove(input + cursor, input + cursor + 1, length - cursor);
+				input = realloc(input, length);
+			}
+
+
+		} else if (action == quit) {
+			puts("exiting the shell...");
+			goto done;
+
+		} else if (action == cycle_reset) {
+			should_cycle_reset = not should_cycle_reset;
+		
+		} else if (action == caps) {
+
+			caps_lock = not caps_lock;
+
+		} else {
+			char cc = spelling[action][0];
+
+			     if (action == space) cc = ' ';
+			else if (action == newline) cc = '\n';
+			else if (action == tab) cc = '\t'; 
+			else if (action == escape) cc = '\033';
+			
+			if (caps_lock) cc = (char) toupper(cc);
+
+			input = realloc(input, length + 1);
+			memmove(input + cursor + 1, input + cursor, length - cursor);
+			input[cursor++] = cc;
+			length++;
+		}
+
+	next:
+		if (m == 0) { 
+			if (not n) goto loop;
+			n--;
+		}
+		if (m == 1) {
+			if (n < last) n++;
+		}
+		if (should_cycle_reset) m = 0;
+	} 
+
+
+	
+
+	else if (c == 'N') {
+		if (cursor) cursor--;
+
+	} else if (c == 'U') {
+		if (cursor < length) cursor++;
+
+
+	} else if (c == 'H') {
+		
+		
+		nat count = 0;
+
+		if (this->origin) {
+			this->origin--;
+			count++;
+		}
+
+		while (	this->origin and
+			this->origin < this->length and
+			this->output[this->origin - 1] != 10
+		) {
+			this->origin--;
+			count++;
+			if (count >= wrap_width) break;
+		}
+	
+
+	} else if (c == 'M') {
+
+
+		nat count = 0;
+
+		if (this->origin < this->length) {
+			this->origin++;
+			count++;
+		}
+
+		
+		while (	this->origin and
+			this->origin < this->length and
+			this->output[this->origin - 1] != 10
+		) {
+			this->origin++;
+			count++;
+			if (count >= wrap_width) break;
+		}
+	
+
+
+
+
+
+
+	} else if (c == 127) {
+		if (cursor and length) {
+			cursor--;
+			length--;
+			memmove(input + cursor, input + cursor + 1, length - cursor);
+			input = realloc(input, length);
+		}
+
+	} else if (c < 32 and not isspace(c) and c != 27) { 
+	} else {
+		input = realloc(input, length + 1);
+		memmove(input + cursor + 1, input + cursor, length - cursor);
+		input[cursor++] = c;
+		length++;
+	}
+	
+
+
+
+
+
+
+
+
+
+
+
+
+	goto loop;
+
+done:;	write(1, "\033[?25h", 6);
+}
+
+
+
+
+
+
+
+
+
+
+
+			//for (nat i = 0; arguments[i]; i++) {
+			//	printf("arguments[%llu] = %s\n", i, arguments[i]);
+			//}
+
+
+
+
+		//snprintf(message, sizeof message, 
+		//	"[%llu][%llu]: \n", n, m
+		//);
+
+
+		//	snprintf(message, sizeof message, "read_output: [%llu][%llu]: %s", n, m, spelling[array[n][m]]);
+
+
+
+
+
+
+
+
+
+//static void execute(const char* input) {
+	//printf("execute(): executing: %s....\n", input); 
+//}
+
+
+
+
+
+
+
+
+			
+		if (command == newjob) {
+
+			// do argument parsing. 
+			// if (arg[0] == "cd") change_directory();
+			// if (arg[0] == "exit") terminate_job();
+			// do path lookup.
+
+			struct job new = {0};
+			pipe(new.fd);
+			pipe(new.rfd);
+			pipe(new.fdm);
+
+			if (fork() == 0) {
+				close(new.fd[0]);
+				dup2(new.fd[1], 1);
+				close(new.fd[1]);
+				close(new.fdm[0]);
+				dup2(new.fdm[1], 2);
+				close(new.fdm[1]);
+				close(new.rfd[1]);
+				dup2(new.rfd[0], 0);
+				close(new.rfd[0]);
+				// execve
+				exit(0);
+			} else {
+				close(new.fd[1]);
+				close(new.fdm[1]);
+				close(new.rfd[0]);
+			}
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+
+static char status[4096] = {0};
+static char filename[4096] = {0};
+static char autosavename[4096] = {0};
+static volatile struct winsize window = {0};
+static struct termios terminal = {0};
+
+extern char** environ;
+typedef uint64_t nat;
+
+
+static void window_resized(int _) {if(_){} }//ioctl(0, TIOCGWINSZ, &window); }
+static noreturn void interrupted(int _) {if(_){} 
+	write(1, "\033[?25h", 6);
+	//tcsetattr(0, TCSANOW, &terminal);
+	//save(); 
+	puts(""); 
+	exit(0); 
+}
+
+
+
+static void change_directory(const char* d) {
+	if (chdir(d) < 0) {
+		printf("crp:err\""); printf("%s\n", d); printf("\"chdir\""); 
+		printf("%s\n", strerror(errno)); 
+		return;
+	}
+	//print("changed directories\n");
+}
+
+static void create_process(char** args) {
+	pid_t pid = fork();
+	if (pid < 0) { 
+		printf("crp:*:fork\""); printf("%s\n", strerror(errno)); 
+		return;
+	}
+	if (not pid) {
+		if (execve(args[0], args, environ) < 0) { perror("execve"); exit(1); }
+	} 
+	int s = 0;
+	if ((pid = wait(&s)) == -1) { 
+		printf("crp:*:wait\""); printf("%s\n", strerror(errno)); 
+		return;
+	}
+	char dt[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(dt, 32, "1%Y%m%d%u.%H%M%S", tm);
+	if (WIFEXITED(s)) 	printf("[%s:(%d) exited with code %d]\n", dt, pid, WEXITSTATUS(s));
+	else if (WIFSIGNALED(s))printf("[%s:(%d) was terminated by signal %s]\n", dt, pid, strsignal(WTERMSIG(s)));
+	else if (WIFSTOPPED(s)) printf("[%s:(%d) was stopped by signal %s]\n", 	dt, pid, strsignal(WSTOPSIG(s)));
+	else 			printf("[%s:(%d) terminated for an unknown reason]\n", dt, pid);
+	fflush(stdout);
+	getchar();
+}
+
+static void execute(char* command) {
+	if (not strlen(command)) return;
+	//save();
+	const char delimiter = command[0];
+	const char* string = command + 1;
+	const size_t length = strlen(command + 1);
+
+	char** arguments = NULL;
+	size_t argument_count = 0;
+
+	size_t start = 0, argument_length = 0;
+	for (size_t index = 0; index < length; index++) {
+		if (string[index] != delimiter) {
+			if (not argument_length) start = index;
+			argument_length++;
+
+		} else if (string[index] == delimiter) {
+		push:	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+			arguments[argument_count++] = strndup(string + start, argument_length);
+			start = index;
+			argument_length = 0; 
+		}
+	}
+	if (argument_length) goto push;
+
+	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+	arguments[argument_count] = NULL;
+
+	write(1, "\033[?25h", 6);
+	//tcsetattr(0, TCSANOW, &terminal);
+
+	for (nat i = 0; i < (nat) (window.ws_row * 2); i++) puts("");
+	printf("\033[H"); fflush(stdout);
+
+	create_process(arguments);
+	//struct termios terminal_copy = terminal; 
+	//terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
+	//tcsetattr(0, TCSANOW, &terminal_copy);
+	write(1, "\033[?25l", 6);
+	free(arguments);
+}
+
+static void signal_handler_sigpipe(int event) {
+	printf("WARNING: %d: program received a SIGPIPE signal.\n", event);
+	puts("ignoring this signal.");
+	fflush(stdout);
+}
+
+
+struct job {
+	const char* name;
+	char* output;
+	char* input;
+	nat status;
+	nat origin;
+	nat cursor;
+	nat output_length;
+	nat input_length;
+	int fd[2];
+	int rfd[2];
+	int fdm[2];
+};
+
+
+int main(void) {
+	signal(SIGPIPE, SIG_IGN);
+	struct sigaction action = {.sa_handler = window_resized}; 
+	sigaction(SIGWINCH, &action, NULL);
+	struct sigaction action2 = {.sa_handler = interrupted}; 
+	sigaction(SIGINT, &action2, NULL);
+	//struct sigaction action3 = {.sa_handler = signal_handler_sigpipe}; 
+	//sigaction(SIGPIPE, &action3, NULL);
+
+
+
+	nat running = 1;
+	while (running) {
+
+
+		...input...
+
+
+
+		if (command == newjob) {
+
+			// do argument parsing. 
+			// if (arg[0] == "cd") change_directory();
+			// if (arg[0] == "exit") terminate_job();
+			// do path lookup.
+
+			struct job new = {0};
+			pipe(new.fd);
+			pipe(new.rfd);
+			pipe(new.fdm);
+
+			if (fork() == 0) {
+				close(new.fd[0]);
+				dup2(new.fd[1], 1);
+				close(new.fd[1]);
+				close(new.fdm[0]);
+				dup2(new.fdm[1], 2);
+				close(new.fdm[1]);
+				close(new.rfd[1]);
+				dup2(new.rfd[0], 0);
+				close(new.rfd[0]);
+				if (execve(args[0], args, environ) < 0) { printf("could not start up job\n"); perror("execve"); exit(1); }
+				exit(0);
+			} else {
+				close(new.fd[1]);
+				close(new.fdm[1]);
+				close(new.rfd[0]);
+			}
+
+
+
+
+
+		} else if (command == flush) { 
+
+
+			char buffer[12800] = {0};
+			if (poll(&(struct pollfd){ .fd = this.fd[0], .events = POLLIN }, 1, 0) == 1) {
+				ssize_t nbytes = read(this.fd[0], buffer, sizeof buffer);
+				if (nbytes <= 0) {
+					printf("CHILD ERROR stdout read(). \n");
+					printf("error: %s\n", strerror(errno));
+				} else fwrite(buffer, 1, (size_t) nbytes, stdout);
+				
+			} 
+			if (poll(&(struct pollfd){ .fd = this.fdm[0], .events = POLLIN }, 1, 0) == 1) {
+				ssize_t nbytes = read(this.fdm[0], buffer, sizeof buffer);
+				if (nbytes <= 0) {
+					printf("CHILD ERROR stderr read(). \n");
+					printf("error: %s\n", strerror(errno));
+				} else fwrite(buffer, 1, (size_t) nbytes, stdout);
+			} 
+			fflush(stdout);
+
+
+			// this command should write it to the terminal_scrollback_buffer.  ie,       .output and  .output_length
+
+
+
+
+
+
+		} else if (command == submit) {
+
+			ssize_t nbytes = write(this.rfd[1], input, n);				
+			if (nbytes <= 0) {
+				printf("CHILD ERROR write(). \n");
+				printf("error: %s\n", strerror(errno));
+			}
+			fflush(stdout);
+
+
+
+		} else if (command == terminate_job) { 
+			close(this.fd[0]);
+			close(this.rfd[1]);
+			close(this.fdm[0]);
+		}
+
+ 
+
+
+	}// while
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			//puts("reading from process..");
+
+
+
+				//printf("n = %ld\n", nbytes);
+    // this is just the main input loop.  
+
+
+			/////////////////// this code wouldnt exist ///////////////
+			//char input[4096] = {0};
+			//printf(":: ");
+			//fflush(stdout);
+			//ssize_t n = read(0, input, sizeof input);
+			//if (n <= 0) {
+			//	quit = 1;
+			//	puts("ERROR: read(0) could not return, command mode failed.");
+			//	printf("error: %s\n", strerror(errno));
+			//}
+			///////////////////////////////////////////////////////////
+
+
+
+
+
+				//printf("n = %ld\n", nbytes);
+
+
+		//puts("reading from process..");
+
+
+
+//else {
+				//printf("nothing to read at the moment.\n");
+			//}
+
+
+
+
+
+					//puts("\"");
+					//printf("child stdout says: \"");
+
+
+
+
+
+
+
+
+	//printf("child stderr: \"");
+					//puts("\"");
+
+
+//else {
+			//printf("nothing to read from stderr at the moment.\n");
+			//}
+
+				///////////////////////////unused code///////////////////////////////
+				//char input[4096] = {0};
+				//printf(":writedata: ");
+				//fflush(stdout);
+				//ssize_t n = read(0, input, sizeof input);
+				//if (n <= 0) {
+				//	puts("ERROR: read(0) could not return, command mode failed.");
+				//	printf("error: %s\n", strerror(errno));
+				//}
+				////////////////////////////////////////////////////////////
+
+
+
+				//puts("sending DATA to child...");
+//printf("n = %ld\n", nbytes);
+ //else {
+				//printf("write: successfully sent %ld bytes.\n", n);
+				//printf("wrote: <<<%.*s>>>\n", (int) n, input);
+			//}
+
+
+	//} // if (fork) {...} else {..} 
+
+
+
+			//puts("exiting from job terminal...");    // not possible. use switchjob instead. 
+			//running = 0;
+
+
+		//else {
+			//printf("error: command not found: %d...\n", input[0]);
+		//}
+		//usleep(10000);
+
+
+	//puts("closing file descriptors now.");
+	//fflush(stdout);
+
+
+
+
+		// replace this with the execve call. 
+		//execlp("../program/list_stuff", "../program/list_stuff", 0);
+
+		// print error about how exeve failed lol. 
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+			/*	char buffer[1280] = {0};
+
+
+					ssize_t nbytes = read(fd[0], buffer, sizeof buffer);
+					printf("n = %ld\n", nbytes);
+					if (nbytes <= 0) {
+						printf("CHILD ERROR read(). \n");
+						printf("error: %s\n", strerror(errno));
+					} else {
+						printf("child says: \"");
+						fwrite(buffer, 1, (size_t) nbytes, stdout);
+						puts("\"");
+					}
+
+					fflush(stdout);
+
+
+				sleep(4);
+
+
+
+				puts("sending ACK to child...");
+				nbytes = write(rfd[1], "ACK\n", 4);
+				printf("n = %ld\n", nbytes);
+				if (nbytes <= 0) {
+					printf("CHILD ERROR read(). \n");
+					printf("error: %s\n", strerror(errno));
+				} else {
+					puts("successfully sent ack.");
+				}
+
+				fflush(stdout);
+
+
+
+				sleep(4);
+
+
+					nbytes = read(fd[0], buffer, sizeof buffer);
+					printf("n = %ld\n", nbytes);
+					if (nbytes <= 0) {
+						printf("CHILD ERROR read(). \n");
+						printf("error: %s\n", strerror(errno));
+					} else {
+						printf("child says: \"");
+						fwrite(buffer, 1, (size_t) nbytes, stdout);
+						puts("\"");
+					}
+					fflush(stdout);
+*/
+
+
+
+
+
+
+
+
+
+
+/*
+int main(void) {
+
+	int fd[2];
+	pipe(fd);
+
+	int id = fork();
+
+	if (not id) {
+		close(fd[0]);
+		int x = 0;
+		printf("input from child: ");
+		scanf("%d", &x);
+		write(fd[1], &x, sizeof(int));
+		close(fd[1]);
+
+	} else {
+		close(fd[1]);
+		int y = 0;
+		read(fd[0], &y, sizeof(int));
+		close(fd[0]);	
+		printf("got from child processo: %d\n", y);
+	}
+}
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
