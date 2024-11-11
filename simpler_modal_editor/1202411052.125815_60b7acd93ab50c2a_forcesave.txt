@@ -32,7 +32,7 @@ it also looks like saving works well, and    yeah i am going to try to cut a sel
 
 
 
-
+open hello.txt
 
 
 

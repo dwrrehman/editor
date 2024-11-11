@@ -265,7 +265,7 @@ static void save(void) {
 		fflush(stdout);
 		puts("force saving file contents to a new file...");
 		fflush(stdout);
-
+		
 		char name[4096] = {0};
 		char datetime[32] = {0};
 		struct timeval t = {0};
@@ -347,13 +347,6 @@ static void delete_selection(void) {
 	const nat len = cursor - anchor;
 	delete(len, 1);
 	anchor = (nat) -1;
-}
-
-static char* get_selection(void) {
-	if (anchor > count) return NULL;
-	if (anchor > cursor) { nat t = anchor; anchor = cursor; cursor = t; }
-	char* selection = strndup(text + anchor, cursor - anchor);
-	return selection;
 }
 
 static void local_copy(void) {
@@ -482,57 +475,24 @@ static int job_status = 0;
 static pid_t pid = 0;
 
 static void read_output(void) {
+	if (not job_status) return;
 	char buffer[65536] = {0};
 	if (poll(&(struct pollfd){ .fd = job_fdo[0], .events = POLLIN }, 1, 0) == 1) {
 		ssize_t nbytes = read(job_fdo[0], buffer, sizeof buffer);
-		if (nbytes <= 0) insert_error("read"); else insert(buffer, (nat) nbytes, 1);
+		if (nbytes < 0) insert_error("read"); else insert(buffer, (nat) nbytes, 1);
 	}
 	if (poll(&(struct pollfd){ .fd = job_fdm[0], .events = POLLIN }, 1, 0) == 1) {
 		ssize_t nbytes = read(job_fdm[0], buffer, sizeof buffer);
-		if (nbytes <= 0) insert_error("read"); else insert(buffer, (nat) nbytes, 1);
+		if (nbytes < 0) insert_error("read"); else insert(buffer, (nat) nbytes, 1);
 	} 
 }
 
-static void start_job(const char* input) {
-	if (writable) save();
-	const nat length = (nat) strlen(input);
-	if (not length) return;
-	char** arguments = parse_arguments(*input, input + 1, length - 1);
-	if (arguments[0][0] != '.' and arguments[0][0] != '/') {
-		char* path = path_lookup(arguments[0]);
-		if (not path) { errno = ENOENT; insert_error("pathlookup"); return; }
-		free(arguments[0]);
-		arguments[0] = path;
-	}
-	pipe(job_fdo);
-	pipe(job_rfd);
-	pipe(job_fdm);
-	pid = fork();
-	if (pid < 0) { insert_error("fork"); } 
-	else if (not pid) {
-		close(job_fdo[0]);  dup2(job_fdo[1], 1);
-		close(job_fdo[1]);
-		close(job_fdm[0]);  dup2(job_fdm[1], 2);
-		close(job_fdm[1]);
-		close(job_rfd[1]);  dup2(job_rfd[0], 0);
-		close(job_rfd[0]);
-		execve(arguments[0], arguments, environ);
-		insert_error("execve");
-		exit(1);
-	} else {
-		close(job_fdo[1]);
-		close(job_fdm[1]);
-		close(job_rfd[0]);
-		job_status = 1;
-	}
-}
-
 static void finish_job(void) {
-	close(job_fdo[0]);
-	close(job_rfd[1]);
-	close(job_fdm[0]);
+	if (not job_status) return;
 	int s = 0;
-	if (waitpid(pid, &s, WNOHANG) == -1) insert_error("wait");
+	int r = waitpid(pid, &s, WNOHANG);
+	if (r == -1) insert_error("wait");
+	else if (r == 0) return;
 	char dt[32] = {0};
 	struct timeval t = {0};
 	gettimeofday(&t, NULL);
@@ -562,6 +522,45 @@ static void finish_job(void) {
 	job_status = 0;
 }
 
+static void start_job(const char* input) {
+	if (job_status) { insert("\njob running\n", 13, 1); return; } 
+	if (writable) save();
+	const nat length = (nat) strlen(input);
+	if (not length) return;
+
+	char** arguments = parse_arguments(*input, input + 1, length - 1);
+	if (arguments[0][0] != '.' and arguments[0][0] != '/') {
+		char* path = path_lookup(arguments[0]);
+		if (not path) { errno = ENOENT; insert_error("pathlookup"); return; }
+		free(arguments[0]);
+		arguments[0] = path;
+	}
+	pipe(job_fdo);
+	pipe(job_rfd);
+	pipe(job_fdm);
+	pid = fork();
+	if (pid < 0) { insert_error("fork"); } 
+	else if (not pid) {
+		close(job_fdo[0]);  dup2(job_fdo[1], 1);
+		close(job_fdo[1]);
+		close(job_fdm[0]);  dup2(job_fdm[1], 2);
+		close(job_fdm[1]);
+		close(job_rfd[1]);  dup2(job_rfd[0], 0);
+		close(job_rfd[0]);
+		execve(arguments[0], arguments, environ);
+		insert_error("execve");
+		exit(1);
+	} else {
+		close(job_fdo[1]);
+		close(job_fdm[1]);
+		close(job_rfd[0]);
+		job_status = 1;
+		insert("started\n", 8, 1);
+	}
+	usleep(10000);
+	read_output();
+	finish_job();
+}
 
 static void open_file(const char* argument) {
 	if (writable) save();
@@ -726,21 +725,19 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 	goto loop;
 do_command:
 	if (not writable) goto done;
-	char* s = get_selection();
+	char* s = clipboard;
+	const nat len = cliplength;
 	if (not s) goto loop;
 	if (not strcmp(s, "exit")) goto done;
 	else if (not strncmp(s, "open ", 5)) open_file(s + 5); 
-	else if (not strcmp(s, "read") and job_status) read_output(); 
-	else if (not strcmp(s, "wait") and job_status) finish_job();
-	else if (not strncmp(s, "do", 2) and not job_status) start_job(s + 2);
-	else if (not strncmp(s, "cd ", 3) and not job_status) { 
-		if (chdir(s + 3) < 0) insert_error("chdir"); 
-	} else if (not strcmp(s, "close") and job_status) { 
-		if (close(job_rfd[1]) < 0) insert_error("close"); 
-	} else if (not strncmp(s, "write ", 6) and job_status) {
-		if (write(job_rfd[1], s + 6, strlen(s + 6)) <= 0) insert_error("write");
-	} else insert("\ncommand not found\n", 19, 1);
-	free(s); goto loop;
+	else if (not strcmp(s, "read")) read_output();
+	else if (not strcmp(s, "wait")) finish_job();
+	else if (not strncmp(s, "do", 2)) start_job(s + 2);
+	else if (not strncmp(s, "cd ", 3)) { if (chdir(s + 3) < 0) insert_error("chdir"); } 
+	else if (not strcmp(s, "close")) { if (not job_status or close(job_rfd[1]) < 0) insert_error("close"); }
+	else if (not strncmp(s, "write ", 6)) { if (not job_status or write(job_rfd[1], s + 6, len - 6) <= 0) insert_error("write"); }
+	else insert("\ncommand not found\n", 19, 1);
+	goto loop;
 done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
 	if (writable) save(); exit(0);
@@ -752,6 +749,32 @@ done:	write(1, "\033[?25h", 6);
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*static char* get_selection(void) {
+	if (anchor > count) return NULL;
+	if (anchor > cursor) { nat t = anchor; anchor = cursor; cursor = t; }
+	char* selection = strndup(text + anchor, cursor - anchor);
+	return selection;
+}
+*/
 
 
 

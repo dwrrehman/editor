@@ -1,0 +1,128 @@
+hello 
+
+this 
+
+is
+
+a file
+
+lol
+
+
+yayyyyy
+
+	yup thats it lol
+
+
+
+
+1202411052.125700_000041a710d63af1_forcesave.txt
+1202411052.125815_60b7acd93ab50c2a_forcesave.txt
+1202411052.130238_4431b7821c06dac8_forcesave.txt
+build
+c.c
+comments from the editor with shell.txt
+deploy
+editor
+editor.dSYM
+force_saves
+hello.txt
+reference_editor_source.c
+reference_simple_ed_like_editor.c
+error: read: No such file or directory
+
+do ls
+read
+
+open 1202411052.125700_000041a710d63af1_forcesave.txt
+
+
+
+
+
+
+
+
+
+
+
+
+started
+read
+
+1202411052.125700_000041a710d63af1_forcesave.txt
+1202411052.125815_60b7acd93ab50c2a_forcesave.txt
+1202411052.130238_4431b7821c06dac8_forcesave.txt
+build
+c.c
+comments from the editor with shell.txt
+deploy
+editor
+editor.dSYM
+force_saves
+hello.txt
+reference_editor_source.c
+reference_simple_ed_like_editor.c
+error: read: No such file or directory
+error: read: No such file or directory
+error: read: No such file or directory
+error: read: No such file or directory
+error: read: No such file or directory
+
+
+
+
+
+
+
+
+
+do ls
+
+started
+1202411052.125700_000041a710d63af1_forcesave.txt
+1202411052.125815_60b7acd93ab50c2a_forcesave.txt
+1202411052.130238_4431b7821c06dac8_forcesave.txt
+build
+c.c
+comments from the editor with shell.txt
+deploy
+editor
+editor.dSYM
+force_saves
+hello.txt
+reference_editor_source.c
+reference_simple_ed_like_editor.c
+[1202411111.145844:(69733) exited with code 0]
+
+do ls
+
+started
+1202411052.125700_000041a710d63af1_forcesave.txt
+1202411052.125815_60b7acd93ab50c2a_forcesave.txt
+1202411052.130238_4431b7821c06dac8_forcesave.txt
+build
+c.c
+comments from the editor with shell.txt
+deploy
+editor
+editor.dSYM
+force_saves
+hello.txt
+reference_editor_source.c
+reference_simple_ed_like_editor.c
+[1202411111.145852:(69741) exited with code 0]
+
+
+
+
+
+
+
+
+
+
+
+
+
+

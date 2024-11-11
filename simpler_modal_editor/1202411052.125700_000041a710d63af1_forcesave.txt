@@ -12,6 +12,9 @@ and also to see if it is able to display the cursor properly lol.
 
 
 yay
+			SOMETHING COOL   YAYYYY TESTINGGGGG YAYYYYYYY
+
+
 
 
 do ls
@@ -21,3 +24,70 @@ do ls
 do ls
 
 open 1202411052.130238_4431b7821c06dac8_forcesave.txt
+
+open hello.txt
+
+
+
+
+do ls
+
+started
+
+read
+
+1202411052.125700_000041a710d63af1_forcesave.txt
+1202411052.125815_60b7acd93ab50c2a_forcesave.txt
+1202411052.130238_4431b7821c06dac8_forcesave.txt
+build
+c.c
+comments from the editor with shell.txt
+deploy
+editor
+editor.dSYM
+force_saves
+hello.txt
+reference_editor_source.c
+reference_simple_ed_like_editor.c
+
+read
+
+
+write hello
+
+error: write: Broken pipeerror: write: Broken pipe
+error: write: Broken pipe
+
+
+command not found
+
+
+
+wait
+
+
+[1202411111.150106:(69832) exited with code 0]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
