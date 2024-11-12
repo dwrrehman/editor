@@ -219,128 +219,70 @@ static void undo(void) {
 	head = node.parent;
 }
 
+static void emergency_save(const char* call) {
+	printf("save error: %s: %s\n", call, strerror(errno)); fflush(stdout); sleep(2);
+	puts("printing stored document: "); fflush(stdout); sleep(1);
+	fwrite(text, 1, count, stdout); fflush(stdout); sleep(1);
+	fwrite(text, 1, count, stdout); fflush(stdout); sleep(1);
+	puts("emergency save: printed out all contents"); fflush(stdout); sleep(1);
+	printf("save error: %s: %s\n", call, strerror(errno)); fflush(stdout); sleep(2);
+	return; 
+}
+
 static void save(void) {
-	const mode_t permissions = 
-		S_IRUSR | S_IWUSR | S_IROTH | S_IRGRP;
-	printf("saving: %s: %llub: testing timestamps...\n", 
-		filename, count
-	);
-	fflush(stdout);
-
-	char new_last_modified[32] = {0};
-	struct stat attr;
-	stat(filename, &attr);
-	strftime(new_last_modified, 32, "1%Y%m%d%u.%H%M%S", 
-		localtime(&attr.st_mtime)
-	);
-	printf("save: current last modified time: %s\n", new_last_modified);
-	fflush(stdout);
-	printf("save: existing last modfied time: %s\n", last_modified);
-	fflush(stdout);
-
-	if (not strcmp(new_last_modified, last_modified)) {
-
-		puts("matched timestamps: saving...");
-		fflush(stdout);
-
-		printf("saving: %s: %llub\n", filename, count);
-		fflush(stdout);
-
-		int output_file = open(filename, O_WRONLY | O_TRUNC, permissions);
-		if (output_file < 0) { 
-			printf("error: save: %s\n", strerror(errno));
-			fflush(stdout);
-			goto emergency_save;
-		}
-
-		write(output_file, text, count);  // TODO: check these. 
-		close(output_file);
-
-		struct stat attrn;
-		stat(filename, &attrn);
-		strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", 
-			localtime(&attrn.st_mtime)
-		);
-
-	} else {
-		puts("timestamp mismatch: refusing to save to prior path");
-		fflush(stdout);
-		puts("force saving file contents to a new file...");
-		fflush(stdout);
-		
-		char name[4096] = {0};
-		char datetime[32] = {0};
+	const mode_t permissions = S_IRUSR | S_IWUSR | S_IROTH | S_IRGRP;
+	int flags = 0;
+	bool matches = false;
+	if (not *filename) {
+		char name[4096] = {0}, datetime[32] = {0};
 		struct timeval t = {0};
 		gettimeofday(&t, NULL);
 		struct tm* tm = localtime(&t.tv_sec);
 		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-		snprintf(name, sizeof name, "%s_%08x%08x_forcesave.txt", 
-			datetime, rand(), rand());
-		int flags = O_WRONLY | O_CREAT | O_EXCL;
-
-		printf("saving: %s: %llub\n", name, count);
-		fflush(stdout);
-		int output_file = open(name, flags, permissions);
-		if (output_file < 0) { 
-			printf("error: save: %s\n", strerror(errno));
-			fflush(stdout);
-			goto emergency_save;
-		} 
-		write(output_file, text, count); // TODO: check these. 
-		close(output_file);
-
-		printf("please reload the file, to see the external changes.\n");
-		fflush(stdout);
-		puts("warning: not reloading."); 
-		fflush(stdout);
+		snprintf(name, sizeof name, "%s_%08x%08x.txt", datetime, rand(), rand());
+		strlcpy(filename, name, sizeof filename);
+		flags = O_WRONLY | O_CREAT | O_EXCL;
+		matches = true; 
+	} else {
+		char empirically_last_modified[32] = {0};
+		struct stat attr;
+		stat(filename, &attr);
+		strftime(empirically_last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr.st_mtime));
+		if (not strcmp(empirically_last_modified, last_modified)) {
+			flags = O_WRONLY | O_TRUNC;
+			matches = true; 
+		}
 	}
-	return;
-
-emergency_save:
-	puts("printing stored document so far: ");
-	fflush(stdout);
-	fwrite(text, 1, count, stdout);
-	fflush(stdout);
-	fwrite(text, 1, count, stdout);
-	fflush(stdout);
-	puts("emergency save: force saving to the home directory.");
-	fflush(stdout);
-	puts("force saving file contents to a new file at /Users/dwrr/...");
-	fflush(stdout);
-
-	char name[4096] = {0};
-	char datetime[32] = {0};
-	struct timeval t = {0};
-	gettimeofday(&t, NULL);
-	struct tm* tm = localtime(&t.tv_sec);
-	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-	snprintf(name, sizeof name, 
-		"/Users/dwrr/%s_%08x%08x_emergency_save.txt", 
-		datetime, rand(), rand()
-	);
-	int flags = O_WRONLY | O_CREAT | O_EXCL;
-
-	printf("saving: %s: %llub\n", name, count);
-	fflush(stdout);
-
-	int output_file = open(name, flags, permissions);
-	if (output_file < 0) { 
-		printf("error: save: %s\n", strerror(errno));
-		fflush(stdout);
-		puts("failed emergency save. try again? ");
-		char c[3] = {0};
-		read(0, &c, 2);
-		if (c[0] == 'y') { 
-			puts("trying to emergency save again..."); 
-			fflush(stdout);
-			goto emergency_save; 
-		} else 
-		puts("warning: not saving again, exiting editor."); 
-		fflush(stdout);
-		abort();
-	} 
-	write(output_file, text, count); // TODO: check these. 
-	close(output_file);
+	if (matches) {
+		int output_file = open(filename, flags, permissions);
+		if (output_file < 0) { emergency_save("open"); goto recover; }
+		if (write(output_file, text, count) < 0){ emergency_save("write"); goto recover; }
+		if (close(output_file) < 0) { emergency_save("close"); goto recover; }
+		struct stat attrn;
+		stat(filename, &attrn);
+		strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attrn.st_mtime));
+		return;
+	}
+	recover: write(1, "\033[?25h", 6); tcsetattr(0, TCSANOW, &terminal);
+	printf("--- emergency save ---\nplease give a valid filename.\n(enter: <path>\\n)\n");
+	loop: fflush(stdout); char input[4096] = {0};
+	printf(":: "); fflush(stdout);
+	const ssize_t n = read(0, input, sizeof input);
+	if (n <= 0) {
+		emergency_save("read");
+		char datetime[32] = {0};
+		struct timeval t = {0};
+		gettimeofday(&t, NULL);
+		struct tm* tm = localtime(&t.tv_sec);
+		strftime(datetime, 32, "1%Y%m%d%u_%H%M%S", tm);
+		snprintf(input, sizeof input, "/Users/dwrr/%s_%08x%08x_emergency.txt", datetime, rand(), rand());
+	} else input[n - 1] = 0;
+	int output_file = open(input, O_WRONLY | O_CREAT | O_EXCL | O_APPEND, permissions);
+	if (output_file < 0) { emergency_save("open"); goto loop; }
+	if (write(output_file, text, count) < 0) { emergency_save("write"); goto loop; }
+	if (close(output_file) < 0) { emergency_save("close"); goto loop; }
+	printf("successfully emergency saved, exiting editor..."); fflush(stdout); 
+	exit(0);
 }
 
 static void delete_selection(void) {
@@ -434,7 +376,6 @@ static void open_file(const char* argument) {
 	} 
 	int df = open(argument, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
-
 	int file = open(argument, O_RDONLY);
 	if (file < 0) {
 		read_error: insert_error("open");
@@ -465,6 +406,7 @@ static noreturn void interrupted(int _) {if(_){}
 }
 
 int main(int argc, const char** argv) {
+	srand((unsigned) time(0));
 	signal(SIGPIPE, SIG_IGN);
 	struct sigaction action = {.sa_handler = window_resized}; 
 	sigaction(SIGWINCH, &action, NULL);
@@ -503,8 +445,8 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 	char c = 0;
 	ssize_t n = read(0, &c, 1); 
 	c = remap(c);
-	if (n <= 0) { perror("read"); fflush(stderr); usleep(100000);
-	}
+	if (n <= 0) { perror("read"); fflush(stderr); usleep(10000); }
+
 	if (mode == 0) {
 		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
 			memset(history, 0, sizeof history);
@@ -612,11 +554,152 @@ done:	write(1, "\033[?25h", 6);
 
 
 
-
-
-
-
 /*
+
+printf("saving: %s: %llub: testing timestamps...\n", 
+		filename, count
+	);
+	fflush(stdout);
+
+
+printf("save: current last modified time: %s\n", new_last_modified);
+	fflush(stdout);
+	printf("save: existing last modfied time: %s\n", last_modified);
+	fflush(stdout);
+
+puts("matched timestamps: saving...");
+			fflush(stdout);
+
+
+			printf("saving: %s: %llub\n", filename, count);
+			fflush(stdout);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	char name[4096] = {0};
+	char datetime[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+	snprintf(name, sizeof name, 
+		"/Users/dwrr/%s_%08x%08x_emergency_save.txt", 
+		datetime, rand(), rand()
+	);
+	int flags = O_WRONLY | O_CREAT | O_EXCL;
+
+	printf("saving: %s: %llub\n", name, count);
+	fflush(stdout); sleep(1);
+
+	int output_file = open(name, flags, permissions);
+	if (output_file < 0) { 
+	emergency_error: 
+		printf("emergency error: save: %s\n", strerror(errno)); fflush(stdout); sleep(1);
+		puts("failed emergency save. try again? ");
+		char c[3] = {0};
+		read(0, &c, 2);
+		if (c[0] == 'y') { 
+			puts("trying to emergency save again..."); 
+			fflush(stdout);
+			emergency_save();
+		} else {
+			puts("warning: not saving again, exiting editor."); 
+			fflush(stdout);
+			abort();
+		}
+	} 
+	if (write(output_file, text, count) < 0) goto emergency_error;
+	close(output_file);
+
+
+
+
+
+
+	} else {
+		
+
+		if (not strcmp(new_last_modified, last_modified)) {
+
+			int output_file = open(filename, O_WRONLY | O_TRUNC);
+			if (output_file < 0) emergency_save("open");
+			if (write(output_file, text, count) < 0) emergency_save("write");
+			close(output_file)
+;
+			struct stat attrn;
+			stat(filename, &attrn);
+			strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attrn.st_mtime));
+
+			saved = true;
+
+		} else {
+			puts("timestamp mismatch: refusing to save to prior path"); 
+			puts("force saving file contents to a new file..."); fflush(stdout); sleep(2);
+			
+			char name[4096] = {0};
+			char datetime[32] = {0};
+			struct timeval t = {0};
+			gettimeofday(&t, NULL);
+			struct tm* tm = localtime(&t.tv_sec);
+			strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+			snprintf(name, sizeof name, "%s_%08x%08x_forcesave.txt", 
+				datetime, rand(), rand());
+			int flags = O_WRONLY | O_CREAT | O_EXCL;
+
+			printf("saving: %s: %llub\n", name, count);
+			fflush(stdout); sleep(1);
+
+
+			int output_file = open(name, flags, permissions);
+			if (output_file < 0) emergency_save("open");
+			if (write(output_file, text, count) < 0) emergency_save("write");
+			close(output_file);
+		}
+	}
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 	else if (not strcmp(s, "close")) { if (not job_status or close(job_rfd[1]) < 0) insert_error("close"); }
