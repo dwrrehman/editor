@@ -734,26 +734,19 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 do_command:
 	if (not writable) goto done;
 	char* s = clipboard;
-	const nat len = cliplength;
 	if (not s) goto loop;
 	if (not strcmp(s, "exit")) goto done;
-	else if (not strncmp(s, "open ", 5)) open_file(s + 5); 
-	else if (not strcmp(s, "read")) read_output();
-	else if (not strcmp(s, "wait")) finish_job();
-	else if (not strncmp(s, "do", 2)) start_job(s + 2);
+	else if (not strncmp(s, "edit ", 5)) open_file(s + 5); 
 	else if (not strncmp(s, "cd ", 3)) { if (chdir(s + 3) < 0) insert_error("chdir"); } 
-	else if (not strncmp(s, "signal ", 7)) { if (kill(pid, atoi(s + 3)) < 0) insert_error("kill"); }
 	else if (not strcmp(s, "close")) { if (not job_status or close(job_rfd[1]) < 0) insert_error("close"); }
-	else if (not strncmp(s, "write ", 6)) { if (not job_status or write(job_rfd[1], s + 6, len - 6) <= 0) insert_error("write"); }
-	else insert("\ncommand not found\n", 19, 1);
+	else if (not strncmp(s, "signal ", 7)) { if (kill(pid, atoi(s + 7)) < 0) insert_error("kill"); else insert("signaled\n", 9, 1); }
+	else if (job_status) { if (write(job_rfd[1], s, cliplength) <= 0) insert_error("write"); }
+	else start_job(s);
 	goto loop;
 done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
 	if (writable) save(); exit(0);
 }
-
-
-
 
 
 
