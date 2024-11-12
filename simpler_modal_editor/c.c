@@ -18,6 +18,10 @@
 #include <sys/wait.h> 
 typedef uint64_t nat;
 
+
+
+
+
 #define max_screen_size  1 << 20
 
 struct action {
@@ -556,9 +560,6 @@ static void start_job(const char* input) {
 		close(job_rfd[0]);
 		job_status = 1;
 	}
-	usleep(10000);
-	read_output();
-	finish_job();
 }
 
 static void open_file(const char* argument) {
@@ -633,14 +634,16 @@ new: 	cursor = 0; anchor = (nat) -1;
 	struct stat attr_;
 	stat(filename, &attr_);
 	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr_.st_mtime));
-
 loop:	ioctl(0, TIOCGWINSZ, &window);
-	display();
+	read_output();  finish_job();  display();
 	char c = 0;
 	ssize_t n = read(0, &c, 1); 
 	c = remap(c);
-	if (n < 0) { perror("read"); fflush(stderr); }
-
+	if (n <= 0) { 
+		perror("read"); 
+		fflush(stderr);
+		usleep(100000);
+	}
 	if (mode == 0) {
 		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
 			memset(history, 0, sizeof history);
@@ -774,6 +777,35 @@ done:	write(1, "\033[?25h", 6);
 	return selection;
 }
 */
+
+
+
+
+
+
+
+/*
+hellot = 0;
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.194337:(86830) exited with code 0]
+
+do ./build
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+c.c:20:1: warning: type specifier missing, defaults to 'int' [-Wimplicit-int]
+hellot = 0;
+^
+c.c:20:1: warning: no previous extern declaration for non-static variable 'hellot' [-Wmissing-variable-declarations]
+note: declare 'static' if the variable is not intended to be used outside of this translation unit
+c.c:22:1: error: expected identifier or '('
+do ./build
+^
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+3 warnings and 2 errors generated.
+[1202411111.194301:(86792) exited with code 1]
+*/
+
+
 
 
 

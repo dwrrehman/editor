@@ -21,3 +21,37 @@ do ls
 do ls
 
 open build
+
+open c.c
+
+do ./build
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.193919:(86526) exited with code 0]
+
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.193921:(86533) exited with code 0]
+
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.193928:(86545) exited with code 0]
+
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.193933:(86554) exited with code 0]
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.193940:(86566) exited with code 0]
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.194020:(86626) exited with code 0]
+
+
+
+
