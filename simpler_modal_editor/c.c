@@ -20,8 +20,6 @@ typedef uint64_t nat;
 
 
 
-
-
 #define max_screen_size  1 << 20
 
 struct action {
@@ -559,6 +557,14 @@ static void start_job(const char* input) {
 		close(job_fdm[1]);
 		close(job_rfd[0]);
 		job_status = 1;
+		char dt[32] = {0};
+		struct timeval t = {0};
+		gettimeofday(&t, NULL);
+		struct tm* tm = localtime(&t.tv_sec);
+		strftime(dt, 32, "1%Y%m%d%u.%H%M%S", tm);
+		char message[4096] = {0};
+		snprintf(message, sizeof message, "[%s: pid %d running]\n", dt, pid);
+		insert(message, strlen(message), 1);
 	}
 }
 
@@ -736,6 +742,7 @@ do_command:
 	else if (not strcmp(s, "wait")) finish_job();
 	else if (not strncmp(s, "do", 2)) start_job(s + 2);
 	else if (not strncmp(s, "cd ", 3)) { if (chdir(s + 3) < 0) insert_error("chdir"); } 
+	else if (not strncmp(s, "signal ", 7)) { if (kill(pid, atoi(s + 3)) < 0) insert_error("kill"); }
 	else if (not strcmp(s, "close")) { if (not job_status or close(job_rfd[1]) < 0) insert_error("close"); }
 	else if (not strncmp(s, "write ", 6)) { if (not job_status or write(job_rfd[1], s + 6, len - 6) <= 0) insert_error("write"); }
 	else insert("\ncommand not found\n", 19, 1);
@@ -803,6 +810,98 @@ do ./build
 fatal error: too many errors emitted, stopping now [-ferror-limit=]
 3 warnings and 2 errors generated.
 [1202411111.194301:(86792) exited with code 1]
+
+
+
+
+
+
+
+
+
+
+
+     NAME            Default Action          Description
+     SIGHUP          terminate process       terminal line hangup
+     SIGINT          terminate process       interrupt program
+     SIGQUIT         create core image       quit program
+     SIGILL          create core image       illegal instruction
+     SIGTRAP         create core image       trace trap
+     SIGABRT         create core image       abort(3) call (formerly SIGIOT)
+     SIGEMT          create core image       emulate instruction executed
+     SIGFPE          create core image       floating-point exception
+     SIGKILL         terminate process       kill program
+     SIGBUS          create core image       bus error
+     SIGSEGV         create core image       segmentation violation
+     SIGSYS          create core image       non-existent system call invoked
+     SIGPIPE         terminate process       write on a pipe with no reader
+     SIGALRM         terminate process       real-time timer expired
+     SIGTERM         terminate process       software termination signal
+     SIGURG          discard signal          urgent condition present on socket
+     SIGSTOP         stop process            stop (cannot be caught or ignored)
+     SIGTSTP         stop process            stop signal generated from keyboard
+     SIGCONT         discard signal          continue after stop
+     SIGCHLD         discard signal          child status has changed
+     SIGTTIN         stop process            background read attempted from control terminal
+     SIGTTOU         stop process            background write attempted to control terminal
+     SIGIO           discard signal          I/O is possible on a descriptor (see fcntl(2))
+     SIGXCPU         terminate process       cpu time limit exceeded (see setrlimit(2))
+     SIGXFSZ         terminate process       file size limit exceeded (see setrlimit(2))
+     SIGVTALRM       terminate process       virtual time alarm (see setitimer(2))
+     SIGPROF         terminate process       profiling timer alarm (see setitimer(2))
+     SIGWINCH        discard signal          Window size change
+     SIGINFO         discard signal          status request from keyboard
+     SIGUSR1         terminate process       User defined signal 1
+     SIGUSR2         terminate process       User defined signal 2
+
+       SIGHUP           1           1       1       1
+       SIGINT           2           2       2       2
+       SIGQUIT          3           3       3       3
+       SIGILL           4           4       4       4
+       SIGTRAP          5           5       5       5
+       SIGABRT          6           6       6       6
+       SIGIOT           6           6       6       6
+       SIGBUS           7          10      10      10
+       SIGEMT           -           7       7      -
+       SIGFPE           8           8       8       8
+       SIGKILL          9           9       9       9
+       SIGUSR1         10          30      16      16
+       SIGSEGV         11          11      11      11
+       SIGUSR2         12          31      17      17
+       SIGPIPE         13          13      13      13
+       SIGALRM         14          14      14      14
+       SIGTERM         15          15      15      15
+       SIGSTKFLT       16          -       -        7
+       SIGCHLD         17          20      18      18
+       SIGCLD           -          -       18      -
+       SIGCONT         18          19      25      26
+       SIGSTOP         19          17      23      24
+       SIGTSTP         20          18      24      25
+       SIGTTIN         21          21      26      27
+       SIGTTOU         22          22      27      28
+       SIGURG          23          16      21      29
+       SIGXCPU         24          24      30      12
+       SIGXFSZ         25          25      31      30
+       SIGVTALRM       26          26      28      20
+       SIGPROF         27          27      29      21
+       SIGWINCH        28          28      20      23
+       SIGIO           29          23      22      22
+       SIGPOLL                                            Same as SIGIO
+       SIGPWR          30         29/-     19      19
+       SIGINFO          -         29/-     -       -
+       SIGLOST          -         -/29     -       -
+       SIGSYS          31          12      12      31
+       SIGUNUSED       31          -       -       31
+
+
+
+
+
+
+
+
+
+
 */
 
 
