@@ -555,7 +555,6 @@ static void start_job(const char* input) {
 		close(job_fdm[1]);
 		close(job_rfd[0]);
 		job_status = 1;
-		insert("started\n", 8, 1);
 	}
 	usleep(10000);
 	read_output();
