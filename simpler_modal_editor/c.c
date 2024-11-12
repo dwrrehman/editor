@@ -426,6 +426,219 @@ static void insert_output(const char* input_command) {
 	free(string);
 }
 
+static void open_file(const char* argument) {
+	if (writable) save();
+	if (not strlen(argument)) { 
+		free(text); text = NULL; 
+		count = 0; goto new; 
+	} 
+	int df = open(argument, O_RDONLY | O_DIRECTORY);
+	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
+
+	int file = open(argument, O_RDONLY);
+	if (file < 0) {
+		read_error: insert_error("open");
+		return;
+	}
+	struct stat ss; fstat(file, &ss);
+	count = (nat) ss.st_size;
+	free(text); text = malloc(count);
+	read(file, text, count); 
+	close(file);
+new: 	cursor = 0; origin = 0;
+	anchor = (nat) -1; writable = 1;
+	strlcpy(filename, argument, sizeof filename);
+	for (nat i = 0; i < action_count; i++) free(actions[i].string);
+	free(actions); actions = NULL;
+	head = 0; action_count = 0;
+	finish_action((struct action) {0}, NULL, (int64_t) 0);
+	struct stat attr_;
+	stat(filename, &attr_);
+	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr_.st_mtime));
+}
+
+static void window_resized(int _) { if(_){} ioctl(0, TIOCGWINSZ, &window); }
+static noreturn void interrupted(int _) {if(_){} 
+	write(1, "\033[?25h", 6);
+	tcsetattr(0, TCSANOW, &terminal);
+	if (writable) save(); exit(0); 
+}
+
+int main(int argc, const char** argv) {
+	signal(SIGPIPE, SIG_IGN);
+	struct sigaction action = {.sa_handler = window_resized}; 
+	sigaction(SIGWINCH, &action, NULL);
+	struct sigaction action2 = {.sa_handler = interrupted}; 
+	sigaction(SIGINT, &action2, NULL);
+
+	if (argc == 1) goto new;
+	else if (argc == 2 or argc == 3) strlcpy(filename, argv[1], sizeof filename);
+	else exit(puts("usage: ./editor [file]"));
+
+	int df = open(filename, O_RDONLY | O_DIRECTORY);
+	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
+	int file = open(filename, O_RDONLY);
+	if (file < 0) read_error: exit(printf("open: %s: %s\n", filename, strerror(errno)));
+	struct stat ss; fstat(file, &ss);
+	count = (nat) ss.st_size;
+	text = malloc(count);
+	read(file, text, count); close(file);
+new: 	cursor = 0; anchor = (nat) -1;
+	finish_action((struct action) {0}, NULL, (int64_t) 0);
+	tcgetattr(0, &terminal);
+	struct termios terminal_copy = terminal; 
+	terminal_copy.c_cc[VMIN] = 1; 
+	terminal_copy.c_cc[VTIME] = 0;
+	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
+	tcsetattr(0, TCSANOW, &terminal_copy);
+	write(1, "\033[?25l", 6);
+	writable = argc < 3;
+	nat mode = 2, target_length = 0, home = 0;
+	char history[6] = {0}, target[4096] = {0};
+	struct stat attr_;
+	stat(filename, &attr_);
+	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr_.st_mtime));
+loop:	ioctl(0, TIOCGWINSZ, &window);
+	display(); 
+	char c = 0;
+	ssize_t n = read(0, &c, 1); 
+	c = remap(c);
+	if (n <= 0) { perror("read"); fflush(stderr); usleep(100000);
+	}
+	if (mode == 0) {
+		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
+			memset(history, 0, sizeof history);
+			if (c == 'n') delete(5, 1); 
+			mode = 2; goto loop;
+		} else if (c == 127) delete(1, 1);
+		else if (c == 9 or c == 10 or (uint8_t) c >= 32) insert(&c, 1, 1);
+		memmove(history + 1, history, sizeof history - 1);
+		*history = c;
+	} else if (mode == 1) {
+		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
+			mode = 2;  memset(history, 0, sizeof history); 
+			if (c == 'n') { if (target_length >= 5) target_length -= 5; } else goto loop;
+		} else if (c == 127) { if (target_length) target_length--; }
+		else if (c == 9 or c == 10 or (uint8_t) c >= 32) { 
+			if (target_length < sizeof target - 1) target[target_length++] = c; 
+		} 
+		memmove(history + 1, history, sizeof history - 1);
+		*history = c;
+		cursor = home;
+		for (nat t = 0; cursor < count; cursor++) {
+			if (text[cursor] != target[t]) { t = 0; continue; }
+			t++; if (t == target_length) { cursor++; goto found; }
+		}
+		cursor = home; found:; 
+		memset(status, 0, sizeof status);
+		memcpy(status, target, target_length);
+	} else {
+		if (c == 'Q') goto done;
+		else if (c == 'q') goto do_command;
+		else if (c == 'z' and writable) undo();
+		else if (c == 'x' and writable) redo();
+		else if (c == 'y' and writable) save();
+		else if (c == 't' and writable) mode = 0;
+		else if (c == 's' and writable) insert_char();
+		else if (c == 'r' and writable) delete(1, 1);
+		else if (c == 'w' and writable) insert(clipboard, cliplength, 1);
+		else if (c == 'g' and writable) insert_output("pbpaste");
+		else if (c == 'c') local_copy();
+		else if (c == 'f') copy_global();
+		else if (c == 'a') anchor = anchor == (nat)-1 ? cursor : (nat) -1;
+		else if (c == 'i') { if (cursor < count) cursor++; }
+		else if (c == 'n') { if (cursor) cursor--; }
+		else if (c == 'd' or c == 'k') { 
+			mode = 1; 
+			target_length = 0; 
+			home = c == 'd' ? 0 : cursor; 
+		}
+		else if (c == 'p' or c == 'h') {
+			nat times = 1;
+			if (c == 'h') times = window.ws_row >> 1;
+			for (nat i = 0; i < times; i++) 
+				while (cursor) { 
+					cursor--; 
+					if (not cursor or text[cursor - 1] == 10) break;
+				}
+		} else if (c == 'u' or c == 'm') {
+			nat times = 1;
+			if (c == 'm') times = window.ws_row >> 1;
+			for (nat i = 0; i < times; i++) 
+				while (cursor < count) { 
+					cursor++; 
+					if (cursor < count and text[cursor] == 10) break;
+				}
+		} else if (c == 'e') {
+			while (cursor) { 
+				cursor--; 
+				if (not cursor or text[cursor - 1] == 10) break;
+				if (isalnum(text[cursor]) and 
+				not isalnum(text[cursor - 1])) break;
+			}
+		} else if (c == 'o') {
+			while (cursor < count) { 
+				cursor++; 
+				if (cursor >= count or text[cursor] == 10) break;
+				if (not isalnum(text[cursor]) and 
+				isalnum(text[cursor - 1])) break;
+			}
+		}
+	}
+	goto loop;
+do_command:
+	if (not writable) goto done;
+	char* s = clipboard;
+	if (not s) goto loop;
+	else if (not strcmp(s, "exit")) goto done;
+	else if (not strncmp(s, "edit ", 5)) open_file(s + 5);
+	else if (not strncmp(s, "insert ", 7)) insert_output(s + 7);
+	goto loop;
+done:	write(1, "\033[?25h", 6);
+	tcsetattr(0, TCSANOW, &terminal);
+	if (writable) save(); exit(0);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+	else if (not strcmp(s, "close")) { if (not job_status or close(job_rfd[1]) < 0) insert_error("close"); }
+	else if (not strncmp(s, "signal ", 7)) { if (kill(pid, atoi(s + 7)) < 0) insert_error("kill"); else insert("signaled\n", 9, 1); }
+	else if (job_status) { if (write(job_rfd[1], s, cliplength) <= 0) insert_error("write"); } 
+	else start_job(s);
+
+
+
+
+
+
+
+display(); //  read_output();  finish_job();
+
+
+
+
+
+
+
+
 static char** parse_arguments(const char delimiter, const char* string, const size_t length) {
 	char** arguments = NULL;
 	size_t argument_count = 0;
@@ -568,189 +781,55 @@ static void start_job(const char* input) {
 	}
 }
 
-static void open_file(const char* argument) {
-	if (writable) save();
-	if (not strlen(argument)) { 
-		free(text); text = NULL; 
-		count = 0; goto new; 
-	} 
-	int df = open(argument, O_RDONLY | O_DIRECTORY);
-	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
 
-	int file = open(argument, O_RDONLY);
-	if (file < 0) {
-		read_error: insert_error("open");
-		return;
-	}
-	struct stat ss; fstat(file, &ss);
-	count = (nat) ss.st_size;
-	free(text); text = malloc(count);
-	read(file, text, count); 
-	close(file);
-new: 	cursor = 0; origin = 0;
-	anchor = (nat) -1; writable = 1;
-	strlcpy(filename, argument, sizeof filename);
-	for (nat i = 0; i < action_count; i++) free(actions[i].string);
-	free(actions); actions = NULL;
-	head = 0; action_count = 0;
-	finish_action((struct action) {0}, NULL, (int64_t) 0);
-	struct stat attr_;
-	stat(filename, &attr_);
-	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr_.st_mtime));
-}
 
-static void window_resized(int _) { if(_){} ioctl(0, TIOCGWINSZ, &window); }
-static noreturn void interrupted(int _) {if(_){} 
-	write(1, "\033[?25h", 6);
-	tcsetattr(0, TCSANOW, &terminal);
-	if (writable) save(); exit(0); 
-}
 
-int main(int argc, const char** argv) {
-	signal(SIGPIPE, SIG_IGN);
-	struct sigaction action = {.sa_handler = window_resized}; 
-	sigaction(SIGWINCH, &action, NULL);
-	struct sigaction action2 = {.sa_handler = interrupted}; 
-	sigaction(SIGINT, &action2, NULL);
-
-	if (argc == 1) goto new;
-	else if (argc == 2 or argc == 3) strlcpy(filename, argv[1], sizeof filename);
-	else exit(puts("usage: ./editor [file]"));
-
-	int df = open(filename, O_RDONLY | O_DIRECTORY);
-	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
-	int file = open(filename, O_RDONLY);
-	if (file < 0) read_error: exit(printf("open: %s: %s\n", filename, strerror(errno)));
-	struct stat ss; fstat(file, &ss);
-	count = (nat) ss.st_size;
-	text = malloc(count);
-	read(file, text, count); close(file);
-new: 	cursor = 0; anchor = (nat) -1;
-	finish_action((struct action) {0}, NULL, (int64_t) 0);
-	tcgetattr(0, &terminal);
-	struct termios terminal_copy = terminal; 
-	terminal_copy.c_cc[VMIN] = 1; 
-	terminal_copy.c_cc[VTIME] = 0;
-	terminal_copy.c_lflag &= ~((size_t) ECHO | ICANON);
-	tcsetattr(0, TCSANOW, &terminal_copy);
-	write(1, "\033[?25l", 6);
-	writable = argc < 3;
-	nat mode = 2, target_length = 0, home = 0;
-	char history[6] = {0}, target[4096] = {0};
-	struct stat attr_;
-	stat(filename, &attr_);
-	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr_.st_mtime));
-loop:	ioctl(0, TIOCGWINSZ, &window);
-	read_output();  finish_job();  display();
-	char c = 0;
-	ssize_t n = read(0, &c, 1); 
-	c = remap(c);
-	if (n <= 0) { 
-		perror("read"); 
-		fflush(stderr);
-		usleep(100000);
-	}
-	if (mode == 0) {
-		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
-			memset(history, 0, sizeof history);
-			if (c == 'n') delete(5, 1); 
-			mode = 2; goto loop;
-		} else if (c == 127) delete(1, 1);
-		else if (c == 9 or c == 10 or (uint8_t) c >= 32) insert(&c, 1, 1);
-		memmove(history + 1, history, sizeof history - 1);
-		*history = c;
-	} else if (mode == 1) {
-		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
-			mode = 2;  memset(history, 0, sizeof history); 
-			if (c == 'n') { if (target_length >= 5) target_length -= 5; } else goto loop;
-		} else if (c == 127) { if (target_length) target_length--; }
-		else if (c == 9 or c == 10 or (uint8_t) c >= 32) { 
-			if (target_length < sizeof target - 1) target[target_length++] = c; 
-		} 
-		memmove(history + 1, history, sizeof history - 1);
-		*history = c;
-		cursor = home;
-		for (nat t = 0; cursor < count; cursor++) {
-			if (text[cursor] != target[t]) { t = 0; continue; }
-			t++; if (t == target_length) { cursor++; goto found; }
-		}
-		cursor = home; found:; 
-		memset(status, 0, sizeof status);
-		memcpy(status, target, target_length);
-	} else {
-		if (c == 'Q') goto done;
-		else if (c == 'q') goto do_command;
-		else if (c == 'z' and writable) undo();
-		else if (c == 'x' and writable) redo();
-		else if (c == 'y' and writable) save();
-		else if (c == 't' and writable) mode = 0;
-		else if (c == 's' and writable) insert_char();
-		else if (c == 'r' and writable) delete(1, 1);
-		else if (c == 'w' and writable) insert(clipboard, cliplength, 1);
-		else if (c == 'g' and writable) insert_output("pbpaste");
-		else if (c == 'c') local_copy();
-		else if (c == 'f') copy_global();
-		else if (c == 'a') anchor = anchor == (nat)-1 ? cursor : (nat) -1;
-		else if (c == 'i') { if (cursor < count) cursor++; }
-		else if (c == 'n') { if (cursor) cursor--; }
-		else if (c == 'd' or c == 'k') { 
-			mode = 1; 
-			target_length = 0; 
-			home = c == 'd' ? 0 : cursor; 
-		}
-		else if (c == 'p' or c == 'h') {
-			nat times = 1;
-			if (c == 'h') times = window.ws_row >> 1;
-			for (nat i = 0; i < times; i++) 
-				while (cursor) { 
-					cursor--; 
-					if (not cursor or text[cursor - 1] == 10) break;
-				}
-		} else if (c == 'u' or c == 'm') {
-			nat times = 1;
-			if (c == 'm') times = window.ws_row >> 1;
-			for (nat i = 0; i < times; i++) 
-				while (cursor < count) { 
-					cursor++; 
-					if (cursor < count and text[cursor] == 10) break;
-				}
-		} else if (c == 'e') {
-			while (cursor) { 
-				cursor--; 
-				if (not cursor or text[cursor - 1] == 10) break;
-				if (isalnum(text[cursor]) and 
-				not isalnum(text[cursor - 1])) break;
-			}
-		} else if (c == 'o') {
-			while (cursor < count) { 
-				cursor++; 
-				if (cursor >= count or text[cursor] == 10) break;
-				if (not isalnum(text[cursor]) and 
-				isalnum(text[cursor - 1])) break;
-			}
-		}
-	}
-	goto loop;
-do_command:
-	if (not writable) goto done;
-	char* s = clipboard;
-	if (not s) goto loop;
-	if (not strcmp(s, "exit")) goto done;
-	else if (not strncmp(s, "edit ", 5)) open_file(s + 5); 
-	else if (not strncmp(s, "cd ", 3)) { if (chdir(s + 3) < 0) insert_error("chdir"); } 
-	else if (not strcmp(s, "close")) { if (not job_status or close(job_rfd[1]) < 0) insert_error("close"); }
-	else if (not strncmp(s, "signal ", 7)) { if (kill(pid, atoi(s + 7)) < 0) insert_error("kill"); else insert("signaled\n", 9, 1); }
-	else if (job_status) { if (write(job_rfd[1], s, cliplength) <= 0) insert_error("write"); }
-	else start_job(s);
-	goto loop;
-done:	write(1, "\033[?25h", 6);
-	tcsetattr(0, TCSANOW, &terminal);
-	if (writable) save(); exit(0);
-}
+*/
 
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// else if (not strncmp(s, "cd ", 3)) { if (chdir(s + 3) < 0) insert_error("chdir"); } 
 
 
 
