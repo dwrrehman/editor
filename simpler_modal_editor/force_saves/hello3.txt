@@ -29,11 +29,12 @@ warning: include location '/usr/local/include' is unsafe for cross-compilation [
 
 insert wc c.c
 
+    1065    4197   31220 c.c
 
 
 
 
-
+edit c.c
 
 
 

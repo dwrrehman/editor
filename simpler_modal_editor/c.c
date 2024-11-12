@@ -1,9 +1,9 @@
-#include <stdio.h>   // written 202410266.140132 by dwrr
+#include <stdio.h>   // written 1202410266.140132 by dwrr
 #include <stdlib.h>  // 1202411041.210238 an editor that
 #include <string.h>  // supposed to be a simpler version of
 #include <iso646.h>  // the modal editor that we wrote.
-#include <unistd.h>  // finished on 1202411052.131234
-#include <stdbool.h>
+#include <unistd.h>  // written more on 1202411052.131234
+#include <stdbool.h> // finished on 1202411111.220521
 #include <stdnoreturn.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -17,11 +17,6 @@
 #include <sys/time.h> 
 #include <sys/wait.h> 
 typedef uint64_t nat;
-
-
-
-#define max_screen_size  1 << 20
-
 struct action {
 	nat parent;
 	nat pre;
@@ -30,7 +25,6 @@ struct action {
 	int64_t length;
 	char* string;
 };
-
 static const bool use_qwerty_layout = false;
 static nat cursor = 0,  count = 0, anchor = 0, origin = 0,
 	cliplength = 0, head = 0, action_count = 0, writable = 0;
@@ -59,7 +53,7 @@ static char remap(const char c) {
 static void append(
 	const char* string, nat length, 
 	char* screen, nat* screen_length) {
-	if (*screen_length + length >= max_screen_size) return;
+	if (*screen_length + length >= 1 << 20) return;
 	memcpy(screen + *screen_length, string, length);
 	*screen_length += length;
 }
@@ -99,7 +93,7 @@ static void update_origin(void) {
 }
 
 static void display(void) {
-	char screen[max_screen_size];
+	char screen[1 << 20];
 	nat length = 0, column = 0, row = 0;
 	update_origin();
 	append("\033[H", 3, screen, &length);
@@ -331,10 +325,7 @@ static void insert_char(void) {
 
 static void insert_error(const char* call) {
 	char message[4096] = {0};
-	snprintf(message, sizeof message, 
-		"error: %s: %s\n", 
-		call, strerror(errno)
-	);
+	snprintf(message, sizeof message, "error: %s: %s\n", call, strerror(errno));
 	insert(message, strlen(message), 1);
 }
 
@@ -377,10 +368,7 @@ static void open_file(const char* argument) {
 	int df = open(argument, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
 	int file = open(argument, O_RDONLY);
-	if (file < 0) {
-		read_error: insert_error("open");
-		return;
-	}
+	if (file < 0) { read_error: insert_error("open"); return; }
 	struct stat ss; fstat(file, &ss);
 	count = (nat) ss.st_size;
 	free(text); text = malloc(count);
@@ -412,11 +400,9 @@ int main(int argc, const char** argv) {
 	sigaction(SIGWINCH, &action, NULL);
 	struct sigaction action2 = {.sa_handler = interrupted}; 
 	sigaction(SIGINT, &action2, NULL);
-
 	if (argc == 1) goto new;
 	else if (argc == 2 or argc == 3) strlcpy(filename, argv[1], sizeof filename);
 	else exit(puts("usage: ./editor [file]"));
-
 	int df = open(filename, O_RDONLY | O_DIRECTORY);
 	if (df >= 0) { close(df); errno = EISDIR; goto read_error; }
 	int file = open(filename, O_RDONLY);
@@ -440,13 +426,9 @@ new: 	cursor = 0; anchor = (nat) -1;
 	struct stat attr_;
 	stat(filename, &attr_);
 	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr_.st_mtime));
-loop:	ioctl(0, TIOCGWINSZ, &window);
-	display(); 
-	char c = 0;
-	ssize_t n = read(0, &c, 1); 
-	c = remap(c);
+loop:	ioctl(0, TIOCGWINSZ, &window); display(); 
+	char c = 0; ssize_t n = read(0, &c, 1); c = remap(c);
 	if (n <= 0) { perror("read"); fflush(stderr); usleep(10000); }
-
 	if (mode == 0) {
 		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
 			memset(history, 0, sizeof history);
@@ -491,8 +473,7 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 		else if (c == 'i') { if (cursor < count) cursor++; }
 		else if (c == 'n') { if (cursor) cursor--; }
 		else if (c == 'd' or c == 'k') { 
-			mode = 1; 
-			target_length = 0; 
+			mode = 1; target_length = 0; 
 			home = c == 'd' ? 0 : cursor; 
 		}
 		else if (c == 'p' or c == 'h') {
@@ -527,19 +508,74 @@ loop:	ioctl(0, TIOCGWINSZ, &window);
 			}
 		}
 	}
-	goto loop;
-do_command:
-	if (not writable) goto done;
-	char* s = clipboard;
-	if (not s) goto loop;
-	else if (not strcmp(s, "exit")) goto done;
-	else if (not strncmp(s, "edit ", 5)) open_file(s + 5);
-	else if (not strncmp(s, "insert ", 7)) insert_output(s + 7);
+	goto loop; 
+do_command: if (not writable) goto done;
+	if (not clipboard) goto loop;
+	else if (not strcmp(clipboard, "exit")) goto done;
+	else if (not strncmp(clipboard, "edit ", 5)) open_file(clipboard + 5);
+	else if (not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
 	goto loop;
 done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
 	if (writable) save(); exit(0);
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
