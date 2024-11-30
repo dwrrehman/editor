@@ -482,7 +482,7 @@ loop:	ioctl(0, TIOCGWINSZ, &window); display();
 			for (nat i = 0; i < times; i++) 
 				while (cursor) { 
 					cursor--; 
-					if (not cursor or text[cursor - 1] == 10) break;
+					if (not cursor or text[cursor] == 10) break;
 				}
 		} else if (c == 'u' or c == 'm') {
 			nat times = 1;
