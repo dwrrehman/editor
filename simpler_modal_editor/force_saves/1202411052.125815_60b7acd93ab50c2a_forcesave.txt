@@ -30,7 +30,7 @@ it also looks like saving works well, and    yeah i am going to try to cut a sel
 
 
 
-
+goto 100000
 
 open hello.txt
 

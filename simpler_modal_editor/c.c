@@ -393,6 +393,24 @@ static noreturn void interrupted(int _) {if(_){}
 	if (writable) save(); exit(0); 
 }
 
+static void jump_numeric(char* s) {
+	if (not strlen(s)) return;
+	const nat n = (nat) atoi(s);
+	const char b = s[strlen(s) - 1] == 'l';
+	cursor = 0;
+	for (nat i = 0; i < n; i++) {
+		if (not b) { 
+			if (cursor < count) cursor++;
+		} else {
+			while (cursor < count) {
+				cursor++;
+				if (cursor < count and text[cursor - 1] == 10) break;
+			}
+		}
+	}
+}
+
+
 int main(int argc, const char** argv) {
 	srand((unsigned) time(0));
 	signal(SIGPIPE, SIG_IGN);
@@ -513,6 +531,7 @@ do_command: if (not writable) goto done;
 	if (not clipboard) goto loop;
 	else if (not strcmp(clipboard, "exit")) goto done;
 	else if (not strncmp(clipboard, "edit ", 5)) open_file(clipboard + 5);
+	else if (not strncmp(clipboard, "goto ", 5)) jump_numeric(clipboard + 5);
 	else if (not strncmp(clipboard, "insert ", 7)) insert_output(clipboard + 7);
 	goto loop;
 done:	write(1, "\033[?25h", 6);
