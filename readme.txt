@@ -70,6 +70,8 @@ quitting/closing edit-mode commands:
 |   Q    |    Q      |  quit the editor. (must be in edit mode)
 +--------+-----------+--------------------------------------------------
 
+note, that this editor was developed using and is used with the workman keyboard layout. however, in the above types of tables, both the QWERTY and Workman keyboard layout keybindings will be given, as many people don't use the Workman keyboard layout. Of course, using the remap() function in the C source code, you can easily modify the editors keymappsings to make sense and be ergonomic for any keyboard layout you happen to use. 
+
 upon entering the editor, you will always be in what is known as "edit mode". it should be noted the above two commands only work in this mode. in this mode, you are able to navigate through the document, and perform editing actions such as deleting, selecting, and copying text, pasting clipboard contents, undoing/redoing previously made edits, and saving the document. 
 
 [note: this editor uses a block cursor, as this is the correct cursor shape to use. if the user is not acustomed to this cursor shape, it might take some getting used to, at first. the highlighted character is the one which is after the cursor.]
@@ -95,7 +97,7 @@ edit-mode navigating commands:
 
 to make edits to the document, there are two main ways this is acheived, common with other modal text editors. edit mode, and insert mode. insert mode is used for more lengthy insertions of many characters.
 
-in edit mode, there are the following keybindings, which can edit the document. the first three of these are only acknowledged when the editor is not in read-only mode.
+in edit mode, there are the following keybindings, which can edit the document. the first four of these are only acknowledged when the editor is not in read-only mode.
 
 edit-mode editing commands:
 +-----------------------------------------------------------------------
