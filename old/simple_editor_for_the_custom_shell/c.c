@@ -59,8 +59,77 @@ static const char* help_string =
 "i	inserts clipboard at cursor, and advances.\n"
 "r	removes current selection. requires confirming.\n";
 
+
+
 static char* text = NULL;
 static nat text_length = 0;
+
+
+static void emergency_save(const char* call) {
+	printf("save error: %s: %s\n", call, strerror(errno)); fflush(stdout); sleep(2);
+	puts("printing stored document: "); fflush(stdout); sleep(1);
+	fwrite(text, 1, count, stdout); fflush(stdout); sleep(1);
+	fwrite(text, 1, count, stdout); fflush(stdout); sleep(1);
+	puts("emergency save: printed out all contents"); fflush(stdout); sleep(1);
+	printf("save error: %s: %s\n", call, strerror(errno)); fflush(stdout); sleep(2);
+	return; 
+}
+
+static void save(void) {
+	const mode_t permissions = S_IRUSR | S_IWUSR | S_IROTH | S_IRGRP;
+	int flags = 0;
+	bool matches = false;
+	if (not *filename) {
+		char name[4096] = {0}, datetime[32] = {0};
+		struct timeval t = {0};
+		gettimeofday(&t, NULL);
+		struct tm* tm = localtime(&t.tv_sec);
+		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+		snprintf(name, sizeof name, "%s_%08x%08x.txt", datetime, rand(), rand());
+		strlcpy(filename, name, sizeof filename);
+		flags = O_WRONLY | O_CREAT | O_EXCL;
+		matches = true; 
+	} else {
+		char empirically_last_modified[32] = {0};
+		struct stat attr;
+		stat(filename, &attr);
+		strftime(empirically_last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr.st_mtime));
+		if (not strcmp(empirically_last_modified, last_modified)) {
+			flags = O_WRONLY | O_TRUNC;
+			matches = true; 
+		}
+	}
+	if (matches) {
+		int output_file = open(filename, flags, permissions);
+		if (output_file < 0) { emergency_save("open"); goto recover; }
+		if (write(output_file, text, count) < 0){ emergency_save("write"); goto recover; }
+		if (close(output_file) < 0) { emergency_save("close"); goto recover; }
+		struct stat attrn;
+		stat(filename, &attrn);
+		strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attrn.st_mtime));
+		return;
+	}
+	recover: write(1, "\033[?25h", 6); tcsetattr(0, TCSANOW, &terminal);
+	printf("--- emergency save ---\nplease give a valid filename.\n(enter: <path>\\n)\n");
+	loop: fflush(stdout); char input[4096] = {0};
+	printf(":: "); fflush(stdout);
+	const ssize_t n = read(0, input, sizeof input);
+	if (n <= 0) {
+		emergency_save("read");
+		char datetime[32] = {0};
+		struct timeval t = {0};
+		gettimeofday(&t, NULL);
+		struct tm* tm = localtime(&t.tv_sec);
+		strftime(datetime, 32, "1%Y%m%d%u_%H%M%S", tm);
+		snprintf(input, sizeof input, "/Users/dwrr/%s_%08x%08x_emergency.txt", datetime, rand(), rand());
+	} else input[n - 1] = 0;
+	int output_file = open(input, O_WRONLY | O_CREAT | O_EXCL | O_APPEND, permissions);
+	if (output_file < 0) { emergency_save("open"); goto loop; }
+	if (write(output_file, text, count) < 0) { emergency_save("write"); goto loop; }
+	if (close(output_file) < 0) { emergency_save("close"); goto loop; }
+	printf("successfully emergency saved, exiting editor..."); fflush(stdout); 
+	exit(0);
+}
 
 static noreturn void interrupted(int _) {if(_){} 
 	puts("interrupted, saving and exiting...");
@@ -152,23 +221,12 @@ load_file:
 			fflush(stdout); 
 			sleep(1); 
 		} 
-		else if (n == 0) { 
-			write(1, "EOF???", 6); 
-			sleep(1); 
-		}
+		else if (n == 0) { write(1, "EOF???", 6); sleep(1); }
 
 		if (inserting) {
 			if (n == 2 and input[0] == ' ') { write(1, ".\n", 2); inserting = 0; continue; }
-
 			const char* string = input;
 			const nat string_length = (nat) n;
-
-			//printf("inserting %llub at %llu: \"%.*s\"\n", 
-			//	string_length, cursor, 
-			//	(int) string_length, string
-			//); 
-			//fflush(stdout);
-
 			text = realloc(text, text_length + string_length);
 			memmove(text + cursor + string_length, 
 				text + cursor, text_length - cursor
@@ -220,7 +278,6 @@ load_file:
 			nat amount = text_length - start;
 			if (k and k < amount) amount = k;
 			fwrite(text + start, 1, amount, stdout); fflush(stdout);
-
 		} else if (input[0] == 'w') {
 			nat start = anchor;
 			nat k = (nat) atoi(string); 
@@ -229,20 +286,16 @@ load_file:
 			if (k and k < amount) amount = k;
 			fwrite(text + start, 1, amount, stdout); fflush(stdout);
 
+
 		} else if (input[0] == 'm') {
 			nat t = 0;
 			for (nat i = cursor; i < text_length; i++) {
 				if (text[i] == string[t]) {
 					t++;
-					if (t == string_length) { 
-						cursor = i + 1; 
-						goto found; 
-					} 
+					if (t == string_length) { cursor = i + 1; goto found; } 
 				} else t = 0;
 			}
-			printf("not found: \"%.*s\"\n", 
-				(int) string_length, string
-			);
+			printf("not found: \"%.*s\"\n", (int) string_length, string);
 			fflush(stdout);
 			continue;
 		found:	printf("c%llu\n", cursor); 
@@ -253,26 +306,17 @@ load_file:
 			for (nat i = cursor; i--; ) {
 				t--;
 				if (text[i] == string[t]) {	
-					if (not t) { 
-						cursor = i; 
-						goto foundb; 
-					} 
+					if (not t) { cursor = i; goto foundb; } 
 				} else t = string_length;
 			}
-			printf("not found: \"%.*s\"\n", 
-				(int) string_length, string
-			);
+			printf("not found: \"%.*s\"\n", (int) string_length, string);
 			fflush(stdout);
 			continue;
 		foundb:	printf("c%llu\n", cursor); 
 			fflush(stdout);
 
 		} else if (input[0] == 'e') {
-			printf("inserting %llub at %llu: \"%.*s\"\n", 
-				string_length, cursor, 
-				(int) string_length, string
-			); 
-			fflush(stdout);
+
 			text = realloc(text, text_length + string_length);
 			memmove(text + cursor + string_length, 
 				text + cursor, text_length - cursor
@@ -283,11 +327,6 @@ load_file:
 			saved = 0;
 
 		} else if (input[0] == 'i') {
-			printf("inserting clipboard of %llub at %llu: \"%.*s\"\n", 
-				cliplength, cursor, 
-				(int) cliplength, clipboard
-			); 
-			fflush(stdout);
 			text = realloc(text, text_length + cliplength);
 			memmove(text + cursor + cliplength, 
 				text + cursor, text_length - cursor
@@ -298,6 +337,7 @@ load_file:
 			saved = 0;
 
 		} else if (input[0] == 'k') {
+
 			char dt[32] = {0};
 			struct timeval t = {0};
 			gettimeofday(&t, NULL);
@@ -305,11 +345,6 @@ load_file:
 			strftime(dt, 32, "1%Y%m%d%u.%H%M%S", tm);
 			const nat dt_length = (nat) strlen(dt);
 
-			printf("inserting dt-string of %llub at %llu: \"%.*s\"\n", 
-				dt_length, cursor, 
-				(int) dt_length, dt
-			); 
-			fflush(stdout);
 			text = realloc(text, text_length + dt_length);
 			memmove(text + cursor + dt_length, 
 				text + cursor, text_length - cursor
@@ -319,39 +354,13 @@ load_file:
 			text_length += dt_length;
 			saved = 0;
 
-
 		} else if (input[0] == 'o') {
 
-			printf("copying: range %llu .. %llu\n", 
-				anchor, cursor
-			);
-			fflush(stdout);
-			nat swapped = 0;
-			if (anchor > cursor) {
-				swapped = 1;
-				nat temp = anchor;
-				anchor = cursor;
-				cursor = temp;
-			}
-
-			cliplength = cursor - anchor;
+			cliplength = anchor < cursor ? cursor - anchor : anchor - cursor;
 			free(clipboard);
-			clipboard = strndup(text + anchor, cliplength);
-
-			printf("copied %llub: <<<%s>>>\n", cliplength, clipboard);
-			fflush(stdout);
-
-			if (swapped) {
-				nat temp = anchor;
-				anchor = cursor;
-				cursor = temp;
-			}
+			clipboard = strndup(text + (anchor < cursor ? anchor : cursor, cliplength);
 
 		} else if (input[0] == 'r') {
-			printf("removing: range %llu .. %llu\n", 
-				anchor, cursor
-			);
-			fflush(stdout);
 			if (anchor > cursor) {
 				nat temp = anchor;
 				anchor = cursor;
@@ -392,6 +401,130 @@ load_file:
 			free(deleted);
 
 		} else if (input[0] == 's') {
+			save();
+
+		} else {
+			printf("error: bad input: %d\n", input[0]);
+			fflush(stdout);
+		}
+	}
+	puts("exiting editor...");
+	fflush(stdout);
+	exit(0);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+
+			//printf("inserting %llub at %llu: \"%.*s\"\n", 
+			//	string_length, cursor, 
+			//	(int) string_length, string
+			//); 
+			//fflush(stdout);
+
+
+
+			printf("inserting %llub at %llu: \"%.*s\"\n", 
+				string_length, cursor, 
+				(int) string_length, string
+			); 
+			fflush(stdout);
+
+
+
+
+			printf("inserting dt-string of %llub at %llu: \"%.*s\"\n", 
+				dt_length, cursor, 
+				(int) dt_length, dt
+			); 
+			fflush(stdout);
+
+
+
+			printf("copied %llub: <<<%s>>>\n", cliplength, clipboard);
+			fflush(stdout);
+
+
+
+
+			printf("copying: range %llu .. %llu\n", 
+				anchor, cursor
+			);
+			fflush(stdout);
+
+
+
+			printf("removing: range %llu .. %llu\n", 
+				anchor, cursor
+			);
+			fflush(stdout);
+
+
+
+			printf("inserting clipboard of %llub at %llu: \"%.*s\"\n", 
+				cliplength, cursor, 
+				(int) cliplength, clipboard
+			); 
+			fflush(stdout);
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
 
 			const mode_t permissions = 
 				S_IRUSR | S_IWUSR | S_IROTH | S_IRGRP;
@@ -521,33 +654,9 @@ load_file:
 			} 
 			write(output_file, text, text_length); // TODO: check these. 
 			close(output_file);
-		} else {
-			printf("error: bad input: %d\n", input[0]);
-			fflush(stdout);
-		}
-	}
-	puts("exiting editor...");
-	fflush(stdout);
-	exit(0);
-}
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+*/
 
 
 

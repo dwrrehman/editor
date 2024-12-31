@@ -1,0 +1,577 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+printf("saving: %s: %llub: testing timestamps...\n", 
+		filename, count
+	);
+	fflush(stdout);
+
+
+printf("save: current last modified time: %s\n", new_last_modified);
+	fflush(stdout);
+	printf("save: existing last modfied time: %s\n", last_modified);
+	fflush(stdout);
+
+puts("matched timestamps: saving...");
+			fflush(stdout);
+
+
+			printf("saving: %s: %llub\n", filename, count);
+			fflush(stdout);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	char name[4096] = {0};
+	char datetime[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+	snprintf(name, sizeof name, 
+		"/Users/dwrr/%s_%08x%08x_emergency_save.txt", 
+		datetime, rand(), rand()
+	);
+	int flags = O_WRONLY | O_CREAT | O_EXCL;
+
+	printf("saving: %s: %llub\n", name, count);
+	fflush(stdout); sleep(1);
+
+	int output_file = open(name, flags, permissions);
+	if (output_file < 0) { 
+	emergency_error: 
+		printf("emergency error: save: %s\n", strerror(errno)); fflush(stdout); sleep(1);
+		puts("failed emergency save. try again? ");
+		char c[3] = {0};
+		read(0, &c, 2);
+		if (c[0] == 'y') { 
+			puts("trying to emergency save again..."); 
+			fflush(stdout);
+			emergency_save();
+		} else {
+			puts("warning: not saving again, exiting editor."); 
+			fflush(stdout);
+			abort();
+		}
+	} 
+	if (write(output_file, text, count) < 0) goto emergency_error;
+	close(output_file);
+
+
+
+
+
+
+	} else {
+		
+
+		if (not strcmp(new_last_modified, last_modified)) {
+
+			int output_file = open(filename, O_WRONLY | O_TRUNC);
+			if (output_file < 0) emergency_save("open");
+			if (write(output_file, text, count) < 0) emergency_save("write");
+			close(output_file)
+;
+			struct stat attrn;
+			stat(filename, &attrn);
+			strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attrn.st_mtime));
+
+			saved = true;
+
+		} else {
+			puts("timestamp mismatch: refusing to save to prior path"); 
+			puts("force saving file contents to a new file..."); fflush(stdout); sleep(2);
+			
+			char name[4096] = {0};
+			char datetime[32] = {0};
+			struct timeval t = {0};
+			gettimeofday(&t, NULL);
+			struct tm* tm = localtime(&t.tv_sec);
+			strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
+			snprintf(name, sizeof name, "%s_%08x%08x_forcesave.txt", 
+				datetime, rand(), rand());
+			int flags = O_WRONLY | O_CREAT | O_EXCL;
+
+			printf("saving: %s: %llub\n", name, count);
+			fflush(stdout); sleep(1);
+
+
+			int output_file = open(name, flags, permissions);
+			if (output_file < 0) emergency_save("open");
+			if (write(output_file, text, count) < 0) emergency_save("write");
+			close(output_file);
+		}
+	}
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	else if (not strcmp(s, "close")) { if (not job_status or close(job_rfd[1]) < 0) insert_error("close"); }
+	else if (not strncmp(s, "signal ", 7)) { if (kill(pid, atoi(s + 7)) < 0) insert_error("kill"); else insert("signaled\n", 9, 1); }
+	else if (job_status) { if (write(job_rfd[1], s, cliplength) <= 0) insert_error("write"); } 
+	else start_job(s);
+
+
+
+
+
+
+
+display(); //  read_output();  finish_job();
+
+
+
+
+
+
+
+
+static char** parse_arguments(const char delimiter, const char* string, const size_t length) {
+	char** arguments = NULL;
+	size_t argument_count = 0;
+	size_t start = 0, argument_length = 0;
+	for (size_t index = 0; index < length; index++) {
+		if (string[index] != delimiter) {
+			if (not argument_length) start = index;
+			argument_length++;
+		} else {
+		push:	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+			arguments[argument_count++] = strndup(string + start, argument_length);
+			start = index;
+			argument_length = 0; 
+		}
+	}
+	if (argument_length) goto push;
+	arguments = realloc(arguments, sizeof(char*) * (argument_count + 1));
+	arguments[argument_count] = NULL;
+	return arguments;
+}
+
+static char* path_lookup(const char* executable_name) {
+	const nat executable_length = (nat) strlen(executable_name);
+	if (not executable_length) return NULL;
+	const char* path = getenv("PATH");
+	const nat length = (nat) strlen(path);
+	size_t start = 0, prefix_length = 0;
+	for (size_t index = 0; index < length; index++) {
+		if (path[index] != ':') {
+			if (not prefix_length) start = index;
+			prefix_length++;
+		} else {
+		push:;	char* file = calloc(prefix_length + 1 + executable_length + 1, 1);
+			memcpy(file, path + start, prefix_length);
+			file[prefix_length] = '/';
+			memcpy(file + prefix_length + 1, executable_name, executable_length);
+			if (not access(file, X_OK)) return file; else free(file);
+			start = index; prefix_length = 0; 
+		}
+	}
+	if (prefix_length) goto push;
+	return NULL;
+}
+
+static int job_fdo[2] = {0};
+static int job_rfd[2] = {0};
+static int job_fdm[2] = {0};
+static int job_status = 0;
+static pid_t pid = 0;
+
+static void read_output(void) {
+	if (not job_status) return;
+	char buffer[65536] = {0};
+	if (poll(&(struct pollfd){ .fd = job_fdo[0], .events = POLLIN }, 1, 0) == 1) {
+		ssize_t nbytes = read(job_fdo[0], buffer, sizeof buffer);
+		if (nbytes < 0) insert_error("read"); else insert(buffer, (nat) nbytes, 1);
+	}
+	if (poll(&(struct pollfd){ .fd = job_fdm[0], .events = POLLIN }, 1, 0) == 1) {
+		ssize_t nbytes = read(job_fdm[0], buffer, sizeof buffer);
+		if (nbytes < 0) insert_error("read"); else insert(buffer, (nat) nbytes, 1);
+	} 
+}
+
+static void finish_job(void) {
+	if (not job_status) return;
+	int s = 0;
+	int r = waitpid(pid, &s, WNOHANG);
+	if (r == -1) insert_error("wait");
+	else if (r == 0) return;
+	char dt[32] = {0};
+	struct timeval t = {0};
+	gettimeofday(&t, NULL);
+	struct tm* tm = localtime(&t.tv_sec);
+	strftime(dt, 32, "1%Y%m%d%u.%H%M%S", tm);
+	char message[4096] = {0};
+	if (WIFEXITED(s)) 
+		snprintf(message, sizeof message, 
+			"[%s:(%d) exited with code %d]\n", 
+			dt, pid, WEXITSTATUS(s)
+		);
+	else if (WIFSIGNALED(s)) 
+		snprintf(message, sizeof message, 
+			"[%s:(%d) was terminated by signal %s]\n", 
+			dt, pid, strsignal(WTERMSIG(s))
+		);
+	else if (WIFSTOPPED(s)) 
+		snprintf(message, sizeof message, 
+			"[%s:(%d) was stopped by signal %s]\n", 	
+			dt, pid, strsignal(WSTOPSIG(s))
+		);
+	else snprintf(message, sizeof message, 
+		"[%s:(%d) terminated for an unknown reason]\n", 
+		dt, pid
+	);
+	insert(message, strlen(message), 1);
+	job_status = 0;
+}
+
+static void start_job(const char* input) {
+	if (job_status) { insert("\njob running\n", 13, 1); return; } 
+	if (writable) save();
+	const nat length = (nat) strlen(input);
+	if (not length) return;
+
+	char** arguments = parse_arguments(*input, input + 1, length - 1);
+	if (arguments[0][0] != '.' and arguments[0][0] != '/') {
+		char* path = path_lookup(arguments[0]);
+		if (not path) { errno = ENOENT; insert_error("pathlookup"); return; }
+		free(arguments[0]);
+		arguments[0] = path;
+	}
+	pipe(job_fdo);
+	pipe(job_rfd);
+	pipe(job_fdm);
+	pid = fork();
+	if (pid < 0) { insert_error("fork"); } 
+	else if (not pid) {
+		close(job_fdo[0]);  dup2(job_fdo[1], 1);
+		close(job_fdo[1]);
+		close(job_fdm[0]);  dup2(job_fdm[1], 2);
+		close(job_fdm[1]);
+		close(job_rfd[1]);  dup2(job_rfd[0], 0);
+		close(job_rfd[0]);
+		execve(arguments[0], arguments, environ);
+		insert_error("execve");
+		exit(1);
+	} else {
+		close(job_fdo[1]);
+		close(job_fdm[1]);
+		close(job_rfd[0]);
+		job_status = 1;
+		char dt[32] = {0};
+		struct timeval t = {0};
+		gettimeofday(&t, NULL);
+		struct tm* tm = localtime(&t.tv_sec);
+		strftime(dt, 32, "1%Y%m%d%u.%H%M%S", tm);
+		char message[4096] = {0};
+		snprintf(message, sizeof message, "[%s: pid %d running]\n", dt, pid);
+		insert(message, strlen(message), 1);
+	}
+}
+
+
+
+
+*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// else if (not strncmp(s, "cd ", 3)) { if (chdir(s + 3) < 0) insert_error("chdir"); } 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*static char* get_selection(void) {
+	if (anchor > count) return NULL;
+	if (anchor > cursor) { nat t = anchor; anchor = cursor; cursor = t; }
+	char* selection = strndup(text + anchor, cursor - anchor);
+	return selection;
+}
+*/
+
+
+
+
+
+
+
+/*
+hellot = 0;
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.194337:(86830) exited with code 0]
+
+do ./build
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+c.c:20:1: warning: type specifier missing, defaults to 'int' [-Wimplicit-int]
+hellot = 0;
+^
+c.c:20:1: warning: no previous extern declaration for non-static variable 'hellot' [-Wmissing-variable-declarations]
+note: declare 'static' if the variable is not intended to be used outside of this translation unit
+c.c:22:1: error: expected identifier or '('
+do ./build
+^
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+3 warnings and 2 errors generated.
+[1202411111.194301:(86792) exited with code 1]
+
+
+
+
+
+
+
+
+
+
+
+     NAME            Default Action          Description
+     SIGHUP          terminate process       terminal line hangup
+     SIGINT          terminate process       interrupt program
+     SIGQUIT         create core image       quit program
+     SIGILL          create core image       illegal instruction
+     SIGTRAP         create core image       trace trap
+     SIGABRT         create core image       abort(3) call (formerly SIGIOT)
+     SIGEMT          create core image       emulate instruction executed
+     SIGFPE          create core image       floating-point exception
+     SIGKILL         terminate process       kill program
+     SIGBUS          create core image       bus error
+     SIGSEGV         create core image       segmentation violation
+     SIGSYS          create core image       non-existent system call invoked
+     SIGPIPE         terminate process       write on a pipe with no reader
+     SIGALRM         terminate process       real-time timer expired
+     SIGTERM         terminate process       software termination signal
+     SIGURG          discard signal          urgent condition present on socket
+     SIGSTOP         stop process            stop (cannot be caught or ignored)
+     SIGTSTP         stop process            stop signal generated from keyboard
+     SIGCONT         discard signal          continue after stop
+     SIGCHLD         discard signal          child status has changed
+     SIGTTIN         stop process            background read attempted from control terminal
+     SIGTTOU         stop process            background write attempted to control terminal
+     SIGIO           discard signal          I/O is possible on a descriptor (see fcntl(2))
+     SIGXCPU         terminate process       cpu time limit exceeded (see setrlimit(2))
+     SIGXFSZ         terminate process       file size limit exceeded (see setrlimit(2))
+     SIGVTALRM       terminate process       virtual time alarm (see setitimer(2))
+     SIGPROF         terminate process       profiling timer alarm (see setitimer(2))
+     SIGWINCH        discard signal          Window size change
+     SIGINFO         discard signal          status request from keyboard
+     SIGUSR1         terminate process       User defined signal 1
+     SIGUSR2         terminate process       User defined signal 2
+
+       SIGHUP           1           1       1       1
+       SIGINT           2           2       2       2
+       SIGQUIT          3           3       3       3
+       SIGILL           4           4       4       4
+       SIGTRAP          5           5       5       5
+       SIGABRT          6           6       6       6
+       SIGIOT           6           6       6       6
+       SIGBUS           7          10      10      10
+       SIGEMT           -           7       7      -
+       SIGFPE           8           8       8       8
+       SIGKILL          9           9       9       9
+       SIGUSR1         10          30      16      16
+       SIGSEGV         11          11      11      11
+       SIGUSR2         12          31      17      17
+       SIGPIPE         13          13      13      13
+       SIGALRM         14          14      14      14
+       SIGTERM         15          15      15      15
+       SIGSTKFLT       16          -       -        7
+       SIGCHLD         17          20      18      18
+       SIGCLD           -          -       18      -
+       SIGCONT         18          19      25      26
+       SIGSTOP         19          17      23      24
+       SIGTSTP         20          18      24      25
+       SIGTTIN         21          21      26      27
+       SIGTTOU         22          22      27      28
+       SIGURG          23          16      21      29
+       SIGXCPU         24          24      30      12
+       SIGXFSZ         25          25      31      30
+       SIGVTALRM       26          26      28      20
+       SIGPROF         27          27      29      21
+       SIGWINCH        28          28      20      23
+       SIGIO           29          23      22      22
+       SIGPOLL                                            Same as SIGIO
+       SIGPWR          30         29/-     19      19
+       SIGINFO          -         29/-     -       -
+       SIGLOST          -         -/29     -       -
+       SIGSYS          31          12      12      31
+       SIGUNUSED       31          -       -       31
+
+
+
+
+
+
+
+
+
+
+*/
+
+
+
+
+

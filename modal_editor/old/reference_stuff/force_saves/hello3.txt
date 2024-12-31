@@ -1,0 +1,55 @@
+hi there!
+this is my cool file lol.
+this is a newline! niceeeeee
+yay
+
+hello there! this is an edit! lol made from sublime!! nice.
+
+edit hello.txt
+
+insert ./build
+
+
+hello
+hello
+
+
+
+
+
+
+insert ./build
+
+
+
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+
+
+insert wc c.c
+
+    1065    4197   31220 c.c
+
+
+
+
+edit c.c
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

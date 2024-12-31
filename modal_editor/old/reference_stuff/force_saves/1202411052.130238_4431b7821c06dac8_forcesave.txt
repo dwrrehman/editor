@@ -1,0 +1,57 @@
+hello there from space!!
+
+	this is a text document to test my editor making new documents, 
+
+
+and also to see if it is able to display the cursor properly lol. 
+
+	so yeah i think it is able to actually!!! which is quite cool lol. yay. 
+
+
+	i want to revise how the ASCII character insertion function works, so that we can type all ascii characters without leaving the home row,  but  yeah thats a SMALL THING honestly. just KINDA a nice to have honestly lol. so yeah 
+
+
+yay
+
+
+do ls
+
+
+
+do ls
+
+open build
+
+open c.c
+
+do ./build
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.193919:(86526) exited with code 0]
+
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.193921:(86533) exited with code 0]
+
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.193928:(86545) exited with code 0]
+
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.193933:(86554) exited with code 0]
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.193940:(86566) exited with code 0]
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.194020:(86626) exited with code 0]
+
+
+
+

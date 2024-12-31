@@ -1,0 +1,449 @@
+hello there from space!!
+
+	this is a text document to test my editor making new documents, 
+
+
+and also to see if it is able to display the cursor properly lol. 
+
+	so yeah i think it is able to actually!!! which is quite cool lol. yay. 
+
+
+	i want to revise how the ASCII character insertion function works, so that we can type all ascii characters without leaving the home row,  but  yeah thats a SMALL THING honestly. just KINDA a nice to have honestly lol. so yeah 
+
+
+yay
+			SOMETHING COOL   YAYYYY TESTINGGGGG YAYYYYYYY
+
+
+
+
+do ls
+
+
+1202411052.125700_000041a710d63af1_forcesave.txt
+1202411052.125815_60b7acd93ab50c2a_forcesave.txt
+1202411052.130238_4431b7821c06dac8_forcesave.txt
+build
+c.c
+comments from the editor with shell.txt
+deploy
+editor
+editor.dSYM
+force_saves
+hello.txt
+reference_editor_source.c
+reference_simple_ed_like_editor.c
+[1202411111.193407:(86130) exited with code 0]
+
+do ls
+
+open 1202411052.130238_4431b7821c06dac8_forcesave.txt
+
+open hello.txt
+
+
+
+
+do ls
+
+started
+
+read
+
+1202411052.125700_000041a710d63af1_forcesave.txt
+1202411052.125815_60b7acd93ab50c2a_forcesave.txt
+1202411052.130238_4431b7821c06dac8_forcesave.txt
+build
+c.c
+comments from the editor with shell.txt
+deploy
+editor
+editor.dSYM
+force_saves
+hello.txt
+reference_editor_source.c
+reference_simple_ed_like_editor.c
+
+read
+
+
+write hello
+
+error: write: Broken pipeerror: write: Broken pipe
+error: write: Broken pipe
+
+
+command not found
+
+
+
+wait
+
+
+[1202411111.150106:(69832) exited with code 0]
+
+
+
+
+
+do ./build
+
+
+
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.194657:(87086) exited with code 0]
+
+
+
+do ./build
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.194756:(87167) exited with code 0]
+
+
+command not found
+
+
+warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
+1 warning generated.
+[1202411111.194801:(87177) exited with code 0]
+
+
+do ls
+
+
+1202411052.125700_000041a710d63af1_forcesave.txt
+1202411052.125815_60b7acd93ab50c2a_forcesave.txt
+1202411052.130238_4431b7821c06dac8_forcesave.txt
+build
+c.c
+comments from the editor with shell.txt
+deploy
+editor
+editor.dSYM
+force_saves
+hello.txt
+reference_editor_source.c
+reference_simple_ed_like_editor.c
+[1202411111.194819:(87199) exited with code 0]
+
+
+do git status
+
+On branch master
+Your branch is up to date with 'github/master'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   1202411052.125700_000041a710d63af1_forcesave.txt
+	modified:   1202411052.130238_4431b7821c06dac8_forcesave.txt
+	modified:   c.c
+	modified:   editor
+	modified:   editor.dSYM/Contents/Resources/DWARF/editor
+	modified:   hello.txt
+
+no changes added to commit (use "git add" and/or "git commit -a")
+[1202411111.194849:(87228) exited with code 0]
+
+
+do git diff
+
+
+diff --git a/simpler_modal_editor/1202411052.125700_000041a710d63af1_forcesave.txt b/simpler_modal_editor/1202411052.125700_000041a710d63af1_forcesave.txt
+index 44c5be9..37822a3 100644
+--- a/simpler_modal_editor/1202411052.125700_000041a710d63af1_forcesave.txt
++++ b/simpler_modal_editor/1202411052.125700_000041a710d63af1_forcesave.txt
+@@ -20,6 +20,20 @@ yay
+ do ls
+ 
+ 
++1202411052.125700_000041a710d63af1_forcesave.txt
++1202411052.125815_60b7acd93ab50c2a_forcesave.txt
++1202411052.130238_4431b7821c06dac8_forcesave.txt
++build
++c.c
++comments from the editor with shell.txt
++deploy
++editor
++editor.dSYM
++force_saves
++hello.txt
++reference_editor_source.c
++reference_simple_ed_like_editor.c
++[1202411111.193407:(86130) exited with code 0]
+ 
+ do ls
+ 
+@@ -72,22 +86,70 @@ wait
+ 
+ 
+ 
++do ./build
++
++
++
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.194657:(87086) exited with code 0]
+ 
+ 
+ 
++do ./build
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.194756:(87167) exited with code 0]
+ 
+ 
++command not found
++
+ 
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.194801:(87177) exited with code 0]
+ 
+ 
++do ls
+ 
+ 
++1202411052.125700_000041a710d63af1_forcesave.txt
++1202411052.125815_60b7acd93ab50c2a_forcesave.txt
++1202411052.130238_4431b7821c06dac8_forcesave.txt
++build
++c.c
++comments from the editor with shell.txt
++deploy
++editor
++editor.dSYM
++force_saves
++hello.txt
++reference_editor_source.c
++reference_simple_ed_like_editor.c
++[1202411111.194819:(87199) exited with code 0]
++
+ 
++do git status
+ 
++On branch master
++Your branch is up to date with 'github/master'.
+ 
++Changes not staged for commit:
++  (use "git add <file>..." to update what will be committed)
++  (use "git restore <file>..." to discard changes in working directory)
++	modified:   1202411052.125700_000041a710d63af1_forcesave.txt
++	modified:   1202411052.130238_4431b7821c06dac8_forcesave.txt
++	modified:   c.c
++	modified:   editor
++	modified:   editor.dSYM/Contents/Resources/DWARF/editor
++	modified:   hello.txt
+ 
++no changes added to commit (use "git add" and/or "git commit -a")
++[1202411111.194849:(87228) exited with code 0]
+ 
+ 
++do git diff
+ 
+ 
+ 
+diff --git a/simpler_modal_editor/1202411052.130238_4431b7821c06dac8_forcesave.txt b/simpler_modal_editor/1202411052.130238_4431b7821c06dac8_forcesave.txt
+index 6e7afec..d287a69 100644
+--- a/simpler_modal_editor/1202411052.130238_4431b7821c06dac8_forcesave.txt
++++ b/simpler_modal_editor/1202411052.130238_4431b7821c06dac8_forcesave.txt
+@@ -21,3 +21,37 @@ do ls
+ do ls
+ 
+ open build
++
++open c.c
++
++do ./build
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193919:(86526) exited with code 0]
++
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193921:(86533) exited with code 0]
++
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193928:(86545) exited with code 0]
++
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193933:(86554) exited with code 0]
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193940:(86566) exited with code 0]
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.194020:(86626) exited with code 0]
++
++
++
++
+diff --git a/simpler_modal_editor/c.c b/simpler_modal_editor/c.c
+index d60c27f..b884258 100644
+--- a/simpler_modal_editor/c.c
++++ b/simpler_modal_editor/c.c
+@@ -18,6 +18,10 @@
+ #include <sys/wait.h> 
+ typedef uint64_t nat;
+ 
++
++
++
++
+ #define max_screen_size  1 << 20
+ 
+ struct action {
+@@ -556,9 +560,6 @@ static void start_job(const char* input) {
+ 		close(job_rfd[0]);
+ 		job_status = 1;
+ 	}
+-	usleep(10000);
+-	read_output();
+-	finish_job();
+ }
+ 
+ static void open_file(const char* argument) {
+@@ -633,14 +634,16 @@ new: 	cursor = 0; anchor = (nat) -1;
+ 	struct stat attr_;
+ 	stat(filename, &attr_);
+ 	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr_.st_mtime));
+-
+ loop:	ioctl(0, TIOCGWINSZ, &window);
+-	display();
++	read_output();  finish_job();  display();
+ 	char c = 0;
+ 	ssize_t n = read(0, &c, 1); 
+ 	c = remap(c);
+-	if (n < 0) { perror("read"); fflush(stderr); }
+-
++	if (n <= 0) { 
++		perror("read"); 
++		fflush(stderr);
++		usleep(100000);
++	}
+ 	if (mode == 0) {
+ 		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
+ 			memset(history, 0, sizeof history);
+@@ -777,3 +780,32 @@ done:	write(1, "\033[?25h", 6);
+ 
+ 
+ 
++
++
++
++
++/*
++hellot = 0;
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.194337:(86830) exited with code 0]
++
++do ./build
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++c.c:20:1: warning: type specifier missing, defaults to 'int' [-Wimplicit-int]
++hellot = 0;
++^
++c.c:20:1: warning: no previous extern declaration for non-static variable 'hellot' [-Wmissing-variable-declarations]
++note: declare 'static' if the variable is not intended to be used outside of this translation unit
++c.c:22:1: error: expected identifier or '('
++do ./build
++^
++fatal error: too many errors emitted, stopping now [-ferror-limit=]
++3 warnings and 2 errors generated.
++[1202411111.194301:(86792) exited with code 1]
++*/
++
++
++
++
++
+diff --git a/simpler_modal_editor/editor b/simpler_modal_editor/editor
+index fc61718..391a647 100755
+Binary files a/simpler_modal_editor/editor and b/simpler_modal_editor/editor differ
+diff --git a/simpler_modal_editor/editor.dSYM/Contents/Resources/DWARF/editor b/simpler_modal_editor/editor.dSYM/Contents/Resources/DWARF/editor
+index 46767c8..d7d5a24 100644
+Binary files a/simpler_modal_editor/editor.dSYM/Contents/Resources/DWARF/editor and b/simpler_modal_editor/editor.dSYM/Contents/Resources/DWARF/editor differ
+diff --git a/simpler_modal_editor/hello.txt b/simpler_modal_editor/hello.txt
+index 8fb4f17..960b467 100644
+--- a/simpler_modal_editor/hello.txt
++++ b/simpler_modal_editor/hello.txt
+@@ -114,7 +114,66 @@ reference_simple_ed_like_editor.c
+ [1202411111.145852:(69741) exited with code 0]
+ 
+ 
++do ./build
+ 
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193516:(86209) exited with code 0]
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193519:(86216) exited with code 0]
++
++
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193523:(86225) exited with code 0]
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193525:(86232) exited with code 0]
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193536:(86247) exited with code 0]warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193539:(86255) exited with code 0]
++
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193546:(86267) exited with code 0]
++
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193645:(86326) exited with code 0]
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193648:(86335) exited with code 0]
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193650:(86342) exited with code 0]
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193652:(86349) exited with code 0]
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193653:(86355) exited with code 0]
++
++warning: include location '/usr/local/include' is unsafe for cross-compilation [-Wpoison-system-directories]
++1 warning generated.
++[1202411111.193654:(86360) exited with code 0]
++
++
++open hello.txt
++
++
++
++exit
+ 
+ 
+ 
+
