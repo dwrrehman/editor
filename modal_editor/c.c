@@ -25,7 +25,7 @@ struct action {
 	char* string;
 };
 static const char use_qwerty_layout = 0;
-static nat cursor = 0,  count = 0, anchor = 0, origin = 0,
+static nat cursor = 0,  count = 0, anchor = 0, origin = 0, mode = 2,
 	cliplength = 0, head = 0, action_count = 0, writable = 0;
 static char* text = NULL, * clipboard = NULL;
 static struct action* actions = NULL;
@@ -36,7 +36,7 @@ extern char** environ;
 
 static char remap(const char c) {
 	if (c == 13) return 10;	else if (c == 8) return 127;
-	if (use_qwerty_layout) {
+	if (use_qwerty_layout and mode == 2) {
 		const char upper_remap_alpha[26] = "AVMHRTGYUNEOLKP:QWSBFCDXJZ";
 		const char lower_remap_alpha[26] = "avmhrtgyuneolkp;qwsbfcdxjz";
 		if (c >= 'A' and c <= 'Z') return upper_remap_alpha[c - 'A'];
@@ -87,7 +87,7 @@ static void update_origin(void) {
 	}
 }
 
-static void display(void) {
+static void display(nat should_write) {
 	char screen[1 << 20];
 	nat length = 0, column = 0, row = 0;
 	update_origin();
@@ -134,9 +134,9 @@ static void display(void) {
 		append("\033[H", 3, screen, &length);
 		append(status, strlen(status), screen, &length);
 		append("\033[7m \033[0m", 9, screen, &length);
-		memset(status, 0, sizeof status);
+		if (should_write) memset(status, 0, sizeof status);
 	}
-	write(1, screen, length);
+	if (should_write) write(1, screen, length);
 }
 
 static void finish_action(struct action node, char* string, int64_t length) {
@@ -292,8 +292,8 @@ static void local_copy(void) {
 static void insert_char(void) {
 	char c = 0; read(0, &c, 1); c = remap(c);
 	if (c == 'a') insert_dt();
-	else if (c == 'n') insert("0123456789", 10, 1);
-	else if (c == 'p') insert("`~!@#$%^&*(){}[]<>|\\+=_-:;?/.,'\"", 32, 1);
+	else if (c == 'g') insert("0123456789", 10, 1);
+	else if (c == 'b') insert("`~!@#$%^&*(){}[]<>|\\+=_-:;?/.,'\"", 32, 1);
 	else if (c == 'd') { read(0, &c, 1); c = remap(c);
 		if (c == 'e') { read(0, &c, 1); c = remap(c);
 			if (c == 'l') delete_selection();
@@ -357,8 +357,7 @@ static char open_file(const char* argument) {
 	if (writable) save();
 	if (not argument or not strlen(argument)) { 
 		if (text) free(text); 
-		text = NULL;
-		count = 0; 
+		text = NULL; count = 0; 
 		goto new; 
 	} 
 	int df = open(argument, O_RDONLY | O_DIRECTORY);
@@ -405,6 +404,24 @@ static void jump_numeric(char* s) {
 	}
 }
 
+static void center_cursor(void) {
+	const nat save = cursor;
+	for (nat i = 0; i < window.ws_row >> 1; i++) 
+		while (cursor) { 
+			cursor--; 
+			if (not cursor or text[cursor - 1] == 10) break;
+		}
+	display(0);
+	cursor = save;	
+	for (nat i = 0; i < window.ws_row >> 1; i++) 
+		while (cursor < count) { 
+			cursor++; 
+			if (cursor < count and text[cursor - 1] == 10) break;
+		}
+	display(0);
+	cursor = save;
+}
+
 int main(int argc, const char** argv) {
 	if (argc > 3) exit(puts("usage: ./editor [file]")); else if (open_file(argv[1])) exit(1);
 	srand((unsigned) time(0));
@@ -420,9 +437,10 @@ int main(int argc, const char** argv) {
 	tcsetattr(0, TCSANOW, &terminal_copy);
 	write(1, "\033[?25l", 6);
 	writable = argc < 3;
-	nat mode = 2, target_length = 0, home = 0;
+ 	nat target_length = 0, home = 0, should_center = 0, search_index = 0;
 	char history[6] = {0}, target[4096] = {0};
-loop:	ioctl(0, TIOCGWINSZ, &window); display(); 
+loop:	ioctl(0, TIOCGWINSZ, &window); 
+	if (should_center) center_cursor(); display(1);
 	char c = 0; ssize_t n = read(0, &c, 1); c = remap(c);
 	if (n <= 0) { perror("read"); fflush(stderr); usleep(10000); }
 	if (mode == 0) {
@@ -436,20 +454,31 @@ loop:	ioctl(0, TIOCGWINSZ, &window); display();
 		*history = c;
 	} else if (mode == 1) {
 		if (c == 27 or (c == 'n' and not memcmp(history, "uptrd", 5))) {
-			mode = 2;  memset(history, 0, sizeof history); 
-			if (c == 'n') { if (target_length >= 5) target_length -= 5; } else goto loop;
+			mode = 2;  
+			memset(history, 0, sizeof history); 
+			if (c == 'n') { if (target_length >= 5) target_length -= 5; } 
+			else goto loop;
 		} else if (c == 127) { if (target_length) target_length--; }
-		else if (c == 9 or c == 10 or (uint8_t) c >= 32) { 
+		else if (c == 9 and search_index) search_index--;
+		else if (c == 10) search_index++;
+		else if ((uint8_t) c >= 32) { 
 			if (target_length < sizeof target - 1) target[target_length++] = c; 
 		} 
 		memmove(history + 1, history, sizeof history - 1);
 		*history = c;
 		cursor = home;
-		for (nat t = 0; cursor < count; cursor++) {
-			if (text[cursor] != target[t]) { t = 0; continue; }
-			t++; if (t == target_length) { cursor++; goto found; }
+		nat found_at = 0;
+		for (nat t = 0, search_count = 0; cursor < count; cursor++) {
+			if (text[cursor] != target[t]) { t = 0; continue; } t++; 
+			if (t == target_length) {
+				if (not search_count) found_at = cursor + 1;
+				if (search_count == search_index) { cursor++; goto found; } 
+				else { search_count++; t = 0; } 
+			}
 		}
-		cursor = home; found:; 
+		cursor = not found_at ? home : found_at; 
+		if (found_at) search_index = 0; 
+		found: center_cursor();
 		memset(status, 0, sizeof status);
 		memcpy(status, target, target_length);
 	} else {
@@ -465,12 +494,13 @@ loop:	ioctl(0, TIOCGWINSZ, &window); display();
 		else if (c == 'g' and writable) insert_output("pbpaste");
 		else if (c == 'c') local_copy();
 		else if (c == 'f') copy_global();
+		else if (c == 'v') should_center = not should_center;
 		else if (c == 'a') anchor = anchor == (nat)-1 ? cursor : (nat) -1;
 		else if (c == 'i') { if (cursor < count) cursor++; }
 		else if (c == 'n') { if (cursor) cursor--; }
-		else if (c == 'd' or c == 'k') { 
-			mode = 1; target_length = 0; 
-			home = c == 'd' ? 0 : cursor; 
+		else if (c == 'd' or c == 'l' or c == 'k') {
+			mode = 1; target_length = 0; search_index = 0;
+			home = c == 'd' ? 0 : cursor;
 		}
 		else if (c == 'p' or c == 'h') {
 			nat times = 1;
@@ -516,4 +546,16 @@ done:	write(1, "\033[?25h", 6);
 	tcsetattr(0, TCSANOW, &terminal);
 	if (writable) save(); exit(0);
 }
+
+
+
+
+
+
+
+
+
+
+
+
 

@@ -1,17 +1,11 @@
+hello there from space lol
 
 
 
 
 
 
-
-
-
-
-
-
-
-
+scroll down for lots of testing code lol
 
 
 
@@ -145,20 +139,14 @@ puts("matched timestamps: saving...");
 	close(output_file);
 
 
-
-
-
-
 	} else {
 		
-
 		if (not strcmp(new_last_modified, last_modified)) {
 
 			int output_file = open(filename, O_WRONLY | O_TRUNC);
 			if (output_file < 0) emergency_save("open");
 			if (write(output_file, text, count) < 0) emergency_save("write");
-			close(output_file)
-;
+			close(output_file);
 			struct stat attrn;
 			stat(filename, &attrn);
 			strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attrn.st_mtime));
@@ -182,7 +170,7 @@ puts("matched timestamps: saving...");
 			printf("saving: %s: %llub\n", name, count);
 			fflush(stdout); sleep(1);
 
-
+			//home here.
 			int output_file = open(name, flags, permissions);
 			if (output_file < 0) emergency_save("open");
 			if (write(output_file, text, count) < 0) emergency_save("write");
@@ -330,6 +318,17 @@ static void finish_job(void) {
 	);
 	insert(message, strlen(message), 1);
 	job_status = 0;
+	
+	okay cool so heres the editor!
+	it has this really cool mode where it can actaully center the cursor at all times!
+		its reallyc ool lol 
+
+			i am actually quite happy with it so far lol 
+
+
+	yayyyy
+
+
 }
 
 static void start_job(const char* input) {
@@ -563,7 +562,7 @@ fatal error: too many errors emitted, stopping now [-ferror-limit=]
 
 
 
-
+this is a line to test the editor lol
 
 
 
