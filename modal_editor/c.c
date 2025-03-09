@@ -15,6 +15,7 @@
 #include <sys/ioctl.h>
 #include <sys/time.h> 
 #include <sys/wait.h> 
+#include <stdint.h>
 typedef uint64_t nat;
 struct action {
 	nat parent;
@@ -139,6 +140,68 @@ static void display(nat should_write) {
 	if (should_write) write(1, screen, length);
 }
 
+
+
+
+
+
+
+/*
+
+static void left(void) { if (cursor) cursor--; moved = 1; }
+static void right(void) { if (cursor < count) cursor++; moved = 1; }
+
+static nat compute_current_visual_cursor_column(void) {
+	nat i = cursor, column = 0;
+	while (i and text[i - 1] != 10) i--;
+	while (i < cursor and text[i] != 10) {
+		if (text[i] == 9) { nat amount = 8 - column % 8; column += amount; }
+		else if (column >= window.ws_col - 2 - 1) column = 0;
+		else if ((unsigned char) text[i] >> 6 != 2 and text[i] >= 32) column++;
+		i++;
+	}
+	return column;
+}
+
+static void move_cursor_to_visual_position(nat target) {
+	nat column = 0;
+	while (cursor < count and text[cursor] != 10) {
+		if (column >= target) return;
+		if (text[cursor] == 9) { nat amount = 8 - column % 8; column += amount; }
+		else if (column >= window.ws_col - 2 - 1) column = 0;
+		else if ((unsigned char) text[cursor] >> 6 != 2 and text[cursor] >= 32) column++;
+		right();
+	}
+}
+
+static void up(void) {
+	const bool m = moved; 
+	const nat column = compute_current_visual_cursor_column();
+	while (cursor and text[cursor - 1] != 10) left(); left();
+	while (cursor and text[cursor - 1] != 10) left();
+	move_cursor_to_visual_position(not m ? desired : column);
+	if (m) desired = column;
+	moved = 0;
+}
+
+static void down(void) {
+	const bool m = moved; 
+	const nat column = compute_current_visual_cursor_column();
+	while (cursor < count and text[cursor] != 10) right(); right();
+	move_cursor_to_visual_position(not m ? desired : column);
+	if (m) desired = column;
+	moved = 0;
+}
+
+
+
+*/
+
+
+
+
+
+
 static void finish_action(struct action node, char* string, int64_t length) {
 	node.choice = 0;
 	node.parent = head;
@@ -222,13 +285,12 @@ static void save(void) {
 	int flags = 0;
 	char matches = 0;
 	if (not *filename) {
-		char name[4096] = {0}, datetime[32] = {0};
+		char datetime[32] = {0};
 		struct timeval t = {0};
 		gettimeofday(&t, NULL);
 		struct tm* tm = localtime(&t.tv_sec);
 		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-		snprintf(name, sizeof name, "%s_%08x%08x.txt", datetime, rand(), rand());
-		strlcpy(filename, name, sizeof filename);
+		snprintf(filename, sizeof filename, "%s_%08x%08x.txt", datetime, rand(), rand());
 		flags = O_WRONLY | O_CREAT | O_EXCL;
 		matches = 1; 
 	} else {
@@ -335,8 +397,7 @@ static inline void copy_global(void) {
 static void insert_output(const char* input_command) {
 	if (writable) save();
 	char command[4096] = {0};
-	strlcpy(command, input_command, sizeof command);
-	strlcat(command, " 2>&1", sizeof command);
+	snprintf(command, sizeof command, "%s 2>&1", input_command);
 	FILE* f = popen(command, "r");
 	if (not f) { insert_error("popen"); return; }
 	char* string = NULL;
@@ -372,7 +433,7 @@ static char open_file(const char* argument) {
 	close(file);
 new: 	cursor = 0; origin = 0;
 	anchor = (nat) -1; writable = 1;
-	if (argument) strlcpy(filename, argument, sizeof filename); 
+	if (argument) snprintf(filename, sizeof filename, "%s", argument); 
 	else memset(filename, 0, sizeof filename);
 	for (nat i = 0; i < action_count; i++) free(actions[i].string);
 	if (actions) free(actions); actions = NULL;
