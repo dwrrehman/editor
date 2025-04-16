@@ -1,0 +1,20 @@
+new features:
+-----------------
+1202504115.212859
+
+	1. s f    should paste the current directory and filename path  of the currently edited file. (only in edit mode)
+
+	2. allow for searching forwards, for a particular character, and backwards?
+
+	3. implement backwards search using a string,  like     k    does   but backwards. 
+
+	4. make cursor movement visual based..?. its just useful...
+
+	5.  add multiple paste buffers, and bind them to     s c <letter>    
+
+		this allows for things like    if / for loop macros, commonly used variable names etc. 
+
+	6. 
+
+
+

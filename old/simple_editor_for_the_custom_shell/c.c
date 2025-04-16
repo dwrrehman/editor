@@ -1,6 +1,7 @@
 // an editor that is more easily usable with 
 // the asychronous shell that we wrote recently. 
 // written on 1202409297.214859 by dwrr. 
+// edited on 1202504163.121350
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,27 +15,9 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <stdnoreturn.h>
+#include <stdbool.h>
 #include <signal.h>
-
-
 typedef uint64_t nat;
-
-/*
-
-workman key layout:
-
-q d r w b j f u p ; 
- a s h t g y n e o i 
-  z x m c v k l , .
-
-
-keys left:
-. . . . b j f . . ; 
- . . . . g y . . . . 
-  z x . . v . l , .
-
-
-*/
 
 static const char* help_string = 
 "q	quit, must be saved first.\n"
@@ -59,17 +42,16 @@ static const char* help_string =
 "i	inserts clipboard at cursor, and advances.\n"
 "r	removes current selection. requires confirming.\n";
 
-
-
+static char filename[4096] = {0};
+static char last_modified[32] = {0};
 static char* text = NULL;
 static nat text_length = 0;
-
 
 static void emergency_save(const char* call) {
 	printf("save error: %s: %s\n", call, strerror(errno)); fflush(stdout); sleep(2);
 	puts("printing stored document: "); fflush(stdout); sleep(1);
-	fwrite(text, 1, count, stdout); fflush(stdout); sleep(1);
-	fwrite(text, 1, count, stdout); fflush(stdout); sleep(1);
+	fwrite(text, 1, text_length, stdout); fflush(stdout); sleep(1);
+	fwrite(text, 1, text_length, stdout); fflush(stdout); sleep(1);
 	puts("emergency save: printed out all contents"); fflush(stdout); sleep(1);
 	printf("save error: %s: %s\n", call, strerror(errno)); fflush(stdout); sleep(2);
 	return; 
@@ -78,17 +60,16 @@ static void emergency_save(const char* call) {
 static void save(void) {
 	const mode_t permissions = S_IRUSR | S_IWUSR | S_IROTH | S_IRGRP;
 	int flags = 0;
-	bool matches = false;
+	char matches = 0;
 	if (not *filename) {
-		char name[4096] = {0}, datetime[32] = {0};
+		char datetime[32] = {0};
 		struct timeval t = {0};
 		gettimeofday(&t, NULL);
 		struct tm* tm = localtime(&t.tv_sec);
 		strftime(datetime, 32, "1%Y%m%d%u.%H%M%S", tm);
-		snprintf(name, sizeof name, "%s_%08x%08x.txt", datetime, rand(), rand());
-		strlcpy(filename, name, sizeof filename);
+		snprintf(filename, sizeof filename, "%s_%08x%08x.txt", datetime, rand(), rand());
 		flags = O_WRONLY | O_CREAT | O_EXCL;
-		matches = true; 
+		matches = 1; 
 	} else {
 		char empirically_last_modified[32] = {0};
 		struct stat attr;
@@ -96,20 +77,22 @@ static void save(void) {
 		strftime(empirically_last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attr.st_mtime));
 		if (not strcmp(empirically_last_modified, last_modified)) {
 			flags = O_WRONLY | O_TRUNC;
-			matches = true; 
+			matches = 1; 
 		}
 	}
 	if (matches) {
 		int output_file = open(filename, flags, permissions);
 		if (output_file < 0) { emergency_save("open"); goto recover; }
-		if (write(output_file, text, count) < 0){ emergency_save("write"); goto recover; }
+		if (write(output_file, text, text_length) < 0){ emergency_save("write"); goto recover; }
 		if (close(output_file) < 0) { emergency_save("close"); goto recover; }
 		struct stat attrn;
 		stat(filename, &attrn);
 		strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", localtime(&attrn.st_mtime));
+		printf("wrote %llu bytes to %s : modified on %s\n", text_length, filename, last_modified);
+		fflush(stdout);
 		return;
 	}
-	recover: write(1, "\033[?25h", 6); tcsetattr(0, TCSANOW, &terminal);
+	recover:
 	printf("--- emergency save ---\nplease give a valid filename.\n(enter: <path>\\n)\n");
 	loop: fflush(stdout); char input[4096] = {0};
 	printf(":: "); fflush(stdout);
@@ -125,9 +108,11 @@ static void save(void) {
 	} else input[n - 1] = 0;
 	int output_file = open(input, O_WRONLY | O_CREAT | O_EXCL | O_APPEND, permissions);
 	if (output_file < 0) { emergency_save("open"); goto loop; }
-	if (write(output_file, text, count) < 0) { emergency_save("write"); goto loop; }
+	if (write(output_file, text, text_length) < 0) { emergency_save("write"); goto loop; }
 	if (close(output_file) < 0) { emergency_save("close"); goto loop; }
-	printf("successfully emergency saved, exiting editor..."); fflush(stdout); 
+	printf("successfully emergency saved, exiting editor...");
+	printf("wrote %llu bytes to %s, emergency-saved\n", text_length, input);
+	fflush(stdout);
 	exit(0);
 }
 
@@ -163,22 +148,24 @@ static noreturn void interrupted(int _) {if(_){}
 	exit(1); 
 }
 
-int main(int argc, __attribute__((unused)) const char** argv) {
+int main(const int argc, const char** argv) {
 	struct sigaction action2 = {.sa_handler = interrupted}; 
 	sigaction(SIGINT, &action2, NULL);
-
 	srand((unsigned) time(NULL)); rand();
-
-	if (argc > 1) return puts("usage error, no arguments should be given.");
-	char filename[4096] = {0};
-	write(1, "filename: ", 10);
-	read(0, filename, sizeof filename);
-	size_t filename_length = strlen(filename);
-	if (filename_length) filename[--filename_length] = 0;
-
-	puts("type 'z' and enter for help.");
-
-load_file:
+	if (argc > 2) return puts("usage error, no arguments should be given.");
+	if (argc == 1) {	
+		write(1, "filename: ", 10);
+		read(0, filename, sizeof filename);
+		size_t filename_length = strlen(filename);
+		if (filename_length) filename[--filename_length] = 0;
+		else goto new;
+		if (not filename_length) goto new;
+	} else if (argc == 2) {
+		size_t filename_length = strlen(argv[1]);
+		if (filename_length > sizeof filename) filename_length = sizeof filename - 1;
+		memcpy(filename, argv[1], filename_length);
+	}
+//load_file:
 	printf("loading file: %s\n", filename); 
 	fflush(stdout);
 
@@ -195,7 +182,6 @@ load_file:
 	read(file, text, text_length);
 	close(file);
 
-	char last_modified[32] = {0};
 	struct stat attr_;
 	stat(filename, &attr_);
 	strftime(last_modified, 32, "1%Y%m%d%u.%H%M%S", 
@@ -203,7 +189,7 @@ load_file:
 	);
 	printf("last modified time: %s\n", last_modified); 
 	fflush(stdout);
-
+new:;
 	nat cursor = 0, anchor = 0, saved = 1, inserting = 0;
 	char input[4096] = {0};
 
@@ -212,6 +198,8 @@ load_file:
 
 	printf("read %llu bytes\n", text_length); 
 	fflush(stdout);
+
+	puts("type 'z' and enter for help.");
 
 	while (1) {
 		memset(input, 0, sizeof input);
@@ -248,9 +236,11 @@ load_file:
 		if (not input[0]) {}
 		else if (input[0] == ' ') write(1, "\033[2A", 4); 
 		else if (input[0] == 'z') { puts(help_string); fflush(stdout); }
+		else if (input[0] == 'x') { printf("\033[H\033[2J"); fflush(stdout); }
 		else if (input[0] == 'q') { if (saved) break; else puts("unsaved"); }
 		else if (input[0] == 'a') { anchor = cursor; } 
 		else if (input[0] == 't') { inserting = 1; }
+		else if (input[0] == 's') { save(); saved = 1; } 
 		else if (input[0] == 'u') { 
 			cursor += (nat) atoi(string); 
 			if (cursor > text_length) cursor = text_length; 
@@ -277,15 +267,14 @@ load_file:
 			if (not k) k = 1000;
 			nat amount = text_length - start;
 			if (k and k < amount) amount = k;
-			fwrite(text + start, 1, amount, stdout); fflush(stdout);
+			if (text) { fwrite(text + start, 1, amount, stdout); fflush(stdout); }
 		} else if (input[0] == 'w') {
 			nat start = anchor;
 			nat k = (nat) atoi(string); 
 			if (not k) k = 1000;
 			nat amount = text_length - start;
 			if (k and k < amount) amount = k;
-			fwrite(text + start, 1, amount, stdout); fflush(stdout);
-
+			if (text) { fwrite(text + start, 1, amount, stdout); fflush(stdout); } 
 
 		} else if (input[0] == 'm') {
 			nat t = 0;
@@ -358,7 +347,7 @@ load_file:
 
 			cliplength = anchor < cursor ? cursor - anchor : anchor - cursor;
 			free(clipboard);
-			clipboard = strndup(text + (anchor < cursor ? anchor : cursor, cliplength);
+			clipboard = strndup(text + (anchor < cursor ? anchor : cursor), cliplength);
 
 		} else if (input[0] == 'r') {
 			if (anchor > cursor) {
@@ -400,9 +389,6 @@ load_file:
 		skip_remove: 
 			free(deleted);
 
-		} else if (input[0] == 's') {
-			save();
-
 		} else {
 			printf("error: bad input: %d\n", input[0]);
 			fflush(stdout);
@@ -419,6 +405,62 @@ load_file:
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*
+
+workman key layout:
+
+q d r w b j f u p ; 
+ a s h t g y n e o i 
+  z x m c v k l , .
+
+
+keys left:
+. . . . b j f . . ; 
+ . . . . g y . . . . 
+  z x . . v . l , .
+
+
+*/
 
 
 

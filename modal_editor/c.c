@@ -356,10 +356,8 @@ static void insert_char(void) {
 	if (c == 'a') insert_dt();
 	else if (c == 'g') insert("0123456789", 10, 1);
 	else if (c == 'b') insert("`~!@#$%^&*(){}[]<>|\\+=_-:;?/.,'\"", 32, 1);
-	else if (c == 'd') { read(0, &c, 1); c = remap(c);
-		if (c == 'e') { read(0, &c, 1); c = remap(c);
-			if (c == 'l') delete_selection();
-		}
+	else if (c == 'n') { read(0, &c, 1); c = remap(c);
+		if (c == 'e') delete_selection();
 	} else if (c == 'r') { c = 10; insert(&c, 1, 1); }
 	else if (c == 'h') { c = 32; insert(&c, 1, 1); }
 	else if (c == 'm') { c = 9;  insert(&c, 1, 1); }
@@ -467,14 +465,14 @@ static void jump_numeric(char* s) {
 
 static void center_cursor(void) {
 	const nat save = cursor;
-	for (nat i = 0; i < window.ws_row >> 1; i++) 
+	for (nat i = 0; i < window.ws_row / 3; i++) 
 		while (cursor) { 
 			cursor--; 
 			if (not cursor or text[cursor - 1] == 10) break;
 		}
 	display(0);
 	cursor = save;	
-	for (nat i = 0; i < window.ws_row >> 1; i++) 
+	for (nat i = 0; i < (window.ws_row * 2) / 3; i++) 
 		while (cursor < count) { 
 			cursor++; 
 			if (cursor < count and text[cursor - 1] == 10) break;
