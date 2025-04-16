@@ -1,0 +1,3 @@
+hello there from space! this is a file that i am writing using our command line text editor! its quite cool actually lol. hopefully this thing is actually usable lol.
+
+i'm using its insert mode at the moment, which is surprisingly nice to use. i think you use <space><newline> to quit insert mode, i think. lets try that out lol. 

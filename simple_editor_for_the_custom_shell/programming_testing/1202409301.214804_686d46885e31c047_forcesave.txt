@@ -1,0 +1,13 @@
+#include <stdio.h>
+
+int main(void) {
+	puts("hello world");
+	int array[6] = {4, 2, 6, 5, 7, 6 };
+	const int length = 6;
+
+	for (int i = 0; i < length; i++) {
+		printf("[%u] = %u\n", i, array[i]);
+	}	
+	exit(0);
+}
+

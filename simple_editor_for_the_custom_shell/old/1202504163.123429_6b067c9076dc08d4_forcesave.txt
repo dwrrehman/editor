@@ -1,0 +1,2 @@
+lets try writing a simple program in our language, to print numbers!
+

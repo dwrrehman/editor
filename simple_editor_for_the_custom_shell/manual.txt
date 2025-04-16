@@ -1,0 +1,35 @@
+manual for the commandline text editor
+----------------------------------
+
+this document describes how to use a command-line text editor that i wrote recently, that might end up being useful to me or someone else in the future lol. it's similar to ed in some ways, but also much simpler than ed.
+
+this editor is a modal editor, with only two modes. insert mode, and edit mode. in insert mode, only 1 command is recognized, a line containing a single space. this exits insert mode. all other strings (including their newlines, if they contain one) are inserted directly into the document at the cursor position, when in insert mode. after an insertion, the cursor is always advanced to be positioned after the inserted string. 
+
+while in edit mode, however, the following commands are recognized:
+
+q	quit, must be saved first.
+z	this help string.
+s	save the current file contents.
+<sp>	exit insert mode.
+<sp>	move up one line visually on the screen. the cursor is unaffected.
+<nl>	move down one line visually on the screen. the cursor is unaffected.
+a	anchor at cursor.
+p	display cursor/file information.
+t	go into insert mode.
+u<N>	cursor += N.
+n<N>	cursor -= N.
+c<N>	cursor = N.
+d[N]	display page of text starting from cursor.
+w[N]	display page of text starting from anchor.
+m<S>	search forwards from cursor for string S.
+h<S>	search backwards from cursor for string S.
+o	copy current selection to clipboard.
+k	inserts current datetime at cursor and advances.
+e<S>	inserts S at cursor and advances.
+i	inserts clipboard at cursor, and advances.
+r	removes current selection. requires confirming.
+
+this menu can also be obtained by typing the command 'z', as is indicated by second line. 
+
+the command d and w are used for displaying the current document contents, starting from the cursor for 'd', and starting from the anchor for 'w'. both commands accept a number as an argument, written directly after the first character (d/w) which indicates the maximum number of characters to print to the screen. by default, if no number is given, a thousand characters are displayed. this is the page size, and can be changed. 
+
